@@ -1,0 +1,129 @@
+#!/bin/sh
+# Prints router metrics as "key value" lines plus "x|..." detail lines; "tab|id" lines mark installed providers.
+PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+num() { printf '%s' "$2" | grep -o "\"$1\":[0-9]*" | head -1 | cut -d: -f2; }
+cnt() { ipset list "$1" 2>/dev/null | tail -n +8 | grep -c '^'; }
+d0() { grep . || echo 0; }
+
+# ---- which providers are installed ----
+TELEMT_CONF=/opt/etc/telemt/config.toml
+HAS_TELEMT=0; { [ -f "$TELEMT_CONF" ] || pidof telemt >/dev/null 2>&1; } && HAS_TELEMT=1
+HAS_AWG=0; { grep -q 'opkgtun' /proc/net/dev 2>/dev/null || [ -x /opt/bin/awg-manager ]; } && HAS_AWG=1
+HAS_FIRC=0; { [ -f /opt/etc/firc/groups.yaml ] || [ -f /tmp/firc/pool.state ]; } && HAS_FIRC=1
+HAS_ASCN=0; { ipset list -n 2>/dev/null | grep -q '^ascn_' || [ -f /opt/etc/antiscan/ascn.conf ]; } && HAS_ASCN=1
+NF_DIR=""; for d in /opt/etc/nfqws2 /opt/etc/nfqws; do [ -d "$d" ] && { NF_DIR=$d; break; }; done
+NF_PID=$(pidof nfqws2 2>/dev/null || pidof nfqws 2>/dev/null); NF_PID=${NF_PID%% *}
+HAS_NFQWS=0; { [ -n "$NF_DIR" ] || [ -n "$NF_PID" ]; } && HAS_NFQWS=1
+[ $HAS_TELEMT = 1 ] && echo "tab|telemt"
+[ $HAS_AWG = 1 ] && echo "tab|awg"
+[ $HAS_FIRC = 1 ] && echo "tab|firc"
+[ $HAS_ASCN = 1 ] && echo "tab|ascn"
+[ $HAS_NFQWS = 1 ] && echo "tab|nfqws"
+echo "tab|sys"
+
+# ---- telemt (API address is read from its config) ----
+if [ $HAS_TELEMT = 1 ]; then
+  api=$(awk '/^\[server\.api\]/{f=1;next} /^\[/{f=0} f && /^listen/{gsub(/[" ]/,""); sub(/^listen=/,""); print; exit}' "$TELEMT_CONF" 2>/dev/null)
+  case "$api" in 0.0.0.0:*|\[::\]:*|:::*) api="127.0.0.1:${api##*:}";; esac
+  T="http://${api:-127.0.0.1:9091}"
+  rt=$(wget -qO- "$T/v1/runtime/connections/summary" 2>/dev/null)
+  tot=$(printf '%s' "$rt" | grep -o '"totals":{[^}]*}')
+  sm=$(wget -qO- "$T/v1/stats/summary" 2>/dev/null)
+  users=$(wget -qO- "$T/v1/stats/users" 2>/dev/null)
+  oct=$(printf '%s' "$users" | grep -o '"total_octets":[0-9]*' | cut -d: -f2 | awk '{s+=$1} END{printf "%.0f", s}')
+  echo "telemt_ok $([ -n "$sm" ] && echo 1 || echo 0)"
+  echo "telemt_conn $(num current_connections "$tot" | d0)"
+  echo "telemt_users $(num active_users "$tot" | d0)"
+  echo "telemt_cfg $(num configured_users "$sm" | d0)"
+  echo "telemt_up $(num uptime_seconds "$sm" | d0)"
+  echo "telemt_bad $(num connections_bad_total "$sm" | d0)"
+  echo "telemt_octets ${oct:-0}"
+  printf '%s' "$users" | grep -o '"username":"[^"]*"\|"current_connections":[0-9]*\|"recent_unique_ips":[0-9]*\|"total_octets":[0-9]*' | awk -F: '
+    function out(){ if(n) printf "u|%s|%s|%s|%.0f\n", name, c, i, o }
+    /^"username"/{ out(); n=1; name=$2; gsub(/"/,"",name); c=i=o=0; next }
+    /current_connections/{c=$2} /recent_unique_ips/{i=$2} /total_octets/{o=$2}
+    END{ out() }'
+fi
+
+# ---- tunnels (Entware opkgtun* interfaces, e.g. awg-manager) ----
+if [ $HAS_AWG = 1 ]; then
+  echo "awg_bytes $(awk '/opkgtun/{gsub(":"," "); s+=$2+$10} END{printf "%.0f", s}' /proc/net/dev)"
+  up=0; total=0
+  for n in $(grep -o 'opkgtun[0-9]*' /proc/net/dev | sort -u); do
+    N=OpkgTun${n#opkgtun}
+    o=$(ndmc -c "show interface $N" 2>/dev/null)
+    d=$(printf '%s\n' "$o" | sed -n 's/^ *description: *//p' | head -1)
+    c=$(printf '%s\n' "$o" | sed -n 's/^ *connected: *//p' | head -1)
+    ut=$(printf '%s\n' "$o" | sed -n 's/^ *uptime: *//p' | head -1)
+    rx=$(awk -v n="$n" '{gsub(":"," ")} $1==n{printf "%.0f",$2}' /proc/net/dev)
+    tx=$(awk -v n="$n" '{gsub(":"," ")} $1==n{printf "%.0f",$10}' /proc/net/dev)
+    u=0; [ "$c" = yes ] && u=1
+    total=$((total+1)); up=$((up+u))
+    echo "tun|${d:-$N}|$u|${rx:-0}|${tx:-0}|${ut:-0}"
+  done
+  echo "awg_up $up"
+  echo "awg_total $total"
+fi
+
+# ---- firc ----
+if [ $HAS_FIRC = 1 ]; then
+  echo "firc_domains $(grep -c '^map ' /tmp/firc/pool.state 2>/dev/null | d0)"
+  echo "firc_groups $(grep -c '^- id' /opt/etc/firc/groups.yaml 2>/dev/null | d0)"
+  echo "firc_enabled $(grep -c '^  enable: true' /opt/etc/firc/groups.yaml 2>/dev/null | d0)"
+  awk 'function out(){ if(id!="") printf "g|%s|%s|%d|%d\n", name, ifc, en, c[id] }
+    FNR==NR{ if($1=="map") c[$3]++; next }
+    /^- id:/{ out(); id=$3; name=ifc=""; en=0; next }
+    /^  name:/{ name=$2; gsub(/["\47]/,"",name); next }
+    /^  interface:/{ ifc=$2; next }
+    /^  enable:/{ en=($2=="true"); next }
+    END{ out() }' /tmp/firc/pool.state /opt/etc/firc/groups.yaml 2>/dev/null
+fi
+
+# ---- antiscan ----
+if [ $HAS_ASCN = 1 ]; then
+  echo "ascn_ips $(cnt ascn_ips)"
+  echo "ascn_subnets $(cnt ascn_subnets)"
+  echo "ascn_honeypot $(cnt ascn_honeypot)"
+  echo "ascn_candidates $(cnt ascn_candidates)"
+  for s in ips subnets honeypot; do
+    ipset list ascn_$s 2>/dev/null | tail -n +8 | awk -v s=$s -v cf=/opt/var/lib/keendash/geo.cache 'BEGIN{ while ((getline l < cf) > 0) { split(l, a, "|"); G[a[1]] = a[2] } } { t=0; for(i=1;i<=NF;i++) if($i=="timeout") t=$(i+1); k=$1; sub(/\/.*/, "", k); c=(k in G) ? G[k] : ""; if (c == "?") c=""; print "b|" s "|" $1 "|" t "|" c }' | sort -t'|' -k4 -n -r | head -5
+  done
+fi
+
+# ---- nfqws (nfqws2 / nfqws-keenetic) ----
+if [ $HAS_NFQWS = 1 ]; then
+  NF_LOG=/opt/var/log/$(basename "${NF_DIR:-/opt/etc/nfqws2}").log
+  qn=$(iptables -t mangle -S 2>/dev/null | grep -o 'queue-num [0-9]*' | head -1 | cut -d' ' -f2)
+  echo "nfq_running $([ -n "$NF_PID" ] && echo 1 || echo 0)"
+  if [ -r /proc/net/netfilter/nfnetlink_queue ] && [ -n "$qn" ]; then
+    awk -v q="$qn" '$1==q{print "nfq_pkts " $8; print "nfq_drop " ($6+$7); f=1} END{if(!f){print "nfq_pkts 0"; print "nfq_drop 0"}}' /proc/net/netfilter/nfnetlink_queue
+  else echo "nfq_pkts 0"; echo "nfq_drop 0"; fi
+  if [ -n "$NF_PID" ]; then
+    st=$(sed 's/.*) //' /proc/$NF_PID/stat 2>/dev/null | awk '{print $20}')
+    echo "nfq_up $(awk -v s="${st:-0}" '{printf "%d", $1 - s/100}' /proc/uptime)"
+    echo "nfq_mem $(awk '/VmRSS/{print $2}' /proc/$NF_PID/status 2>/dev/null | d0)"
+  else echo "nfq_up 0"; echo "nfq_mem 0"; fi
+  L=$NF_DIR/lists
+  echo "nfq_user $(grep -c . $L/user.list 2>/dev/null | d0)"
+  echo "nfq_auto $(grep -c . $L/auto.list 2>/dev/null | d0)"
+  echo "nfq_excl $(grep -c . $L/exclude.list 2>/dev/null | d0)"
+  echo "nfq_ipsets $(ls $L/ipset*.list 2>/dev/null | wc -l)"
+  echo "nfq_today $(grep -c "^$(date +%d.%m.%Y)" "$NF_LOG" 2>/dev/null | d0)"
+  tail -n 300 "$NF_LOG" 2>/dev/null | awk -F' : ' 'NF>=5{ t[++n]=substr($1,12,5); h[n]=$2; m[n]=$NF } END{ c=0; for(i=n;i>0&&c<4;i--){ k=h[i] "|" m[i]; if(k in s) continue; s[k]=1; c++; print "n|" t[i] "|" h[i] "|" m[i] } }'
+  M=/opt/etc/nfqws-ui/monitor.json
+  [ -f "$M" ] && grep -o '"[A-Za-z0-9._-]*":\[\[[0-9,null.-]*\]\(,\[[0-9,null.-]*\]\)*\]' "$M" | while IFS= read -r l; do
+    s=${l%%\":*}; s=${s#\"}
+    t=$(printf '%s' "$l" | sed 's/.*,\[\([^]]*\)\]\]$/\1/' | cut -d, -f1,2,3 | tr , '|')
+    echo "m|$s|$t"
+  done
+fi
+
+# ---- system ----
+read l1 rest < /proc/loadavg
+echo "sys_load $(awk -v l="$l1" 'BEGIN{printf "%d", l*100}')"
+echo "sys_mem $(awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "%d", (t-a)*100/t}' /proc/meminfo)"
+echo "sys_memtotal $(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)"
+if [ -r /sys/class/thermal/thermal_zone0/temp ]; then t=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null); echo "sys_temp $(( ${t:-0} / 1000 ))"; fi
+df -k /opt 2>/dev/null | tail -1 | awk '{gsub("%","",$(NF-1)); print "sys_disk " $(NF-1); print "sys_free " int($(NF-2)/1024)}'
+echo "sys_uptime $(awk '{printf "%d",$1}' /proc/uptime)"

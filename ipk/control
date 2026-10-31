@@ -1,0 +1,13 @@
+Package: keendash
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: keendash contributors
+Section: net
+Priority: optional
+Depends: busybox, cron, lighttpd, lighttpd-mod-cgi
+Source: @SOURCE@
+Installed-Size: @SIZE@
+Description: Dashboard widgets for the Keenetic web UI
+ Adds a "Сервисы" card to the main page of the Keenetic web interface: status of
+ Entware services, links to their web UIs, tabs for telemt, AWG, firc, nfqws,
+ Antiscan and the system, with sparkline graphs.

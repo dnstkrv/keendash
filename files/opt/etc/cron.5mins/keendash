@@ -1,0 +1,3 @@
+#!/bin/sh
+# keendash: every 5 minutes - find services and their web UIs
+/opt/share/keendash/bin/services --discover

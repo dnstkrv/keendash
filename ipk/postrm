@@ -1,0 +1,5 @@
+#!/bin/sh
+# keendash: clean up runtime files (settings and the geo cache are kept)
+rm -f /opt/sbin/keendash-httpd /opt/var/run/keendash.conf /opt/var/run/keendash.pid
+rm -rf /tmp/keendash /tmp/keendash-geo.lock
+exit 0

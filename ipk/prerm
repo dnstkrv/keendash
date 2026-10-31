@@ -1,0 +1,4 @@
+#!/bin/sh
+# keendash: restore the stock Keenetic UI and stop the web server
+/opt/etc/init.d/S81keendash stop >/dev/null 2>&1
+exit 0

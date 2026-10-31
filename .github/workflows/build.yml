@@ -1,0 +1,105 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck / sh -n
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          files="scripts/*.sh ipk/postinst ipk/prerm ipk/postrm
+                 files/opt/share/keendash/bin/* files/opt/etc/init.d/* files/opt/etc/cron.1min/* files/opt/etc/cron.5mins/*
+                 files/opt/share/keendash/www/cgi-bin/*"
+          for f in $files; do sh -n "$f"; done
+          # warnings only: the scripts target busybox ash on routers
+          shellcheck -S error -s sh $files || true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+
+  ipk:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64-3.10, mipsel-3.4, mips-3.4]
+    steps:
+      - uses: actions/checkout@v4
+      - name: version
+        id: v
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="$(cat VERSION)"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: build ipk
+        run: sh scripts/build-ipk.sh "${{ matrix.arch }}" "${{ steps.v.outputs.version }}"
+      - name: check package
+        run: |
+          f=$(ls dist/*.ipk)
+          tar -tzf "$f"
+          mkdir t && tar -xzf "$f" -C t && tar -xzf t/control.tar.gz -C t ./control && cat t/control
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keendash-${{ matrix.arch }}
+          path: dist/*.ipk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: ipk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: feeds and source tarball
+        run: |
+          for a in aarch64-3.10 mipsel-3.4 mips-3.4; do
+            mkdir -p "feed/$a" && cp dist/*_"$a".ipk "feed/$a/" && sh scripts/make-feed.sh "feed/$a"
+          done
+          git archive --format=tar.gz --prefix=keendash/ -o "dist/keendash-${GITHUB_REF_NAME}.tar.gz" HEAD
+          ls -l dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: feed
+          path: feed
+
+  pages:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: feed
+          path: site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4

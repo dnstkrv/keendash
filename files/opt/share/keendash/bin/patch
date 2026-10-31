@@ -1,0 +1,44 @@
+#!/bin/sh
+# Bind-mounts a copy of the Keenetic web UI index.html with a widgets loader injected.
+# The copy is rebuilt from the CURRENT original at every start, so it survives firmware updates.
+#   patch build   - only build the patched file (no mount)
+#   patch start   - build + bind-mount over the original
+#   patch stop    - umount (back to stock UI)
+#   patch status
+# The loader fetches the widget list from keendash's own web server (PORT in /opt/etc/keendash/keendash.conf).
+TARGET=/usr/share/htdocs_/index.html
+DIR=/opt/var/lib/keendash
+ORIG=$DIR/index.orig.html
+OUT=$DIR/index.patched.html
+SNIPPETS="$DIR/widgets-loader.html"
+CONF=/opt/etc/keendash/keendash.conf
+PORT=8189
+[ -f "$CONF" ] && . "$CONF"
+
+mounted() { grep -q " $TARGET " /proc/mounts; }
+
+make_snippet() {
+  mkdir -p "$DIR"
+  cat > "$SNIPPETS" <<EOF
+<script id="ui-widgets-loader">(function(){try{var b="http://"+location.hostname+":$PORT/";window.__keendash={base:b};fetch(b+"cgi-bin/widgets.cgi",{cache:"no-store"}).then(function(r){return r.json()}).then(function(l){l.forEach(function(n){var s=document.createElement("script");s.src=b+"widgets/"+n+"?"+Date.now();document.head.appendChild(s)})}).catch(function(){})}catch(e){}})();</script>
+EOF
+}
+
+build() {
+  mounted && { echo "уже смонтировано: оригинал недоступен, сначала keendash stop"; return 1; }
+  mkdir -p "$DIR"
+  make_snippet
+  cp "$TARGET" "$ORIG" || return 1
+  grep -q '</body>' "$ORIG" || { echo "нет </body> в оригинале, патч не применён"; return 1; }
+  # insert the snippet just before </body>
+  awk -v snip="$SNIPPETS" 'BEGIN{while((getline l < snip)>0) s=s l "\n"} { i=index($0,"</body>"); if(i>0 && !done){ print substr($0,1,i-1) s substr($0,i); done=1 } else print }' "$ORIG" > "$OUT.tmp" \
+    && grep -q 'ui-widgets-loader' "$OUT.tmp" && mv "$OUT.tmp" "$OUT" || { rm -f "$OUT.tmp"; echo "сборка не удалась"; return 1; }
+}
+case "$1" in
+  build)  build && echo "собрано: $OUT ($(wc -c < "$OUT") байт, оригинал $(wc -c < "$ORIG"))";;
+  start)  mounted && { echo "уже смонтировано"; exit 0; }
+          build && mount --bind "$OUT" "$TARGET" && echo "смонтировано" || echo "не смонтировано";;
+  stop)   mounted && umount "$TARGET" && echo "размонтировано" || echo "не было смонтировано";;
+  status) mounted && echo "смонтировано" || echo "не смонтировано";;
+  *) echo "usage: $0 {build|start|stop|status}";;
+esac
