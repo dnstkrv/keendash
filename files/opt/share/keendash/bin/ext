@@ -1,0 +1,144 @@
+#!/bin/sh
+# Third-party services (AdGuard Home, qBittorrent, Plex, Sonarr, Radarr, Prowlarr, Overseerr, Immich) over their HTTP APIs.
+# A service is on only when its *_URL key is set in keendash.conf. Their APIs can be slow or down, so cron runs this
+# every minute in the background: each service goes to /tmp/keendash/x.<name>, bin/stats just prints the cache.
+#   ext            refresh the cache for every configured service
+#   ext <service>  print one service to stdout (debugging, tests)
+PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+CONF=${KEENDASH_CONF:-/opt/etc/keendash/keendash.conf}
+[ -f "$CONF" ] && . "$CONF"
+BIN=${0%/*}
+
+# wget with our own deadline: busybox wget may have no -T, GNU wget waits 15 minutes by default
+dl() {
+  wget "$@" & p=$!
+  ( sleep 4; kill $p ) >/dev/null 2>&1 & k=$!
+  wait $p; r=$?; kill $k 2>/dev/null; return $r
+}
+# JSON from the API flattened to "path<TAB>value" lines: records.0.series.title<TAB>Silo
+J() { dl -qO- "$@" 2>/dev/null | grep -oE '"([^"\\]|\\.)*"|[][{}:,]|[-+.0-9a-zA-Z]+' | awk "$FLAT"; }
+# shortcut: \uXXXX escapes stay as they are; the APIs used here send UTF-8 as is
+FLAT='
+function path(  i, p) { for (i = 1; i <= d; i++) p = p (i > 1 ? "." : "") (T[i] == "{" ? K[i] : N[i]); return p }
+/^[[{]$/ { d++; T[d] = $0; N[d] = 0; K[d] = ""; W[d] = ($0 == "{"); next }
+/^[]}]$/ { d--; next }
+$0 == "," { if (T[d] == "[") N[d]++; else W[d] = 1; next }
+$0 == ":" { W[d] = 0; next }
+{ v = $0
+  if (v ~ /^"/) { v = substr(v, 2, length(v) - 2); gsub(/\\"/, "\"", v); gsub(/\\\//, "/", v); gsub(/\\\\/, "\\", v); gsub(/[\t|]/, " ", v) }
+  if (T[d] == "{" && W[d]) K[d] = v; else print path() "\t" v }'
+# awk prologue for the flattened lines: V[path] = value
+LOAD='BEGIN { FS = "\t" } { V[$1] = $2 }
+function pct(s, l) { return s > 0 ? int((s - l) * 100 / s) : 0 }
+function tl(t,  a, dd) { if (t == "") return -1; dd = 0; if (t ~ /^[0-9]+\./) { dd = int(t); sub(/^[0-9]+\./, "", t) }; split(t, a, ":"); return dd * 86400 + a[1] * 3600 + a[2] * 60 + int(a[3]) }
+function ep(s,  y, m, dd) { if (s == "") return 0; y = substr(s, 1, 4) + 0; m = substr(s, 6, 2) + 0; dd = substr(s, 9, 2) + 0; if (m < 3) { y--; m += 12 }
+  return (365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + dd - 719469) * 86400 + substr(s, 12, 2) * 3600 + substr(s, 15, 2) * 60 + substr(s, 18, 2) }
+'
+# percent-encode every byte (form data); busybox od has only -b here
+enc() { printf '%s' "$1" | od -b | awk '{ for (i = 2; i <= NF; i++) { n = 0; for (j = 1; j <= 3; j++) n = n * 8 + substr($i, j, 1); printf "%%%02x", n } }'; }
+# ISO time N days from now
+day() { date -u -d "@$(( $(date +%s) + $1 * 86400 ))" +%Y-%m-%dT%H:%M:%SZ; }
+
+agh() { "$BIN/agh"; }
+
+qb() {
+  B=${QBIT_URL%/}; set -- --header "Referer: $B"
+  if [ -n "${QBIT_USER:-}" ]; then
+    # session cookie: SID, or QBT_SID_<port> in newer versions
+    sid=$(dl -S -O /dev/null --header "Referer: $B" --post-data "username=$(enc "$QBIT_USER")&password=$(enc "${QBIT_PASS:-}")" "$B/api/v2/auth/login" 2>&1 |
+      sed -n 's/.*[Ss]et-[Cc]ookie: *\([^=;]*SID[^=;]*=[^;]*\).*/\1/p' | head -n 1)
+    set -- "$@" --header "Cookie: $sid"
+  fi
+  t=$(J "$@" "$B/api/v2/transfer/info")
+  case "$t" in *dl_info_speed*) echo "qb_ok 1" ;; *) echo "qb_ok 0"; return ;; esac
+  printf '%s\n' "$t" | awk "$LOAD"'END { print "qb_dl " V["dl_info_speed"] + 0; print "qb_up " V["up_info_speed"] + 0 }'
+  J "$@" "$B/api/v2/torrents/info?filter=downloading&sort=dlspeed&reverse=true" | awk "$LOAD"'END {
+    for (n = 0; (n ".hash") in V; n++) if (n < 5) print "qbt|" V[n ".name"] "|" int(V[n ".progress"] * 1000) "|" V[n ".dlspeed"] + 0 "|" V[n ".eta"] + 0
+    print "qb_n " n }'
+}
+
+plex() {
+  B=${PLEX_URL%/}; set -- --header "Accept: application/json" --header "X-Plex-Token: ${PLEX_TOKEN:-}"
+  s=$(J "$@" "$B/status/sessions")
+  case "$s" in MediaContainer*) echo "pl_ok 1" ;; *) echo "pl_ok 0"; return ;; esac
+  printf '%s\n' "$s" | awk "$LOAD"'END { m = "MediaContainer.Metadata."
+    for (n = 0; (m n ".type") in V; n++) {
+      t = V[m n ".grandparentTitle"] != "" ? V[m n ".grandparentTitle"] " · " V[m n ".title"] : V[m n ".title"]
+      print "pls|" V[m n ".User.title"] "|" t "|" pct(V[m n ".duration"], V[m n ".duration"] - V[m n ".viewOffset"]) "|" V[m n ".Player.state"] }
+    print "pl_streams " n }'
+  J "$@" "$B/library/sections" | awk "$LOAD"'END { m = "MediaContainer.Directory."; for (n = 0; (m n ".key") in V; n++) print V[m n ".key"] "|" V[m n ".type"] "|" V[m n ".title"] }' |
+  while IFS='|' read -r k ty ti; do
+    echo "pll|$ti|$ty|$(J "$@" "$B/library/sections/$k/all?X-Plex-Container-Start=0&X-Plex-Container-Size=0" | awk "$LOAD"'END { print V["MediaContainer.totalSize"] + 0 }')"
+  done
+}
+
+sonarr() {
+  B=${SONARR_URL%/}; set -- --header "X-Api-Key: ${SONARR_KEY:-}"
+  q=$(J "$@" "$B/api/v3/queue?pageSize=5&includeSeries=true&includeEpisode=true")
+  case "$q" in *totalRecords*) echo "sn_ok 1" ;; *) echo "sn_ok 0"; return ;; esac
+  printf '%s\n' "$q" | awk "$LOAD"'END { print "sn_queue " V["totalRecords"] + 0
+    for (i = 0; ("records." i ".id") in V; i++) { r = "records." i "."
+      print "snq|" V[r "series.title"] sprintf(" S%02dE%02d", V[r "episode.seasonNumber"], V[r "episode.episodeNumber"]) "|" pct(V[r "size"], V[r "sizeleft"]) "|" tl(V[r "timeleft"]) } }'
+  J "$@" "$B/api/v3/wanted/missing?pageSize=1&monitored=true" | awk "$LOAD"'END { if ("totalRecords" in V) print "sn_missing " V["totalRecords"] }'
+  J "$@" "$B/api/v3/calendar?start=$(day 0)&end=$(day 7)&includeSeries=true" | awk "$LOAD"'END {
+    for (i = 0; (i ".id") in V && i < 6; i++)
+      print "snc|" ep(V[i ".airDateUtc"]) "|" V[i ".series.title"] "|" sprintf("S%02dE%02d", V[i ".seasonNumber"], V[i ".episodeNumber"]) "|" (V[i ".hasFile"] == "true") }'
+}
+
+radarr() {
+  B=${RADARR_URL%/}; set -- --header "X-Api-Key: ${RADARR_KEY:-}"
+  q=$(J "$@" "$B/api/v3/queue?pageSize=5&includeMovie=true")
+  case "$q" in *totalRecords*) echo "rd_ok 1" ;; *) echo "rd_ok 0"; return ;; esac
+  printf '%s\n' "$q" | awk "$LOAD"'END { print "rd_queue " V["totalRecords"] + 0
+    for (i = 0; ("records." i ".id") in V; i++) { r = "records." i "."; print "rdq|" V[r "movie.title"] "|" pct(V[r "size"], V[r "sizeleft"]) "|" tl(V[r "timeleft"]) } }'
+  # no wanted/missing in older Radarr: rd_missing stays unknown
+  J "$@" "$B/api/v3/wanted/missing?pageSize=1&monitored=true" | awk "$LOAD"'END { if ("totalRecords" in V) print "rd_missing " V["totalRecords"] }'
+  J "$@" "$B/api/v3/calendar?start=$(day 0)&end=$(day 7)" | awk -v now="$(date +%s)" "$LOAD"'END {
+    split("inCinemas c digitalRelease d physicalRelease p", f, " ")
+    for (i = 0; (i ".id") in V && n < 6; i++) for (j = 1; j < 6; j += 2) { t = ep(V[i "." f[j]]); if (t >= now - 86400 && t <= now + 7 * 86400) { print "rdc|" t "|" V[i ".title"] "|" f[j + 1]; n++ } } }'
+}
+
+prowlarr() {
+  B=${PROWLARR_URL%/}; set -- --header "X-Api-Key: ${PROWLARR_KEY:-}"
+  ix=$(J "$@" "$B/api/v1/indexer")
+  case "$ix" in *.id*) echo "pw_ok 1" ;; *) echo "pw_ok 0"; return ;; esac
+  { printf '%s\n' "$ix" | sed 's/^/i./'
+    J "$@" "$B/api/v1/indexerstatus" | sed 's/^/s./'
+    J "$@" "$B/api/v1/indexerstats?startDate=$(day -1)&endDate=$(day 0)" | sed 's/^/t./'
+  } | awk -v now="$(date +%s)" "$LOAD"'END {
+    for (i = 0; ("i." i ".id") in V; i++) { all++; if (V["i." i ".enable"] == "true") on++; N[V["i." i ".id"]] = V["i." i ".name"] }
+    # indexers Prowlarr has switched off after failures, until disabledTill
+    for (i = 0; ("s." i ".indexerId") in V; i++) if (ep(V["s." i ".disabledTill"]) > now) { bad++; print "pwb|" N[V["s." i ".indexerId"]] }
+    for (i = 0; ("t.indexers." i ".indexerId") in V; i++) { q += V["t.indexers." i ".numberOfQueries"]; g += V["t.indexers." i ".numberOfGrabs"]; e += V["t.indexers." i ".numberOfFailedQueries"] }
+    print "pw_all " all + 0; print "pw_on " on + 0; print "pw_bad " bad + 0; print "pw_q " q + 0; print "pw_g " g + 0; print "pw_fail " e + 0 }'
+}
+
+overseerr() {
+  J --header "X-Api-Key: ${OVERSEERR_KEY:-}" "${OVERSEERR_URL%/}/api/v1/request/count" | awk "$LOAD"'END {
+    if (!("total" in V)) { print "ov_ok 0"; exit }
+    print "ov_ok 1"; print "ov_pending " V["pending"] + 0; print "ov_processing " V["processing"] + 0; print "ov_available " V["available"] + 0; print "ov_total " V["total"] + 0 }'
+}
+
+immich() {
+  J --header "x-api-key: ${IMMICH_KEY:-}" "${IMMICH_URL%/}/api/server/statistics" | awk "$LOAD"'END {
+    if (!("photos" in V)) { print "im_ok 0"; exit }
+    print "im_ok 1"; print "im_photos " V["photos"] + 0; print "im_videos " V["videos"] + 0; print "im_usage " V["usage"] + 0
+    for (i = 0; ("usageByUser." i ".userName") in V; i++) { u = "usageByUser." i "."; print "imu|" V[u "userName"] "|" V[u "photos"] + 0 "|" V[u "videos"] + 0 "|" V[u "usage"] + 0 } }'
+}
+
+SVCS="agh:ADGUARD_URL qb:QBIT_URL plex:PLEX_URL sonarr:SONARR_URL radarr:RADARR_URL prowlarr:PROWLARR_URL overseerr:OVERSEERR_URL immich:IMMICH_URL"
+case "${1:-}" in
+  "") ;;
+  agh|qb|plex|sonarr|radarr|prowlarr|overseerr|immich) "$1"; exit ;;
+  *) echo "usage: ext [agh|qb|plex|sonarr|radarr|prowlarr|overseerr|immich]" >&2; exit 2 ;;
+esac
+D=${KEENDASH_TMP:-/tmp/keendash}; mkdir -p "$D"
+# svc, not a short name: the collectors share the shell's variables (plex sets s)
+for x in $SVCS; do
+  svc=${x%%:*}; eval "u=\${${x#*:}:-}"
+  # 2>/dev/null: the shell reports a wget killed by its deadline as "Terminated"
+  if [ -n "$u" ]; then ( "$svc" > "$D/new.$svc" 2>/dev/null; mv "$D/new.$svc" "$D/x.$svc" ) &
+  else rm -f "$D/x.$svc"; fi
+done
+wait

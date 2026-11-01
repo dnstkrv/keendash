@@ -1,0 +1,27 @@
+{
+  "indexers": [
+    {
+      "indexerId": 1,
+      "indexerName": "Tracker One",
+      "averageResponseTime": 500,
+      "numberOfQueries": 40,
+      "numberOfGrabs": 3,
+      "numberOfFailedQueries": 1
+    },
+    {
+      "indexerId": 2,
+      "indexerName": "Tracker Two",
+      "numberOfQueries": 10,
+      "numberOfGrabs": 1,
+      "numberOfFailedQueries": 4
+    }
+  ],
+  "userAgents": [
+    {
+      "userAgent": "Sonarr",
+      "numberOfQueries": 50,
+      "numberOfGrabs": 4
+    }
+  ],
+  "hosts": []
+}

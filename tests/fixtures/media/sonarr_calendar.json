@@ -1,0 +1,28 @@
+[
+  {
+    "seriesId": 1,
+    "seasonNumber": 2,
+    "episodeNumber": 6,
+    "title": "Next",
+    "airDateUtc": "2026-11-03T01:00:00Z",
+    "hasFile": false,
+    "series": {
+      "title": "Example Show",
+      "id": 1
+    },
+    "id": 21
+  },
+  {
+    "seriesId": 3,
+    "seasonNumber": 1,
+    "episodeNumber": 1,
+    "title": "Premiere",
+    "airDateUtc": "2026-11-05T20:30:00Z",
+    "hasFile": true,
+    "series": {
+      "title": "New Show",
+      "id": 3
+    },
+    "id": 22
+  }
+]

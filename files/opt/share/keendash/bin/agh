@@ -1,0 +1,67 @@
+#!/bin/sh
+# AdGuard Home stats from its HTTP API (basic auth): ADGUARD_URL / ADGUARD_USER / ADGUARD_PASS in keendash.conf.
+# Prints "agh_* value" lines plus ab|domain|count (top blocked), ac|name|client|count (top clients),
+# al|time|domain|client (recent blocks).
+PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+ADGUARD_URL=""; [ -f "${KEENDASH_CONF:-/opt/etc/keendash/keendash.conf}" ] && . "${KEENDASH_CONF:-/opt/etc/keendash/keendash.conf}"
+[ -n "$ADGUARD_URL" ] || exit 0
+G=${ADGUARD_URL%/}
+AUTH="Authorization: Basic $(printf '%s:%s' "$ADGUARD_USER" "$ADGUARD_PASS" | base64 | tr -d '\n')"
+# own deadline: busybox wget may have no -T, GNU wget waits 15 minutes by default
+gget() {
+  wget -qO- --header "$AUTH" "$G$1" 2>/dev/null & p=$!
+  ( sleep 4; kill $p ) >/dev/null 2>&1 & k=$!
+  wait $p; kill $k 2>/dev/null
+}
+st=$(gget /control/stats)
+if [ -n "$st" ]; then
+  echo "agh_ok 1"
+  # ISO 8601 UTC -> unix time
+  EP='function ep(s,  y, m, d) { y = substr(s, 1, 4) + 0; m = substr(s, 6, 2) + 0; d = substr(s, 9, 2) + 0; if (m < 3) { y--; m += 12 }
+    return (365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + d - 719469) * 86400 + substr(s, 12, 2) * 3600 + substr(s, 15, 2) * 60 + substr(s, 18, 2) }'
+  # persistent and runtime client names by IP / client ID
+  names=$(gget /control/clients | awk '{
+    i = index($0, "\"auto_clients\""); pc = i ? substr($0, 1, i) : $0; ac = i ? substr($0, i) : ""
+    n = split(pc, a, "\"name\":\""); for (j = 2; j <= n; j++) {
+      nm = substr(a[j], 1, index(a[j], "\"") - 1)
+      if (match(a[j], /"ids":\[[^]]*\]/)) { ids = substr(a[j], RSTART + 7, RLENGTH - 8); gsub(/"/, "", ids); m = split(ids, x, ","); for (q = 1; q <= m; q++) print x[q] "|" nm }
+    }
+    n = split(ac, a, "{"); for (j = 2; j <= n; j++)
+      if (match(a[j], /"ip":"[^"]*"/)) { ip = substr(a[j], RSTART + 6, RLENGTH - 7); if (match(a[j], /"name":"[^"]*"/)) print ip "|" substr(a[j], RSTART + 8, RLENGTH - 9) }
+  }')
+  printf '%s\n' "$st" | awk -v names="$names" '
+    function arr(k) { return match($0, "\"" k "\":\\[[0-9,]*\\]") ? substr($0, RSTART + length(k) + 4, RLENGTH - length(k) - 5) : "" }
+    function num(k) { return match($0, "\"" k "\":[0-9.eE+-]+") ? substr($0, RSTART + length(k) + 3, RLENGTH - length(k) - 3) + 0 : 0 }
+    # "key":[{"name":count},...] -> top rows
+    function top(k, t, c, s, n, i, e, v) {
+      if (!match($0, "\"" k "\":\\[[^]]*\\]")) return
+      s = substr($0, RSTART, RLENGTH); n = split(s, e, "[}],[{]")
+      for (i = 1; i <= n && i <= 5; i++) if (match(e[i], /"[^"]+":[0-9]+/)) {
+        v = substr(e[i], RSTART + 1, RLENGTH - 1); c = substr(v, index(v, "\":") + 2); v = substr(v, 1, index(v, "\":") - 1); gsub(/\|/, "/", v)
+        print (t == "ac" ? "ac|" (v in N ? N[v] : "") "|" v : "ab|" v) "|" c
+      } }
+    BEGIN { n = split(names, a, "\n"); for (i = 1; i <= n; i++) { j = index(a[i], "|"); if (j) N[substr(a[i], 1, j - 1)] = substr(a[i], j + 1) } }
+    { print "agh_q " num("num_dns_queries"); print "agh_b " num("num_blocked_filtering")
+      print "agh_ms " int(num("avg_processing_time") * 1000 + 0.5); print "agh_days " (/"time_units":"days"/ ? 1 : 0)
+      print "agh_sq " arr("dns_queries"); print "agh_sb " arr("blocked_filtering")
+      top("top_blocked_domains", "ab"); top("top_clients", "ac") }'
+  # enabled block lists only (allowlists come after "whitelist_filters")
+  gget /control/filtering/status | awk "$EP"'{
+    i = index($0, "\"whitelist_filters\""); if (i) $0 = substr($0, 1, i)
+    n = split($0, f, "[{]\"url\":"); for (j = 2; j <= n; j++) { all++
+      if (f[j] !~ /"enabled":true/) continue
+      on++; if (match(f[j], /"rules_count":[0-9]+/)) r += substr(f[j], RSTART + 14, RLENGTH - 14)
+      if (match(f[j], /"last_updated":"[^"]*"/)) { t = ep(substr(f[j], RSTART + 16, 19)); if (t > u) u = t } }
+    print "agh_fon " on + 0; print "agh_fall " all + 0; print "agh_rules " r + 0; print "agh_upd " u + 0 }'
+  # recent blocks: al|time|domain|client; entry keys are sorted, so each starts at "answer_dnssec"
+  gget "/control/querylog?limit=5&response_status=blocked" | awk "$EP"'{
+    n = split($0, e, "\"answer_dnssec\":"); for (j = 2; j <= n; j++) {
+      c = match(e[j], /"client":"[^"]*"/) ? substr(e[j], RSTART + 10, RLENGTH - 11) : ""
+      i = index(e[j], "\"client_info\""); q = index(e[j], "\"question\"")
+      nm = (i && q > i && match(substr(e[j], i, q - i), /"name":"[^"]*"/)) ? substr(substr(e[j], i, q - i), RSTART + 8, RLENGTH - 9) : ""
+      d = match(substr(e[j], q), /"name":"[^"]*"/) ? substr(substr(e[j], q), RSTART + 8, RLENGTH - 9) : ""
+      t = match(e[j], /"time":"[^"]*"/) ? ep(substr(e[j], RSTART + 8, 19)) : 0
+      cl = nm != "" ? nm : c; gsub(/\|/, "/", cl)
+      if (d != "") print "al|" t "|" d "|" cl } }'
+else echo "agh_ok 0"; fi

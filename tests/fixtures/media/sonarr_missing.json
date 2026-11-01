@@ -1,0 +1,14 @@
+{
+  "page": 1,
+  "pageSize": 1,
+  "totalRecords": 129,
+  "records": [
+    {
+      "seriesId": 92,
+      "seasonNumber": 4,
+      "episodeNumber": 3,
+      "title": "X",
+      "id": 5
+    }
+  ]
+}

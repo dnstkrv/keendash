@@ -1,0 +1,78 @@
+{
+  "page": 1,
+  "pageSize": 5,
+  "sortKey": "timeleft",
+  "sortDirection": "ascending",
+  "totalRecords": 7,
+  "records": [
+    {
+      "seriesId": 1,
+      "episodeId": 11,
+      "seasonNumber": 2,
+      "series": {
+        "title": "Example Show",
+        "id": 1,
+        "images": [
+          {
+            "coverType": "poster",
+            "url": "/x"
+          }
+        ]
+      },
+      "episode": {
+        "seriesId": 1,
+        "seasonNumber": 2,
+        "episodeNumber": 5,
+        "title": "Ep \"5\"",
+        "id": 11
+      },
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 7,
+          "name": "Bluray-1080p"
+        },
+        "revision": {
+          "version": 1
+        }
+      },
+      "size": 2000000000,
+      "title": "Example.Show.S02E05.1080p",
+      "sizeleft": 500000000,
+      "timeleft": "00:12:30",
+      "status": "downloading",
+      "statusMessages": [
+        {
+          "title": "msg",
+          "messages": []
+        }
+      ],
+      "id": 101
+    },
+    {
+      "seriesId": 2,
+      "episodeId": 12,
+      "seasonNumber": 1,
+      "series": {
+        "title": "Other",
+        "id": 2
+      },
+      "episode": {
+        "seasonNumber": 1,
+        "episodeNumber": 12,
+        "id": 12
+      },
+      "size": 1000,
+      "title": "Other.S01E12",
+      "sizeleft": 1000,
+      "timeleft": "1.02:03:04",
+      "status": "queued",
+      "id": 102
+    }
+  ]
+}

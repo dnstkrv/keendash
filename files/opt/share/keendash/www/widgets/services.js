@@ -8,9 +8,13 @@
   /* base URL of keendash's web server; the loader injected by keendash sets window.__keendash.base */
   var BASE = (window.__keendash && window.__keendash.base) || ("http://" + location.hostname + ":8189/");
   var API = BASE + "cgi-bin/status.cgi";
-  var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip";
+  var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip", MTABKEY = "ui.services.media";
   var TITLE = "Сервисы";
-  var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["ascn", "Antiscan"], ["sys", "Система"]];
+  var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["agh", "AdGuard"], ["media", "Медиа"], ["ascn", "Antiscan"], ["sys", "Система"]];
+  /* "Медиа" tab: one sub-tab per configured service; [id, name, its keendash.conf keys] */
+  var MEDIA = [["qb", "qBittorrent", "QBIT_URL, QBIT_USER и QBIT_PASS"], ["plex", "Plex", "PLEX_URL и PLEX_TOKEN"], ["sonarr", "Sonarr", "SONARR_URL и SONARR_KEY"],
+    ["radarr", "Radarr", "RADARR_URL и RADARR_KEY"], ["prowlarr", "Prowlarr", "PROWLARR_URL и PROWLARR_KEY"], ["overseerr", "Overseerr", "OVERSEERR_URL и OVERSEERR_KEY"],
+    ["immich", "Immich", "IMMICH_URL и IMMICH_KEY"]];
   /* tab id -> services whose web UI the "Открыть" link points to (link itself is auto-detected) */
   var TABSVC = { telemt: ["telemt-panel"], awg: ["awg-manager"], firc: ["firc"], nfqws: ["nfqws2", "nfqws"], hydra: ["hrweb"] };
   var TABWEB = { nfqws: /nfqws/i };
@@ -22,6 +26,8 @@
   /* upgrade started from this page: target version; upRun once update.cgi accepted it; upErr after a failed one */
   var upTo = "", upRun = false, upErr = false, upTimer = null;
   try { tab = localStorage.getItem(TABKEY) || "telemt"; } catch (e) {}
+  var mtab = "";
+  try { mtab = localStorage.getItem(MTABKEY) || ""; } catch (e) {}
 
   function loadPos() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; } }
   function savePos(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
@@ -188,6 +194,115 @@
     });
     return h;
   }
+  function fmtN(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+  function hhmm(t) { var x = new Date(t * 1000); return ("0" + x.getHours()).slice(-2) + ":" + ("0" + x.getMinutes()).slice(-2); }
+  /* third-party services: ok is null until keendash's cron has asked their API once */
+  var WAIT = "Данные появятся в течение минуты";
+  function apiErr(name, keys) { return '<span style="color:' + BAD + '">API ' + name + " недоступен</span> · проверьте " + keys + " в keendash.conf"; }
+  /* a third-party service's own address, with the router's loopback made reachable from the browser */
+  function extUrl(u) { return u ? u.replace(/\/\/(127\.0\.0\.1|localhost)(?=[:\/]|$)/, "//" + location.hostname).replace(/\/?$/, "/") : ""; }
+  function tabAgh(d) {
+    var a = d.agh || {}, sq = a.sq || [];
+    if (a.ok == null) return note(WAIT);
+    if (!a.ok) return note(apiErr("AdGuard Home", "ADGUARD_URL, ADGUARD_USER и ADGUARD_PASS"));
+    var h = '<div class="us-grid">' + blk("Запросов за " + sq.length + (a.days ? " дн" : " ч"), fmtN(a.q), sq, ACC) +
+      blk("Заблокировано", fmtN(a.b) + (a.q ? " · " + (a.b / a.q * 100).toFixed(1) + "%" : ""), a.sb || [], BAD) + "</div>";
+    h += note("Среднее время ответа <b>" + a.ms + " мс</b> · фильтров <b>" + a.fon + " из " + a.fall + "</b> · правил <b>" + fmtN(a.rules) + "</b>" +
+      (a.upd ? " · обновлены <b>" + fmtDur((d.now || Date.now() / 1000) - a.upd) + "</b> назад" : ""));
+    if ((a.top || []).length) {
+      h += sec("Заблокировано чаще всего");
+      a.top.forEach(function (x) { h += line(BAD, esc(x[0]), fmtN(x[1])); });
+    }
+    if ((a.cl || []).length) {
+      h += sec("Активные клиенты");
+      a.cl.forEach(function (x) { h += line(OK, x[0] ? esc(x[0]) + ' <span class="us-tag">' + esc(x[1]) + "</span>" : esc(x[1]), fmtN(x[2])); });
+    }
+    if ((a.last || []).length) {
+      h += sec("Последние блокировки");
+      a.last.forEach(function (x) { h += line(WARN, esc(x[1]), esc(x[2]) + " · " + hhmm(x[0])); });
+    }
+    return h;
+  }
+  function dm(t) { var x = new Date(t * 1000); return ("0" + x.getDate()).slice(-2) + "." + ("0" + (x.getMonth() + 1)).slice(-2); }
+  /* Sonarr / Radarr: queue, missing, the coming week; cal(c) -> [left, right, dim] */
+  function arrView(x, what, cal) {
+    var h = line(x.queue ? ACC : OFF, "В очереди", x.queue);
+    if (x.missing != null) h += line(x.missing ? WARN : OK, "Не скачано " + what, fmtN(x.missing));
+    if ((x.list || []).length) {
+      h += sec("Загружается");
+      x.list.forEach(function (q) { h += line(ACC, esc(q[0]), q[1] + "%" + (q[2] >= 0 ? " · " + fmtDur(q[2]) : "")); });
+    }
+    if ((x.cal || []).length) {
+      h += sec("Выходит на этой неделе");
+      x.cal.forEach(function (c) { var r = cal(c); h += line(r[2] ? OFF : OK, r[0], r[1], r[2]); });
+    }
+    return h;
+  }
+  var RKIND = { c: "в кино", d: "цифровой релиз", p: "на диске" };
+  var MVIEW = {
+    qb: function (x, s) {
+      var h = '<div class="us-grid">' + blk("Загрузка", fmtBytes(x.dl) + "/с", s.qb_dl || [], ACC) + blk("Отдача", fmtBytes(x.up) + "/с", s.qb_up || [], OK) + "</div>";
+      if (!x.n) return h + note("Активных загрузок нет");
+      h += sec("Загружается (" + x.n + ")");
+      (x.list || []).forEach(function (t) {
+        h += line(t[2] ? ACC : OFF, esc(t[0]), (t[1] / 10).toFixed(1) + "%" + (t[2] ? " · " + fmtBytes(t[2]) + "/с" : "") + (t[3] > 0 && t[3] < 8640000 ? " · " + fmtDur(t[3]) : ""), !t[2]);
+      });
+      if (x.n > (x.list || []).length) h += note("и ещё " + (x.n - (x.list || []).length));
+      return h;
+    },
+    plex: function (x) {
+      var h = line(x.streams ? OK : OFF, "Сейчас смотрят", x.streams);
+      (x.list || []).forEach(function (p) { h += line(p[3] === "playing" ? OK : WARN, esc(p[1]), esc(p[0]) + " · " + p[2] + "%" + (p[3] === "paused" ? " · пауза" : "")); });
+      if ((x.libs || []).length) {
+        h += sec("Библиотеки");
+        x.libs.forEach(function (l) { h += line(ACC, esc(l[0]), fmtN(l[2])); });
+      }
+      return h;
+    },
+    sonarr: function (x) { return arrView(x, "серий", function (c) { return [esc(c[1]) + " " + esc(c[2]), dm(c[0]) + " " + hhmm(c[0]), c[3]]; }); },
+    radarr: function (x) { return arrView(x, "фильмов", function (c) { return [esc(c[1]), (RKIND[c[2]] || c[2]) + " · " + dm(c[0]), 0]; }); },
+    prowlarr: function (x) {
+      var h = line(x.bad ? WARN : OK, "Индексаторы", "включено " + x.on + " из " + x.all);
+      h += line(x.fail ? WARN : ACC, "Запросов за 24 ч", fmtN(x.q) + (x.fail ? " · с ошибкой " + fmtN(x.fail) : ""));
+      h += line(ACC, "Скачиваний за 24 ч", fmtN(x.g));
+      if ((x.list || []).length) {
+        h += sec("Отключены после ошибок");
+        x.list.forEach(function (n) { h += line(BAD, esc(n), ""); });
+      }
+      return h;
+    },
+    overseerr: function (x) {
+      return line(x.pending ? WARN : OK, "Ждут одобрения", x.pending) + line(ACC, "В работе", x.processing) +
+        line(OK, "Доступны", x.available) + line(OFF, "Всего запросов", x.total);
+    },
+    immich: function (x) {
+      var h = '<div class="us-grid">' + blk("Фото", fmtN(x.photos), null) + blk("Видео", fmtN(x.videos), null) + blk("Занято", fmtBytes(x.usage), null) + "</div>";
+      if ((x.list || []).length > 1) {
+        h += sec("Пользователи");
+        x.list.forEach(function (u) { h += line(ACC, esc(u[0]), fmtN(u[1]) + " фото · " + fmtN(u[2]) + " видео · " + fmtBytes(u[3])); });
+      }
+      return h;
+    }
+  };
+  /* configured media services as [id, name, keys, url]; keeps mtab on one of them */
+  function mediaOn(d) {
+    var urls = {};
+    ((d.media || {}).svc || []).forEach(function (x) { urls[x[0]] = x[1]; });
+    var on = MEDIA.filter(function (m) { return urls.hasOwnProperty(m[0]); }).map(function (m) { return m.concat([urls[m[0]]]); });
+    if (on.length && !on.some(function (m) { return m[0] === mtab; })) mtab = on[0][0];
+    return on;
+  }
+  function tabMedia(d, s) {
+    var on = mediaOn(d), h = "";
+    if (on.length > 1) {
+      h = '<div class="us-sub">';
+      on.forEach(function (m) { h += '<button type="button" class="us-mt' + (m[0] === mtab ? " us-on" : "") + '" data-m="' + m[0] + '">' + m[1] + "</button>"; });
+      h += "</div>";
+    }
+    var m = on.filter(function (x) { return x[0] === mtab; })[0], x = (d.media || {})[mtab] || {};
+    if (!m) return note(WAIT);
+    return h + (x.ok == null ? note(WAIT) : !x.ok ? note(apiErr(m[1], m[2])) : MVIEW[mtab](x, s, d));
+  }
   function tabLinks(id, svc, web) {
     var re = TABWEB[id], out = [], names = TABSVC[id] || [];
     (web || []).forEach(function (w) {
@@ -286,13 +401,15 @@
     h += '</div><div class="us-tabs"><div class="us-tl">';
     avail.forEach(function (t) { h += '<button type="button" class="us-tab' + (t[0] === tab ? " us-on" : "") + '" data-tab="' + t[0] + '">' + t[1] + "</button>"; });
     h += "</div>";
-    var tls = tabLinks(tab, svc, d.web);
+    /* third-party services may run anywhere: link to the address from keendash.conf */
+    var eu = tab === "agh" ? d.agh && d.agh.url : tab === "media" ? (mediaOn(d).filter(function (m) { return m[0] === mtab; })[0] || [])[3] : null;
+    var tls = tab === "agh" || tab === "media" ? (eu ? [["", extUrl(eu)]] : []) : tabLinks(tab, svc, d.web);
     tls.forEach(function (x) {
       h += '<a class="us-open" href="' + esc(x[1]) + '" target="_blank" rel="noopener">' + (tls.length > 1 ? esc(x[0]) + " ↗" : "Открыть ↗") + "</a>";
     });
     h += "</div>";
     var s = d.series || {};
-    h += (tab === "awg" ? tabAwg : tab === "firc" ? tabFirc : tab === "ascn" ? tabAscn : tab === "nfqws" ? tabNfqws : tab === "hydra" ? tabHydra : tab === "sys" ? tabSys : tabTelemt)(d, s);
+    h += (tab === "awg" ? tabAwg : tab === "firc" ? tabFirc : tab === "ascn" ? tabAscn : tab === "nfqws" ? tabNfqws : tab === "hydra" ? tabHydra : tab === "agh" ? tabAgh : tab === "media" ? tabMedia : tab === "sys" ? tabSys : tabTelemt)(d, s);
     bodyEl.innerHTML = h;
     /* re-rendering resets the tab strip's scroll: keep the active tab visible */
     var tl = bodyEl.querySelector(".us-tl"), on = tl && tl.querySelector(".us-on");
@@ -326,6 +443,9 @@
       ".us-tab:hover{opacity:.9}.us-tab.us-on{opacity:1;border-bottom-color:" + ACC + ";font-weight:600}" +
       ".us-open{margin-left:8px;flex:none;font-size:12px;color:" + ACC + ";text-decoration:none;white-space:nowrap}.us-open:hover{text-decoration:underline}" +
       ".us-open + .us-open{margin-left:10px}" +
+      ".us-sub{display:flex;flex-wrap:wrap;gap:6px}" +
+      ".us-mt{background:none;border:1px solid rgba(128,128,128,.35);border-radius:12px;color:inherit;opacity:.7;font:inherit;font-size:12px;padding:2px 10px;cursor:pointer;white-space:nowrap}" +
+      ".us-mt:hover{opacity:1}.us-mt.us-on{opacity:1;border-color:" + ACC + ";color:" + ACC + "}" +
       ".us-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}" +
       ".us-blk{display:flex;flex-direction:column;gap:6px;min-width:0}" +
       ".us-bh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}" +
@@ -381,6 +501,13 @@
       if (u) {
         if (u.classList.contains("us-upd-go")) startUpdate(u.getAttribute("data-v"));
         else { try { localStorage.setItem(SKIPKEY, u.getAttribute("data-v")); } catch (x) {} upErr = false; render(); }
+        return;
+      }
+      var mt = e.target.closest ? e.target.closest(".us-mt") : null;
+      if (mt) {
+        mtab = mt.getAttribute("data-m");
+        try { localStorage.setItem(MTABKEY, mtab); } catch (x) {}
+        render();
         return;
       }
       var b = e.target.closest ? e.target.closest(".us-tab") : null;

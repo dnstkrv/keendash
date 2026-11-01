@@ -7,6 +7,7 @@ S=$(/opt/share/keendash/bin/stats)
 V=$(/opt/share/keendash/bin/services)
 v() { printf '%s\n' "$S" | awk -v k="$1" '$1==k{print $2; f=1; exit} END{if(!f) print 0}'; }
 vn() { printf '%s\n' "$S" | awk -v k="$1" '$1==k{print $2; f=1; exit} END{if(!f) print "null"}'; }
+raw() { printf '%s\n' "$S" | awk -v k="$1" '$1==k{print $2; exit}'; }
 ser() { f=/tmp/keendash/$1; [ -s "$f" ] && awk 'NR>1{printf ","}{printf "%s",$1}' "$f"; }
 rows() { printf '%s\n' "$S" | awk -F'|' -v t="$1" '$1==t{ gsub(/"/,"",$2); '"$2"' }'; }
 
@@ -32,10 +33,39 @@ printf '],"mon":['
 rows m 'printf "%s[\"%s\",%s,%s,%s]", (n++?",":""), $2,$3,$4,$5'
 printf ']},"hydra":{"run":%s,"up":%s,"mem":%s,"keys":%s,"ips":%s,"list":[' "$(v hr_running)" "$(v hr_up)" "$(v hr_mem)" "$(v hr_keys)" "$(v hr_ips)"
 rows hr 'printf "%s[\"%s\",%s,%s,%s,%s]", (n++?",":""), $2,$3,$4,$5,$6'
-printf ']},"sys":{"load":%s,"mem":%s,"memtotal":%s,"temp":%s,"disk":%s,"free":%s,"up":%s}' "$(v sys_load)" "$(v sys_mem)" "$(v sys_memtotal)" "$(vn sys_temp)" "$(v sys_disk)" "$(v sys_free)" "$(v sys_uptime)"
+printf ']},"agh":{"ok":%s,"url":"%s","q":%s,"b":%s,"ms":%s,"days":%s,"fon":%s,"fall":%s,"rules":%s,"upd":%s,"sq":[%s],"sb":[%s],"top":[' "$(vn agh_ok)" "$(raw agh_url | tr -d '"\\')" "$(v agh_q)" "$(v agh_b)" "$(v agh_ms)" "$(v agh_days)" "$(v agh_fon)" "$(v agh_fall)" "$(v agh_rules)" "$(v agh_upd)" "$(raw agh_sq)" "$(raw agh_sb)"
+rows ab 'printf "%s[\"%s\",%s]", (n++?",":""), $2,$3'
+printf '],"cl":['
+rows ac 'gsub(/\\/,"",$2); printf "%s[\"%s\",\"%s\",%s]", (n++?",":""), $2,$3,$4'
+printf '],"last":['
+rows al 'gsub(/[\\"]/,"",$4); printf "%s[%s,\"%s\",\"%s\"]", (n++?",":""), $2,$3,$4'
+# media services: "ok" is null until bin/ext has asked the API once
+printf ']},"media":{"svc":['
+rows ms 'gsub(/[\\"]/,"",$3); printf "%s[\"%s\",\"%s\"]", (n++?",":""), $2,$3'
+printf '],"qb":{"ok":%s,"dl":%s,"up":%s,"n":%s,"list":[' "$(vn qb_ok)" "$(v qb_dl)" "$(v qb_up)" "$(v qb_n)"
+rows qbt 'gsub(/[\\"]/,"",$2); printf "%s[\"%s\",%s,%s,%s]", (n++?",":""), $2,$3,$4,$5'
+printf ']},"plex":{"ok":%s,"streams":%s,"list":[' "$(vn pl_ok)" "$(v pl_streams)"
+rows pls 'gsub(/[\\"]/,"",$2); gsub(/[\\"]/,"",$3); gsub(/[\\"]/,"",$5); printf "%s[\"%s\",\"%s\",%s,\"%s\"]", (n++?",":""), $2,$3,$4,$5'
+printf '],"libs":['
+rows pll 'gsub(/[\\"]/,"",$2); gsub(/[\\"]/,"",$3); printf "%s[\"%s\",\"%s\",%s]", (n++?",":""), $2,$3,$4'
+printf ']},"sonarr":{"ok":%s,"queue":%s,"missing":%s,"list":[' "$(vn sn_ok)" "$(v sn_queue)" "$(vn sn_missing)"
+rows snq 'gsub(/[\\"]/,"",$2); printf "%s[\"%s\",%s,%s]", (n++?",":""), $2,$3,$4'
+printf '],"cal":['
+rows snc 'gsub(/[\\"]/,"",$3); printf "%s[%s,\"%s\",\"%s\",%s]", (n++?",":""), $2,$3,$4,$5'
+printf ']},"radarr":{"ok":%s,"queue":%s,"missing":%s,"list":[' "$(vn rd_ok)" "$(v rd_queue)" "$(vn rd_missing)"
+rows rdq 'gsub(/[\\"]/,"",$2); printf "%s[\"%s\",%s,%s]", (n++?",":""), $2,$3,$4'
+printf '],"cal":['
+rows rdc 'gsub(/[\\"]/,"",$3); printf "%s[%s,\"%s\",\"%s\"]", (n++?",":""), $2,$3,$4'
+printf ']},"prowlarr":{"ok":%s,"all":%s,"on":%s,"bad":%s,"q":%s,"g":%s,"fail":%s,"list":[' "$(vn pw_ok)" "$(v pw_all)" "$(v pw_on)" "$(v pw_bad)" "$(v pw_q)" "$(v pw_g)" "$(v pw_fail)"
+rows pwb 'gsub(/[\\"]/,"",$2); printf "%s\"%s\"", (n++?",":""), $2'
+printf ']},"overseerr":{"ok":%s,"pending":%s,"processing":%s,"available":%s,"total":%s}' "$(vn ov_ok)" "$(v ov_pending)" "$(v ov_processing)" "$(v ov_available)" "$(v ov_total)"
+printf ',"immich":{"ok":%s,"photos":%s,"videos":%s,"usage":%s,"list":[' "$(vn im_ok)" "$(v im_photos)" "$(v im_videos)" "$(v im_usage)"
+rows imu 'gsub(/[\\"]/,"",$2); printf "%s[\"%s\",%s,%s,%s]", (n++?",":""), $2,$3,$4,$5'
+printf ']}}'
+printf ',"sys":{"load":%s,"mem":%s,"memtotal":%s,"temp":%s,"disk":%s,"free":%s,"up":%s}' "$(v sys_load)" "$(v sys_mem)" "$(v sys_memtotal)" "$(vn sys_temp)" "$(v sys_disk)" "$(v sys_free)" "$(v sys_uptime)"
 printf ',"series":{'
 sep=''
-for k in telemt_conn telemt_octets awg_bytes awg_up firc_domains ascn_ips ascn_honeypot nfq_pkts nfq_auto hr_ips sys_load sys_mem sys_temp; do
+for k in telemt_conn telemt_octets awg_bytes awg_up firc_domains ascn_ips ascn_honeypot nfq_pkts nfq_auto hr_ips qb_dl qb_up sys_load sys_mem sys_temp; do
   printf '%s"%s":[%s]' "$sep" "$k" "$(ser $k)"; sep=','
 done
 printf '}'

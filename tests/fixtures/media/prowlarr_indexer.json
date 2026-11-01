@@ -1,0 +1,116 @@
+[
+  {
+    "indexerUrls": [
+      "https://x/"
+    ],
+    "definitionName": "tracker one",
+    "description": "d",
+    "enable": true,
+    "protocol": "torrent",
+    "priority": 25,
+    "fields": [
+      {
+        "order": 0,
+        "name": "baseUrl",
+        "value": "https://x/"
+      },
+      {
+        "order": 1,
+        "name": "username",
+        "value": ""
+      }
+    ],
+    "capabilities": {
+      "categories": [
+        {
+          "id": 2000,
+          "name": "Movies",
+          "subCategories": [
+            {
+              "id": 2010,
+              "name": "Movies/Foreign"
+            }
+          ]
+        }
+      ]
+    },
+    "name": "Tracker One",
+    "id": 1
+  },
+  {
+    "indexerUrls": [
+      "https://x/"
+    ],
+    "definitionName": "tracker two",
+    "description": "d",
+    "enable": true,
+    "protocol": "torrent",
+    "priority": 25,
+    "fields": [
+      {
+        "order": 0,
+        "name": "baseUrl",
+        "value": "https://x/"
+      },
+      {
+        "order": 1,
+        "name": "username",
+        "value": ""
+      }
+    ],
+    "capabilities": {
+      "categories": [
+        {
+          "id": 2000,
+          "name": "Movies",
+          "subCategories": [
+            {
+              "id": 2010,
+              "name": "Movies/Foreign"
+            }
+          ]
+        }
+      ]
+    },
+    "name": "Tracker Two",
+    "id": 2
+  },
+  {
+    "indexerUrls": [
+      "https://x/"
+    ],
+    "definitionName": "off tracker",
+    "description": "d",
+    "enable": false,
+    "protocol": "torrent",
+    "priority": 25,
+    "fields": [
+      {
+        "order": 0,
+        "name": "baseUrl",
+        "value": "https://x/"
+      },
+      {
+        "order": 1,
+        "name": "username",
+        "value": ""
+      }
+    ],
+    "capabilities": {
+      "categories": [
+        {
+          "id": 2000,
+          "name": "Movies",
+          "subCategories": [
+            {
+              "id": 2010,
+              "name": "Movies/Foreign"
+            }
+          ]
+        }
+      ]
+    },
+    "name": "Off Tracker",
+    "id": 3
+  }
+]

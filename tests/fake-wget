@@ -1,0 +1,40 @@
+#!/bin/sh
+# Fake wget for the bin/ext and bin/agh tests: answers with tests/fixtures/<api>/*.json by URL (the last argument),
+# fails like a 401/403 when the service's auth header is missing.
+F=${FIX:-$(cd "$(dirname "$0")" && pwd)/fixtures}
+for u; do :; done
+a=" $* "
+need() { case "$a" in *"$1"*) ;; *) exit 8 ;; esac; }
+case "$u" in
+  # cookie only for admin / p&s=s, percent-encoded
+  */api/v2/auth/login) need "username=%61%64%6d%69%6e&password=%70%26%73%3d%73"; echo "  Set-Cookie: SID=test123; HttpOnly; path=/" >&2; exit 0 ;;
+  */api/v2/*) need "Cookie: SID=test123" ;;
+  *//plex.test/*) need "X-Plex-Token: testkey" ;;
+  *//immich.test/*) need "x-api-key: testkey" ;;
+  *//sonarr.test/* | *//radarr.test/* | *//prowlarr.test/* | *//overseerr.test/*) need "X-Api-Key: testkey" ;;
+esac
+case "$u" in
+  */control/stats) f=agh/stats ;;
+  */control/clients) f=agh/clients ;;
+  */control/filtering/status) f=agh/filtering ;;
+  */control/querylog*) f=agh/querylog ;;
+  */api/v2/transfer/info) f=media/qb_transfer ;;
+  */api/v2/torrents/info*) f=media/qb_torrents ;;
+  */status/sessions) f=media/plex_sessions ;;
+  */library/sections) f=media/plex_sections ;;
+  */library/sections/*/all*) k=${u#*/library/sections/}; f=media/plex_count_${k%%/*} ;;
+  *//sonarr.test/api/v3/queue*) f=media/sonarr_queue ;;
+  *//sonarr.test/api/v3/wanted/missing*) f=media/sonarr_missing ;;
+  *//sonarr.test/api/v3/calendar*) f=media/sonarr_calendar ;;
+  *//radarr.test/api/v3/queue*) f=media/radarr_queue ;;
+  *//radarr.test/api/v3/wanted/missing*) f=media/radarr_missing ;;
+  *//radarr.test/api/v3/calendar*) f=media/radarr_calendar ;;
+  */api/v1/indexer) f=media/prowlarr_indexer ;;
+  */api/v1/indexerstatus) f=media/prowlarr_status ;;
+  */api/v1/indexerstats*) f=media/prowlarr_stats ;;
+  */api/v1/request/count) f=media/overseerr_count ;;
+  */api/server/statistics) f=media/immich_stats ;;
+  *) exit 8 ;;
+esac
+# release dates relative to now, so the "next 7 days" filters have something to keep
+sed "s/@SOON@/$(date -u -d "@$(( $(date +%s) + 172800 ))" +%Y-%m-%dT%H:%M:%SZ)/" "$F/$f.json"

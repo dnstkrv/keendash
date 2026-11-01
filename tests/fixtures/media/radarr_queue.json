@@ -1,0 +1,21 @@
+{
+  "page": 1,
+  "pageSize": 5,
+  "totalRecords": 1,
+  "records": [
+    {
+      "movieId": 9,
+      "movie": {
+        "title": "Example Movie",
+        "year": 2026,
+        "id": 9
+      },
+      "size": 8000000000,
+      "title": "Example.Movie.2026",
+      "sizeleft": 2000000000,
+      "timeleft": "02:00:00",
+      "status": "downloading",
+      "id": 201
+    }
+  ]
+}

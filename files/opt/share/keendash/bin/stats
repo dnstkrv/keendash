@@ -5,6 +5,7 @@ export PATH
 num() { printf '%s' "$2" | grep -o "\"$1\":[0-9]*" | head -1 | cut -d: -f2; }
 cnt() { ipset list "$1" 2>/dev/null | awk 'f{n++} /^Members:/{f=1} END{print n+0}'; }
 d0() { grep . || echo 0; }
+[ -f /opt/etc/keendash/keendash.conf ] && . /opt/etc/keendash/keendash.conf
 
 # ---- which providers are installed ----
 TELEMT_CONF=/opt/etc/telemt/config.toml
@@ -23,6 +24,11 @@ HAS_HR=0; { [ -f /opt/etc/HydraRoute/hrneo.conf ] || [ -n "$HR_PID" ]; } && HAS_
 [ $HAS_ASCN = 1 ] && echo "tab|ascn"
 [ $HAS_NFQWS = 1 ] && echo "tab|nfqws"
 [ $HAS_HR = 1 ] && echo "tab|hydra"
+[ -n "${ADGUARD_URL:-}" ] && printf 'tab|agh\nagh_url %s\n' "${ADGUARD_URL%/}"
+# media services: "ms|id|url" for each configured one, and their tab when there is any
+for x in qb:QBIT_URL plex:PLEX_URL sonarr:SONARR_URL radarr:RADARR_URL prowlarr:PROWLARR_URL overseerr:OVERSEERR_URL immich:IMMICH_URL; do
+  eval "u=\${${x#*:}:-}"; [ -n "$u" ] && echo "ms|${x%%:*}|${u%/}"
+done | { ms=$(cat); [ -n "$ms" ] && printf 'tab|media\n%s\n' "$ms"; }
 echo "tab|sys"
 
 # ---- telemt (API address is read from its config) ----
@@ -173,6 +179,9 @@ if [ $HAS_HR = 1 ]; then
   [ -n "$hr" ] && printf '%s\n' "$hr"
   printf '%s\n' "$hr" | awk -F'|' '{k+=$3; i+=$4+$5} END{print "hr_keys " k+0; print "hr_ips " i+0}'
 fi
+
+# ---- third-party services (AdGuard Home, media): bin/ext keeps their API answers here, refreshed by cron ----
+cat /tmp/keendash/x.* 2>/dev/null
 
 # ---- system ----
 read l1 rest < /proc/loadavg

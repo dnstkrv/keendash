@@ -1,0 +1,1 @@
+{"MediaContainer":{"size":2,"allowSync":false,"Directory":[{"allowSync":true,"art":"/a","key":"1","type":"movie","title":"Фильмы","Location":[{"id":1,"path":"/movies"}]},{"allowSync":true,"key":"2","type":"show","title":"Сериалы","Location":[{"id":2,"path":"/tv"}]}]}}
