@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: keendash contributors
 Section: net
 Priority: optional
-Depends: busybox, cron, lighttpd, lighttpd-mod-cgi
+Depends: busybox, wget-ssl
 Source: @SOURCE@
 Installed-Size: @SIZE@
 Description: Dashboard widgets for the Keenetic web UI

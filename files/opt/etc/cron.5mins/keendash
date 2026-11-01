@@ -1,5 +1,0 @@
-#!/bin/sh
-# keendash: every 5 minutes - find services and their web UIs
-/opt/share/keendash/bin/services --discover
-# new keendash version (checks the feed at most every 6 hours)
-/opt/share/keendash/bin/update check

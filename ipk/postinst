@@ -1,8 +1,11 @@
 #!/bin/sh
-# keendash: remove the pre-1.0 layout, start the service, discover services
+# keendash: remove older layouts, start the service, discover services
 [ -x /opt/etc/init.d/S82uipatch ] && /opt/etc/init.d/S82uipatch stop >/dev/null 2>&1
 rm -f /opt/etc/init.d/S82uipatch /opt/sbin/uipatch /opt/sbin/uistats /opt/sbin/uigeo /opt/sbin/uiservices \
   /opt/etc/cron.1min/uistats-collect /opt/etc/cron.1min/uigeo-refresh /opt/etc/cron.5mins/uiservices-discover
+# up to 1.0.14: lighttpd copy, its config and log (opkg itself removes the old cron jobs and status.cgi)
+killall keendash-httpd >/dev/null 2>&1
+rm -rf /opt/sbin/keendash-httpd /opt/var/run/keendash.conf /opt/var/run/keendash.pid /opt/var/log/keendash
 /opt/etc/init.d/S81keendash restart >/dev/null 2>&1
 ( /opt/share/keendash/bin/services --discover >/dev/null 2>&1 & )
 echo "keendash installed. Reload the Keenetic web UI main page (Ctrl+F5). Settings: /opt/etc/keendash/keendash.conf"

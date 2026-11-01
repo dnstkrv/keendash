@@ -1,22 +1,18 @@
 #!/bin/sh
 # keendash: dashboard card for the Keenetic web UI. One service that
-#  1) runs a web server for the widgets (CGI status + widget scripts), and
+#  1) runs keendashd: the web server for the widgets (status JSON, CGI, widget scripts) on the LAN address only,
+#     which also runs the periodic jobs (bin/tick), and
 #  2) bind-mounts the Keenetic index.html with the widget loader (bin/patch).
-# The web server is an own lighttpd instance on the LAN address only.
 # All settings: /opt/etc/keendash/keendash.conf
 #
-# It runs from its own copy of the lighttpd binary ("keendash-httpd"): rc.func of S80lighttpd
-# stops servers with "killall lighttpd" and would otherwise take this one down too. The process
-# is found by that unique name, not by a pid file: /opt survives reboots, so a pid file left
+# The process is found by its name, not by a pid file: /opt survives reboots, so a pid file left
 # from the previous boot may point at an unrelated process.
 
 PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
-SRC=/opt/sbin/lighttpd
-BIN=/opt/sbin/keendash-httpd
-NAME=keendash-httpd
+BIN=/opt/share/keendash/bin/keendashd
+NAME=keendashd
 ENVF=/opt/etc/keendash/keendash.conf
 PATCH=/opt/share/keendash/bin/patch
-CONF=/opt/var/run/keendash.conf        # generated at every start
 WWW=/opt/share/keendash/www
 
 LAN_IFACE="br0"; LAN_IP=""; PORT=8189
@@ -39,18 +35,8 @@ detect_ip() {
     done
 }
 
-ensure_bin() {
-    # (re)copy after lighttpd was installed/updated by opkg
-    if [ ! -x "$BIN" ] || [ -L "$BIN" ] || [ "$SRC" -nt "$BIN" ]; then
-        rm -f "$BIN"; cp "$SRC" "$BIN" || return 1
-    fi
-}
-
 start() {
     if is_running; then echo "keendash already running"; return 0; fi
-    ensure_bin || { echo "keendash: cannot prepare $BIN (is the lighttpd package installed?)"; return 1; }
-    mkdir -p /opt/var/log/keendash /opt/var/run
-    rm -f /opt/var/run/keendash.pid
 
     # the server binds to the LAN address: wait (max ~30 s) until it is configured
     ip=""; n=0
@@ -64,31 +50,12 @@ start() {
         sleep 2
     done
 
-    cat > "$CONF" <<EOC
-server.modules       = ( "mod_cgi" )
-server.document-root = "$WWW"
-server.port          = $PORT
-server.bind          = "$ip"
-server.pid-file      = "/opt/var/run/keendash.pid"
-server.errorlog      = "/opt/var/log/keendash/error.log"
-server.tag           = "keendash"
-index-file.names     = ( "index.html" )
-cgi.assign           = ( ".cgi" => "" )
-mimetype.assign      = (
-    ".html" => "text/html; charset=utf-8",
-    ".css"  => "text/css; charset=utf-8",
-    ".js"   => "application/javascript; charset=utf-8",
-    ".json" => "application/json; charset=utf-8",
-    ".svg"  => "image/svg+xml",
-    ".ico"  => "image/x-icon",
-)
-EOC
-    "$BIN" -tt -f "$CONF" >/dev/null 2>&1 || { echo "keendash: bad config, see $CONF"; return 1; }
-    if "$BIN" -f "$CONF"; then
+    # keendashd goes to the background once the port is bound and prints its pid; a busy port fails here
+    if "$BIN" serve "$ip" "$PORT" "$WWW" >/dev/null; then
         echo "keendash started: http://$ip:$PORT/"
         "$PATCH" stop >/dev/null 2>&1; "$PATCH" start
     else
-        echo "keendash: failed to start (port $PORT busy?), see /opt/var/log/keendash/error.log"
+        echo "keendash: failed to start on $ip:$PORT (port busy?)"
         return 1
     fi
 }
@@ -99,7 +66,6 @@ stop() {
         killall "$NAME" 2>/dev/null
         n=0; while is_running && [ "$n" -lt 10 ]; do sleep 1; n=$((n + 1)); done
         is_running && killall -9 "$NAME" 2>/dev/null
-        rm -f /opt/var/run/keendash.pid
         echo "keendash stopped"
     else
         echo "keendash is not running"

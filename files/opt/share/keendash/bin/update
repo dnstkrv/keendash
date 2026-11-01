@@ -1,6 +1,6 @@
 #!/bin/sh
 # keendash self-update.
-#   update check - look for a newer keendash in its opkg feed (cron; at most every 6 hours)
+#   update check - look for a newer keendash in its opkg feed (bin/tick; at most every 6 hours)
 #   update run   - upgrade in the background (update.cgi); the upgrade restarts our web server
 # /opt/bin first: opkg needs wget-ssl for the https feed, not busybox wget
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin

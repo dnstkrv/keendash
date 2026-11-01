@@ -1,6 +1,6 @@
 #!/bin/sh
 # Country codes for addresses banned by antiscan.
-#   geo --refresh   look up (via ip-api.com, plain HTTP) top banned addresses missing in the cache; run from cron
+#   geo --refresh   look up (via ip-api.com, plain HTTP) top banned addresses missing in the cache; run every minute (bin/tick)
 # Cache: /opt/var/lib/keendash/geo.cache  (ip|CC).   Disable lookups: GEO=0 in /opt/etc/keendash/keendash.conf
 PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH

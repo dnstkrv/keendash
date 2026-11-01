@@ -118,17 +118,25 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     m.querySelector('[data-tab="media"]').dispatchEvent(new w.Event("click", { bubbles: true }));
     ok("media before the first cron run: wait note", /появятся в течение минуты/.test(m.textContent));
   });
-  // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers)
   const os = require("os"), cp = require("child_process");
+  // C:\x -> /c/x for Git Bash: a drive colon would split PATH
+  const unix = p => p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase());
+  // keendashd built with the host C compiler; its tests are skipped where there is none (Windows), CI has gcc
+  const kd = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kdd-")), "keendashd"), haveCc = !cp.spawnSync("cc", ["--version"]).error;
+  if (haveCc) {
+    const b = cp.spawnSync("cc", ["-std=c99", "-O2", "-Wall", "-o", kd, path.join(__dirname, "..", "src", "keendashd.c")], { encoding: "utf8" });
+    ok("keendashd builds", b.status === 0, b.stderr);
+  } else res.push("SKIP keendashd and bin/ext tests: no C compiler (cc)");
+  // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers)
   function collect(script, args, conf) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kd-"));
     fs.copyFileSync(path.join(__dirname, "fake-wget"), path.join(tmp, "wget")); fs.chmodSync(path.join(tmp, "wget"), 0o755);
+    if (haveCc) { fs.copyFileSync(kd, path.join(tmp, "keendashd")); fs.chmodSync(path.join(tmp, "keendashd"), 0o755); }
     fs.writeFileSync(path.join(tmp, "conf"), conf);
-    // the scripts pin PATH; drop that line so the fake wget comes first
-    const src = fs.readFileSync(path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", script), "utf8").replace(/^PATH=.*$/m, ":");
-    // C:\x -> /c/x for Git Bash: a drive colon would split PATH
-    const unix = p => p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase()), t = unix(tmp);
-    const out = cp.execFileSync("sh", ["-c", 'PATH="' + t + ':$PATH" KEENDASH_CONF="' + t + '/conf" FIX="' + unix(path.join(__dirname, "fixtures")) + '" sh -s ' + args], { input: src, encoding: "utf8" });
+    // the scripts pin PATH; drop that line so the fake wget comes first. They find keendashd next to themselves
+    fs.writeFileSync(path.join(tmp, script), fs.readFileSync(path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", script), "utf8").replace(/^PATH=.*$/m, ":"));
+    const t = unix(tmp);
+    const out = cp.execFileSync("sh", ["-c", 'PATH="' + t + ':$PATH" KEENDASH_CONF="' + t + '/conf" FIX="' + unix(path.join(__dirname, "fixtures")) + '" sh "' + t + "/" + script + '" ' + args], { encoding: "utf8" });
     fs.rmSync(tmp, { recursive: true, force: true });
     return out;
   }
@@ -140,7 +148,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const lines = out.split("\n"), miss = want.filter(l => lines.indexOf(l) < 0);
     ok("bin/agh: parses stats, clients, filters, query log", !miss.length && lines.filter(l => l.startsWith("ab|")).length === 5 && /^agh_sq 2200,(\d+,){22}2491$/m.test(out), miss.join(" / ") || out);
   }
-  {
+  if (haveCc) {
     const conf = "QBIT_URL=http://qb.test:8080\nQBIT_USER=admin\nQBIT_PASS='p&s=s'\nPLEX_URL=http://plex.test:32400/\nPLEX_TOKEN=testkey\n" +
       "SONARR_URL=http://sonarr.test\nSONARR_KEY=testkey\nRADARR_URL=http://radarr.test\nRADARR_KEY=testkey\nPROWLARR_URL=http://prowlarr.test\nPROWLARR_KEY=testkey\n" +
       "OVERSEERR_URL=http://overseerr.test\nOVERSEERR_KEY=testkey\nIMMICH_URL=http://immich.test\nIMMICH_KEY=testkey\n";
@@ -158,7 +166,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const extra = s === "radarr" ? /^rdc\|\d+\|Soon Movie\|d$/.test(lines[lines.length - 1]) && lines.length === 5 : lines.length === want[s].length;
       ok("bin/ext " + s, !miss.length && extra, miss.join(" / ") + " || " + lines.join(" / "));
     });
-    // cron mode: every configured service lands in its own x.<name> cache file, a dropped key removes it
+    // refresh mode (bin/tick): every configured service lands in its own x.<name> cache file, a dropped key removes it
     const cache = fs.mkdtempSync(path.join(os.tmpdir(), "kd-cache-")), cu = cache.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase());
     fs.writeFileSync(path.join(cache, "x.agh"), "agh_ok 1\n");
     collect("ext", "", conf + 'KEENDASH_TMP="' + cu + '"\n');
@@ -168,6 +176,67 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.rmSync(cache, { recursive: true, force: true });
     ok("bin/ext: wrong key -> service down", collect("ext", "sonarr", "SONARR_URL=http://sonarr.test\nSONARR_KEY=bad\n").trim() === "sn_ok 0");
     ok("bin/ext: wrong qBittorrent password -> down", collect("ext", "qb", "QBIT_URL=http://qb.test\nQBIT_USER=admin\nQBIT_PASS=x\n").trim() === "qb_ok 0");
+  }
+  if (haveCc) {
+    // keendashd json: keys and indexes joined with ".", \" \/ \\ decoded, other escapes kept, tab and | -> space
+    const j = cp.execFileSync(kd, ["json"], { encoding: "utf8", input: '{"a":[{"b":"x\\"y|z"},2],"c":{"d":null,"e":"\\/p\\\\q\\n"},"t":true,"u":"\\u00e9"}' });
+    ok("keendashd json: paths, escapes", j === 'a.0.b\tx"y z\na.1\t2\nc.d\tnull\nc.e\t/p\\q\\n\nt\ttrue\nu\t\\u00e9\n', JSON.stringify(j));
+    const jp = cp.execFileSync(kd, ["json"], { encoding: "utf8", input: '[\n  [1, -2.5e3],\n  {"k": [ {"z": "w"} ], "e": []}\n]\n' });
+    ok("keendashd json: pretty-printed, nested arrays", jp === "0.0\t1\n0.1\t-2.5e3\n1.k.0.z\tw\n", JSON.stringify(jp));
+
+    // keendashd status: stats/services output -> the card's JSON; broken numbers become 0/null, strings are escaped
+    const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));
+    fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "telemt_ok 1", "telemt_conn 12", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
+      "agh_url http://10.0.0.5:3000", "agh_ok 1", "agh_sq 1,2,x,3", "al|1793540467|ads.example.com|tv", "ms|qb|http://q", "qb_ok 0", 'pwb|Tracker "One"',
+      "sys_load 007", "sys_temp"].join("\n") + "\n");
+    fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\n");
+    fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
+    fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
+    const env = Object.assign({}, process.env, { KEENDASH_STATS: "cat '" + sd + "/stats'", KEENDASH_SERVICES: "cat '" + sd + "/services'", KEENDASH_TMP: sd });
+    let s = null;
+    try { s = JSON.parse(cp.execFileSync(kd, ["status"], { env, encoding: "utf8" })); } catch (e) { ok("keendashd status: valid JSON", false, e.message); }
+    if (s) {
+      const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      ok("keendashd status: tabs, services, links", eq(s.tabs, ["telemt", "sys"]) && eq(s.svc, [["cron", 1, ""]]) && eq(s.web, [["lighttpd", 8090, "nfqws2"]]), JSON.stringify([s.tabs, s.svc, s.web]));
+      ok("keendashd status: values, missing ones 0", s.telemt.ok === 1 && s.telemt.conn === 12 && s.telemt.users === 0 && s.sys.mem === 0, JSON.stringify(s.telemt));
+      ok("keendashd status: strings escaped", eq(s.telemt.list, [['alice "a"\\b', 3, 100, 200]]) && eq(s.media.prowlarr.list, ['Tracker "One"']), JSON.stringify(s.telemt.list));
+      ok("keendashd status: empty fields 0 / null", eq(s.awg.px, [["home", "freeturn-server", 1, 0, null, ""]]), JSON.stringify(s.awg.px));
+      ok("keendashd status: AdGuard url, series, recent", s.agh.ok === 1 && s.agh.url === "http://10.0.0.5:3000" && eq(s.agh.sq, [1, 2, 3]) && eq(s.agh.sb, []) && eq(s.agh.last, [[1793540467, "ads.example.com", "tv"]]), JSON.stringify(s.agh));
+      ok("keendashd status: media ok null until asked", eq(s.media.svc, [["qb", "http://q"]]) && s.media.qb.ok === 0 && s.media.plex.ok === null && s.media.sonarr.missing === null, JSON.stringify(s.media.qb));
+      ok("keendashd status: 007 -> 7, empty temp -> null", s.sys.load === 7 && s.sys.temp === null, JSON.stringify(s.sys));
+      ok("keendashd status: graph history, broken lines skipped", eq(s.series.sys_load, [10, 20, 30]) && eq(s.series.awg_bytes, []), JSON.stringify(s.series.sys_load));
+      ok("keendashd status: newer version", s.upd.new === "9.9.9" && s.upd.busy === 0, JSON.stringify(s.upd));
+    }
+
+    // keendashd serve: static files, CGI, the built-in status; the daemon prints its pid
+    const www = fs.mkdtempSync(path.join(os.tmpdir(), "kdw-"));
+    fs.mkdirSync(path.join(www, "widgets")); fs.mkdirSync(path.join(www, "cgi-bin"));
+    fs.writeFileSync(path.join(www, "widgets", "a.js"), "var a = 1;\n");
+    fs.writeFileSync(path.join(www, "cgi-bin", "echo.cgi"), '#!/bin/sh\nprintf "Status: 201 Created\\r\\nContent-Type: text/plain\\r\\nX-Test: 1\\r\\n\\r\\n"\necho "$REQUEST_METHOD $QUERY_STRING $HTTP_ORIGIN $(cat)"\n', { mode: 0o755 });
+    const port = 20000 + Math.floor(Math.random() * 20000);
+    const pid = parseInt(cp.execFileSync(kd, ["serve", "127.0.0.1", String(port), www], { env, encoding: "utf8" }), 10);
+    const http = require("http");
+    const get = (method, p, body, headers) => new Promise(r => {
+      const q = http.request({ host: "127.0.0.1", port, method, path: p, headers }, x => {
+        let d = ""; x.setEncoding("utf8"); x.on("data", c => d += c); x.on("end", () => r({ code: x.statusCode, h: x.headers, body: d }));
+      });
+      q.on("error", e => r({ code: 0, h: {}, body: String(e) })); if (body) q.write(body); q.end();
+    });
+    let x = await get("GET", "/widgets/a.js");
+    ok("keendashd serve: static file", pid > 0 && x.code === 200 && x.h["content-type"] === "application/javascript; charset=utf-8" && x.body === "var a = 1;\n", x.code + " " + x.body);
+    x = await get("HEAD", "/widgets/a.js");
+    ok("keendashd serve: HEAD", x.code === 200 && x.h["content-length"] === "11" && x.body === "", JSON.stringify(x));
+    ok("keendashd serve: 404", (await get("GET", "/widgets/b.js")).code === 404);
+    ok("keendashd serve: no way out of www", (await get("GET", "/widgets/../../etc/passwd")).code === 400);
+    ok("keendashd serve: 405", (await get("PUT", "/widgets/a.js")).code === 405);
+    x = await get("POST", "/cgi-bin/echo.cgi?x=1", "hi", { Origin: "http://o", "Content-Length": 2 });
+    ok("keendashd serve: CGI status, headers, env, body", x.code === 201 && x.h["x-test"] === "1" && x.body === "POST x=1 http://o hi\n", JSON.stringify(x));
+    ok("keendashd serve: missing CGI", (await get("GET", "/cgi-bin/nope.cgi")).code === 404);
+    x = await get("GET", "/cgi-bin/status.cgi");
+    let st = null; try { st = JSON.parse(x.body); } catch (e) {}
+    ok("keendashd serve: status JSON with CORS", x.code === 200 && x.h["access-control-allow-origin"] === "*" && st && st.tabs.length === 2, x.code + " " + x.body.slice(0, 200));
+    try { process.kill(pid); } catch (e) {}
+    [sd, www].forEach(d => fs.rmSync(d, { recursive: true, force: true }));
   }
   // issue #1: the only lighttpd UI is nfqws2-ui
   await run(Object.assign({}, mini, { svc: [["nfqws2", 1, ""], ["lighttpd", 1, "8090"]], web: [["lighttpd", 8090, "nfqws2"]] }), (w, m) => {

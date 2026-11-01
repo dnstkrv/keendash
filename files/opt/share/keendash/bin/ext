@@ -1,6 +1,6 @@
 #!/bin/sh
 # Third-party services (AdGuard Home, qBittorrent, Plex, Sonarr, Radarr, Prowlarr, Overseerr, Immich) over their HTTP APIs.
-# A service is on only when its *_URL key is set in keendash.conf. Their APIs can be slow or down, so cron runs this
+# A service is on only when its *_URL key is set in keendash.conf. Their APIs can be slow or down, so bin/tick runs this
 # every minute in the background: each service goes to /tmp/keendash/x.<name>, bin/stats just prints the cache.
 #   ext            refresh the cache for every configured service
 #   ext <service>  print one service to stdout (debugging, tests)
@@ -17,17 +17,8 @@ dl() {
   wait $p; r=$?; kill $k 2>/dev/null; return $r
 }
 # JSON from the API flattened to "path<TAB>value" lines: records.0.series.title<TAB>Silo
-J() { dl -qO- "$@" 2>/dev/null | grep -oE '"([^"\\]|\\.)*"|[][{}:,]|[-+.0-9a-zA-Z]+' | awk "$FLAT"; }
-# shortcut: \uXXXX escapes stay as they are; the APIs used here send UTF-8 as is
-FLAT='
-function path(  i, p) { for (i = 1; i <= d; i++) p = p (i > 1 ? "." : "") (T[i] == "{" ? K[i] : N[i]); return p }
-/^[[{]$/ { d++; T[d] = $0; N[d] = 0; K[d] = ""; W[d] = ($0 == "{"); next }
-/^[]}]$/ { d--; next }
-$0 == "," { if (T[d] == "[") N[d]++; else W[d] = 1; next }
-$0 == ":" { W[d] = 0; next }
-{ v = $0
-  if (v ~ /^"/) { v = substr(v, 2, length(v) - 2); gsub(/\\"/, "\"", v); gsub(/\\\//, "/", v); gsub(/\\\\/, "\\", v); gsub(/[\t|]/, " ", v) }
-  if (T[d] == "{" && W[d]) K[d] = v; else print path() "\t" v }'
+# shortcut: \uXXXX escapes stay as they are (keendashd json); the APIs used here send UTF-8 as is
+J() { dl -qO- "$@" 2>/dev/null | "$BIN/keendashd" json; }
 # awk prologue for the flattened lines: V[path] = value
 LOAD='BEGIN { FS = "\t" } { V[$1] = $2 }
 function pct(s, l) { return s > 0 ? int((s - l) * 100 / s) : 0 }

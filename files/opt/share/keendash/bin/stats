@@ -180,7 +180,7 @@ if [ $HAS_HR = 1 ]; then
   printf '%s\n' "$hr" | awk -F'|' '{k+=$3; i+=$4+$5} END{print "hr_keys " k+0; print "hr_ips " i+0}'
 fi
 
-# ---- third-party services (AdGuard Home, media): bin/ext keeps their API answers here, refreshed by cron ----
+# ---- third-party services (AdGuard Home, media): bin/ext keeps their API answers here, refreshed every minute ----
 cat /tmp/keendash/x.* 2>/dev/null
 
 # ---- system ----

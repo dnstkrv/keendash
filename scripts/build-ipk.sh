@@ -17,11 +17,22 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/data" "$WORK/control" "$OUT"
 cp -R "$ROOT/files/opt" "$WORK/data/opt"
 
+# keendashd, the only compiled part: static musl, so it needs nothing from Entware (zig cc cross-compiles to all three)
+# Entware mipsel/mips: mips32r2, soft-float
+case "$ARCH" in
+  aarch64-*) TARGET=aarch64-linux-musl CPU= ;;
+  mipsel-*)  TARGET=mipsel-linux-musl CPU=-mcpu=mips32r2+soft_float ;;
+  mips-*)    TARGET=mips-linux-musl CPU=-mcpu=mips32r2+soft_float ;;
+  *) echo "build-ipk.sh: no compiler target for $ARCH" >&2; exit 1 ;;
+esac
+# shellcheck disable=SC2086
+${ZIG:-zig} cc -target "$TARGET" $CPU -std=c99 -Os -s -static -Wall -o "$WORK/data/opt/share/keendash/bin/keendashd" "$ROOT/src/keendashd.c"
+
 # permissions do not depend on how the repo was checked out
 find "$WORK/data" -type d -exec chmod 755 {} +
 find "$WORK/data" -type f -exec chmod 644 {} +
 chmod 755 "$WORK"/data/opt/share/keendash/bin/* "$WORK"/data/opt/share/keendash/www/cgi-bin/* \
-          "$WORK"/data/opt/etc/init.d/* "$WORK"/data/opt/etc/cron.1min/* "$WORK"/data/opt/etc/cron.5mins/*
+          "$WORK"/data/opt/etc/init.d/*
 
 SIZE=$(du -sk "$WORK/data" | cut -f1)
 sed -e "s|@VERSION@|$VERSION|" -e "s|@ARCH@|$ARCH|" -e "s|@SOURCE@|$SOURCE|" -e "s|@SIZE@|$SIZE|" \

@@ -19,11 +19,13 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           files="scripts/*.sh ipk/postinst ipk/prerm ipk/postrm
-                 files/opt/share/keendash/bin/* files/opt/etc/init.d/* files/opt/etc/cron.1min/* files/opt/etc/cron.5mins/*
+                 files/opt/share/keendash/bin/* files/opt/etc/init.d/*
                  files/opt/share/keendash/www/cgi-bin/*"
           for f in $files; do sh -n "$f"; done
           # warnings only: the scripts target busybox ash on routers
           shellcheck -S error -s sh $files || true
+      - name: keendashd warnings
+        run: cc -std=c99 -Wall -Wextra -Werror -O2 -o /tmp/keendashd src/keendashd.c
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -44,6 +46,9 @@ jobs:
         run: |
           if [ "${GITHUB_REF_TYPE}" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v="$(cat VERSION)"; fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
       - name: build ipk
         run: sh scripts/build-ipk.sh "${{ matrix.arch }}" "${{ steps.v.outputs.version }}"
       - name: check package
@@ -51,6 +56,7 @@ jobs:
           f=$(ls dist/*.ipk)
           tar -tzf "$f"
           mkdir t && tar -xzf "$f" -C t && tar -xzf t/control.tar.gz -C t ./control && cat t/control
+          tar -xzf t/data.tar.gz -C t ./opt/share/keendash/bin/keendashd && file t/opt/share/keendash/bin/keendashd
       - uses: actions/upload-artifact@v4
         with:
           name: keendash-${{ matrix.arch }}

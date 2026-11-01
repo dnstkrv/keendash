@@ -1,0 +1,24 @@
+#!/bin/sh
+# keendash periodic jobs, run by keendashd (no cron needed):
+#   tick 1 - every minute: metrics sample (ring buffers in /tmp/keendash, ~3 h of history), third-party services, country lookups
+#   tick 5 - every 5 minutes: find services and their web UIs, new keendash version (checks the feed at most every 6 hours)
+PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
+BIN=/opt/share/keendash/bin
+D=/tmp/keendash; mkdir -p "$D"
+case "$1" in
+1)
+  $BIN/stats | while read -r k v; do
+    case "$k" in
+      telemt_conn|telemt_octets|awg_bytes|awg_up|firc_domains|ascn_ips|ascn_honeypot|nfq_pkts|nfq_auto|hr_ips|qb_dl|qb_up|sys_load|sys_mem|sys_temp)
+        f="$D/$k"; { tail -n 179 "$f" 2>/dev/null; echo "$v"; } > "$f.t" && mv "$f.t" "$f";;
+    esac
+  done
+  $BIN/ext
+  $BIN/geo --refresh
+  ;;
+5)
+  $BIN/services --discover
+  $BIN/update check
+  ;;
+*) echo "usage: tick 1|5" >&2; exit 2 ;;
+esac
