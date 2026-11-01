@@ -49,22 +49,37 @@ if [ $HAS_TELEMT = 1 ]; then
     END{ out() }'
 fi
 
-# ---- tunnels (Entware opkgtun* interfaces, e.g. awg-manager) ----
+# ---- tunnels: awg-manager's own (kernel opkgtun, native WG nwg, sing-box t2s) + every Entware opkgtun* ----
 if [ $HAS_AWG = 1 ]; then
-  echo "awg_bytes $(awk '/opkgtun/{gsub(":"," "); s+=$2+$10} END{printf "%.0f", s}' /proc/net/dev)"
-  up=0; total=0
-  for n in $(grep -o 'opkgtun[0-9]*' /proc/net/dev | sort -u); do
-    N=OpkgTun${n#opkgtun}
+  AP=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' /opt/etc/awg-manager/settings.json 2>/dev/null | head -1)
+  A="http://127.0.0.1:${AP:-2222}/api"
+  # "iface|NdmsName|name" lines; only the "tunnels" array of tunnels/all (its "system" list holds native WG servers)
+  tl=$( { wget -qO- "$A/tunnels/all" | sed -n 's/.*"tunnels":\[//p'; echo; wget -qO- "$A/singbox/tunnels"; echo; grep -o 'opkgtun[0-9]*' /proc/net/dev | sort -u; } 2>/dev/null | awk -F'|' '
+    function get(s, k) { return match(s, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"") ? substr(s, RSTART + length(k) + 4, RLENGTH - length(k) - 5) : "" }
+    /^opkgtun[0-9]+$/ { n = $0; sub(/opkgtun/, "", n); if (!s[$0]++) print $0 "|OpkgTun" n "|"; next }
+    { gsub(/\{"(id|tag)":/, "\n&"); m = split($0, o, "\n")
+      for (i = 2; i <= m; i++) {
+        f = get(o[i], "interfaceName"); if (f == "") f = get(o[i], "kernelInterface")
+        N = get(o[i], "ndmsName"); if (N == "") N = get(o[i], "proxyInterface")
+        d = get(o[i], "name"); if (d == "") d = get(o[i], "tag")
+        if (f != "" && N != "" && !s[f]++) print f "|" N "|" d
+      } }')
+  up=0; total=0; ifs=" "
+  while IFS='|' read -r n N d; do
+    [ -n "$n" ] || continue
     o=$(ndmc -c "show interface $N" 2>/dev/null)
-    d=$(printf '%s\n' "$o" | sed -n 's/^ *description: *//p' | head -1)
+    [ -n "$d" ] || d=$(printf '%s\n' "$o" | sed -n 's/^ *description: *//p' | head -1)
     c=$(printf '%s\n' "$o" | sed -n 's/^ *connected: *//p' | head -1)
     ut=$(printf '%s\n' "$o" | sed -n 's/^ *uptime: *//p' | head -1)
     rx=$(awk -v n="$n" '{gsub(":"," ")} $1==n{printf "%.0f",$2}' /proc/net/dev)
     tx=$(awk -v n="$n" '{gsub(":"," ")} $1==n{printf "%.0f",$10}' /proc/net/dev)
     u=0; [ "$c" = yes ] && u=1
-    total=$((total+1)); up=$((up+u))
+    total=$((total+1)); up=$((up+u)); ifs="$ifs$n "
     echo "tun|${d:-$N}|$u|${rx:-0}|${tx:-0}|${ut:-0}"
-  done
+  done <<EOF
+$tl
+EOF
+  echo "awg_bytes $(awk -v l="$ifs" '{gsub(":"," ")} index(l, " " $1 " "){s+=$2+$10} END{printf "%.0f", s}' /proc/net/dev)"
   echo "awg_up $up"
   echo "awg_total $total"
 fi
