@@ -1,5 +1,6 @@
 #!/bin/sh
 # keendash: clean up runtime files (settings and the geo cache are kept)
 rm -f /opt/sbin/keendash-httpd /opt/var/run/keendash.conf /opt/var/run/keendash.pid
-rm -rf /tmp/keendash /tmp/keendash-geo.lock
+# opkg runs this on upgrade too (PKG_UPGRADE=1): keep graph history and the update log/flag
+[ "$PKG_UPGRADE" = 1 ] || rm -rf /tmp/keendash /tmp/keendash-geo.lock
 exit 0
