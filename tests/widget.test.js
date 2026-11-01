@@ -79,6 +79,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     m.querySelector('[data-tab="agh"]').dispatchEvent(new w.Event("click", { bubbles: true }));
     ok("agh down: hint about keendash.conf, no blocks", /недоступен/.test(m.textContent) && /ADGUARD_PASS/.test(m.textContent) && !m.querySelector(".us-blk"), m.textContent);
   });
+  await run(Object.assign({}, mini, { tabs: ["agh", "sys"], agh: { ok: 1, q: 9000, b: 900, days: 0, sq: Array(168).fill(50), sb: Array(168).fill(5) } }), (w, m) => {
+    m.querySelector('[data-tab="agh"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+    ok("agh 7-day stats: 168 hourly points -> 7 дн", /Запросов за 7 дн/.test(m.querySelector(".us-grid").textContent), m.querySelector(".us-grid").textContent);
+  });
   await run(Object.assign({}, mini, { tabs: ["agh", "sys"], agh: { ok: null, url: "http://10.0.0.5:3000" } }), (w, m) => {
     m.querySelector('[data-tab="agh"]').dispatchEvent(new w.Event("click", { bubbles: true }));
     ok("agh before the first cron run: wait note, link already there", /появятся в течение минуты/.test(m.textContent) && !/недоступен/.test(m.textContent) && m.querySelector("a.us-open").href === "http://10.0.0.5:3000/", m.textContent);

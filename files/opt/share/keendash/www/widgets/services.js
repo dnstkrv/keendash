@@ -205,7 +205,9 @@
     var a = d.agh || {}, sq = a.sq || [];
     if (a.ok == null) return note(WAIT);
     if (!a.ok) return note(apiErr("AdGuard Home", "ADGUARD_URL, ADGUARD_USER и ADGUARD_PASS"));
-    var h = '<div class="us-grid">' + blk("Запросов за " + sq.length + (a.days ? " дн" : " ч"), fmtN(a.q), sq, ACC) +
+    /* the stats period: 24 hourly points by default, 168 for a 7-day interval, daily points for longer ones */
+    var per = a.days ? sq.length + " дн" : sq.length > 24 && sq.length % 24 === 0 ? sq.length / 24 + " дн" : sq.length + " ч";
+    var h = '<div class="us-grid">' + blk("Запросов за " + per, fmtN(a.q), sq, ACC) +
       blk("Заблокировано", fmtN(a.b) + (a.q ? " · " + (a.b / a.q * 100).toFixed(1) + "%" : ""), a.sb || [], BAD) + "</div>";
     h += note("Среднее время ответа <b>" + a.ms + " мс</b> · фильтров <b>" + a.fon + " из " + a.fall + "</b> · правил <b>" + fmtN(a.rules) + "</b>" +
       (a.upd ? " · обновлены <b>" + fmtDur((d.now || Date.now() / 1000) - a.upd) + "</b> назад" : ""));
