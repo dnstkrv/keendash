@@ -8,7 +8,7 @@
   /* base URL of keendash's web server; the loader injected by keendash sets window.__keendash.base */
   var BASE = (window.__keendash && window.__keendash.base) || ("http://" + location.hostname + ":8189/");
   var API = BASE + "cgi-bin/status.cgi";
-  var KEY = "ui.services.pos", TABKEY = "ui.services.tab";
+  var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip";
   var TITLE = "Сервисы";
   var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["ascn", "Antiscan"], ["sys", "Система"]];
   /* tab id -> services whose web UI the "Открыть" link points to (link itself is auto-detected) */
@@ -19,6 +19,8 @@
 
   var row = null, bodyEl = null, lastData = null, dragging = false, placeholder = null;
   var tab = "telemt";
+  /* upgrade started from this page: target version; upRun once update.cgi accepted it; upErr after a failed one */
+  var upTo = "", upRun = false, upErr = false, upTimer = null;
   try { tab = localStorage.getItem(TABKEY) || "telemt"; } catch (e) {}
 
   function loadPos() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; } }
@@ -208,6 +210,33 @@
     return "";
   }
 
+  function skipped() { try { return localStorage.getItem(SKIPKEY) || ""; } catch (e) { return ""; } }
+  function updBar(u) {
+    if (!u || !(upTo || u.busy || (u.new && u.new !== skipped()))) return "";
+    var busy = !!(upTo || u.busy), v = upTo || u.new, t;
+    if (busy) t = "Обновление keendash до <b>" + esc(v) + "</b>…";
+    else if (upErr) t = '<span style="color:' + BAD + '">Не удалось обновить</span> · подробности в /tmp/keendash/upd.log';
+    else t = "Доступна новая версия keendash <b>" + esc(v) + "</b> · установлена " + esc(u.cur);
+    return '<div class="us-upd"><div class="us-upd-t">' + t + '</div><div class="us-upd-b">' +
+      '<button type="button" class="us-upd-go" data-v="' + esc(v) + '"' + (busy ? " disabled" : "") + ">" + (busy ? "Обновление…" : "Обновить") + "</button>" +
+      (busy ? "" : '<button type="button" class="us-upd-skip" data-v="' + esc(v) + '">Пропустить эту версию</button>') + "</div></div>";
+  }
+  function startUpdate(v) {
+    upTo = v; upRun = false; upErr = false; render();
+    fetch(BASE + "cgi-bin/update.cgi", { method: "POST", cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw r.status; upRun = true; update(); })
+      .catch(function () { upTo = ""; upErr = true; render(); });
+  }
+  function watchUpdate(u) {
+    if (!u) return;
+    if (u.busy && !upTo) { upTo = u.new; upRun = true; }
+    if (!upTo || !upRun) return;
+    /* the new widget only arrives with a page reload */
+    if (u.cur === upTo) { location.reload(); return; }
+    if (!u.busy) { upTo = ""; upRun = false; upErr = true; return; }
+    clearTimeout(upTimer); upTimer = setTimeout(update, 3000);
+  }
+
   function render() {
     if (!bodyEl) return;
     var d = lastData, h = "";
@@ -216,7 +245,7 @@
     var avail = TABS.filter(function (t) { return have.indexOf(t[0]) >= 0; });
     if (!avail.some(function (t) { return t[0] === tab; })) tab = avail.length ? avail[0][0] : "sys";
     var STATE = { 1: [OK, "работает"], 0: [BAD, "не запущен"], 2: [OFF, "отключён"], 3: [OFF, "состояние неизвестно"] };
-    h += '<div class="us-chips">';
+    h += updBar(d.upd) + '<div class="us-chips">';
     var webBy = {}, nweb = {}, svcName = {};
     svc.forEach(function (x) { svcName[x[0].toLowerCase()] = x[0]; });
     (d.web || []).forEach(function (w) {
@@ -255,8 +284,11 @@
   function update() {
     fetch(API, { cache: "no-store" })
       .then(function (r) { return r.json(); })
-      .then(function (d) { lastData = d; render(); })
-      .catch(function () { lastData = null; if (bodyEl) bodyEl.innerHTML = '<div class="us-note">нет данных (status.cgi недоступен)</div>'; });
+      .then(function (d) { lastData = d; watchUpdate(d.upd); render(); })
+      .catch(function () {
+        /* our web server restarts during an upgrade: keep the last view and retry */
+        if (upRun) { clearTimeout(upTimer); upTimer = setTimeout(update, 3000); return; }
+        lastData = null; if (bodyEl) bodyEl.innerHTML = '<div class="us-note">нет данных (status.cgi недоступен)</div>'; });
   }
 
   function addStyle() {
@@ -284,7 +316,14 @@
       ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +
-      ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}";
+      ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}" +
+      ".us-upd{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:8px;background:rgba(0,151,220,.1);font-size:13px}" +
+      ".us-upd-t b{font-weight:600}.us-upd-b{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}" +
+      /* Keenetic primary button (.ndw-button--primary), a size smaller to fit the card */
+      ".us-upd-go{min-width:92px;padding:9px 20px;border:1px solid #0097dc;border-radius:4px;background:#0097dc;color:#fff;font:inherit;font-size:14px;cursor:pointer;outline:none;white-space:nowrap}" +
+      ".us-upd-go:hover{border-color:#1c6c9a;background:#1c6c9a}.us-upd-go:active{background:#aed6fa;color:#1c6c9a}" +
+      ".us-upd-go:disabled{opacity:.6;cursor:default;background:#0097dc;border-color:#0097dc;color:#fff}" +
+      ".us-upd-skip{background:none;border:0;padding:0;color:inherit;opacity:.6;font:inherit;font-size:12px;cursor:pointer}.us-upd-skip:hover{opacity:1;text-decoration:underline}";
     document.head.appendChild(st);
   }
 
@@ -318,6 +357,12 @@
     bodyEl = document.createElement("div");
     bodyEl.className = "us-body";
     bodyEl.addEventListener("click", function (e) {
+      var u = e.target.closest ? e.target.closest(".us-upd-go,.us-upd-skip") : null;
+      if (u) {
+        if (u.classList.contains("us-upd-go")) startUpdate(u.getAttribute("data-v"));
+        else { try { localStorage.setItem(SKIPKEY, u.getAttribute("data-v")); } catch (x) {} upErr = false; render(); }
+        return;
+      }
       var b = e.target.closest ? e.target.closest(".us-tab") : null;
       if (!b) return;
       tab = b.getAttribute("data-tab");

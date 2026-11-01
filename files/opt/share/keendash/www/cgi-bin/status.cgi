@@ -36,4 +36,9 @@ sep=''
 for k in telemt_conn telemt_octets awg_bytes awg_up firc_domains ascn_ips ascn_honeypot nfq_pkts nfq_auto sys_load sys_mem sys_temp; do
   printf '%s"%s":[%s]' "$sep" "$k" "$(ser $k)"; sep=','
 done
-printf '}}\n'
+printf '}'
+# update: installed version, newer one from the feed (bin/update check), upgrade in progress
+cur=$(awk '/^Version:/{print $2}' /opt/lib/opkg/info/keendash.control 2>/dev/null)
+new=$(cat /tmp/keendash/upd.new 2>/dev/null); [ "$new" = "$cur" ] && new=
+busy=0; [ -f /tmp/keendash/upd.busy ] && kill -0 "$(cat /tmp/keendash/upd.busy)" 2>/dev/null && busy=1
+printf ',"upd":{"cur":"%s","new":"%s","busy":%s}}\n' "$cur" "$new" "$busy"

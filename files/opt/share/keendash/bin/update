@@ -1,0 +1,29 @@
+#!/bin/sh
+# keendash self-update.
+#   update check - look for a newer keendash in its opkg feed (cron; at most every 6 hours)
+#   update run   - upgrade in the background (update.cgi); the upgrade restarts our web server
+# /opt/bin first: opkg needs wget-ssl for the https feed, not busybox wget
+PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+D=/tmp/keendash NEW=/tmp/keendash/upd.new BUSY=/tmp/keendash/upd.busy LOG=/tmp/keendash/upd.log
+mkdir -p "$D"
+running() { [ -f "$BUSY" ] && kill -0 "$(cat "$BUSY")" 2>/dev/null; }
+
+case "$1" in
+check)
+  # upd.new holds the newer version (empty if none); its mtime is the time of the last check
+  [ -f "$NEW" ] && [ $(( $(date +%s) - $(date -r "$NEW" +%s) )) -lt 21600 ] && exit 0
+  running && exit 0
+  # opkg exits non-zero when any feed fails, so only the keendash list matters
+  opkg update >/dev/null 2>&1
+  [ -s /opt/var/opkg-lists/keendash ] || exit 0
+  opkg list-upgradable 2>/dev/null | awk '$1=="keendash"{v=$5} END{print v}' > "$NEW"
+  ;;
+run)
+  running && exit 0
+  # detached shell: opkg replaces this very file while upgrading
+  nohup sh -c "{ opkg update; opkg upgrade keendash; } > $LOG 2>&1; rm -f $BUSY" >/dev/null 2>&1 </dev/null &
+  echo $! > "$BUSY"
+  ;;
+*) echo "usage: $0 check|run" >&2; exit 1 ;;
+esac
