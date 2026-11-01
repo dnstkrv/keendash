@@ -207,8 +207,14 @@
     if (!avail.some(function (t) { return t[0] === tab; })) tab = avail.length ? avail[0][0] : "sys";
     var STATE = { 1: [OK, "работает"], 0: [BAD, "не запущен"], 2: [OFF, "отключён"], 3: [OFF, "состояние неизвестно"] };
     h += '<div class="us-chips">';
-    var webBy = {};
-    (d.web || []).forEach(function (w) { (webBy[w[0]] = webBy[w[0]] || []).push(w); });
+    var webBy = {}, nweb = {}, svcName = {};
+    svc.forEach(function (x) { svcName[x[0].toLowerCase()] = x[0]; });
+    (d.web || []).forEach(function (w) {
+      nweb[w[0]] = (nweb[w[0]] || 0) + 1;
+      /* a UI titled after another service (nfqws2-ui served by Entware lighttpd) belongs to that service */
+      var o = svcName[(w[2] || "").toLowerCase()] || w[0];
+      (webBy[o] = webBy[o] || []).push(w);
+    });
     function chip(label, state, l, tip0) {
       var st = STATE[state] || STATE[3];
       var inner = dot(st[0]) + esc(label) + (l ? ' <span class="us-ext">↗</span>' : "");
@@ -218,10 +224,11 @@
     }
     svc.forEach(function (x) {
       var ws = webBy[x[0]] || [];
-      if (ws.length >= 2) {
-        h += chip(x[0], x[1], "");
-        ws.forEach(function (w) { h += chip(w[2] || (x[0] + ":" + w[1]), x[1], url(w[1]), x[0] + " · " + (w[2] || "порт " + w[1]) + " · открыть"); });
-      } else h += chip(x[0], x[1], linkOf(x));
+      var own = ws.filter(function (w) { return w[0] === x[0]; }), got = ws.filter(function (w) { return w[0] !== x[0]; });
+      if (nweb[x[0]] >= 2) {
+        h += chip(x[0], x[1], got.length ? url(got[0][1]) : "");
+        own.forEach(function (w) { h += chip(w[2] || (x[0] + ":" + w[1]), x[1], url(w[1]), x[0] + " · " + (w[2] || "порт " + w[1]) + " · открыть"); });
+      } else h += chip(x[0], x[1], ws.length ? url(ws[0][1]) : nweb[x[0]] ? "" : linkOf(x));
     });
     h += '</div><div class="us-tabs">';
     avail.forEach(function (t) { h += '<button type="button" class="us-tab' + (t[0] === tab ? " us-on" : "") + '" data-tab="' + t[0] + '">' + t[1] + "</button>"; });
