@@ -12,7 +12,8 @@ LINKS=""; [ -f /opt/etc/keendash/keendash.conf ] && . /opt/etc/keendash/keendash
 HIDE_DEFAULT=" keendash "
 mkdir -p "$D"; printf "%s\n" "$LINKS" > "$CONF"
 
-RUNS=$(ps 2>/dev/null | awk 'NR>1{c=$5; sub(/^.*\//,"",c); if (c!="" && substr(c,1,1)!="[") print c}' | sort -u)
+# /proc, not ps: procps-ng ps from Entware lists only the caller's tty (nothing under CGI). comm is cut to 15 chars.
+RUNS=$(cat /proc/[0-9]*/comm 2>/dev/null | sort -u)
 
 scan() {
   for f in "$INITD"/S[0-9]*; do
@@ -25,9 +26,9 @@ scan() {
     names="$name"
     for w in $procs; do case "$w" in *'$'*) ;; *) names="$names ${w##*/}";; esac; done
     found=""
-    for n in $names; do printf '%s\n' "$RUNS" | grep -qx -- "$n" && found="$found,$n"; done
+    for n in $names; do printf '%s\n' "$RUNS" | grep -qx -- "$(printf '%.15s' "$n")" && found="$found,$n"; done
     if [ -z "$found" ] && [ -z "$procs" ]; then
-      p=$(printf '%s\n' "$RUNS" | awk -v n="$name" 'index($0,n)==1{print; exit}')
+      p=$(printf '%s\n' "$RUNS" | awk -v n="$name" 'index($0,substr(n,1,15))==1{print; exit}')
       [ -n "$p" ] && found=",$p"
     fi
     if [ "$en" = no ]; then st=2
