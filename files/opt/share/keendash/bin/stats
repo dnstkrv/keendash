@@ -27,10 +27,13 @@ if [ $HAS_TELEMT = 1 ]; then
   api=$(awk '/^\[server\.api\]/{f=1;next} /^\[/{f=0} f && /^listen/{gsub(/[" ]/,""); sub(/^listen=/,""); print; exit}' "$TELEMT_CONF" 2>/dev/null)
   case "$api" in 0.0.0.0:*|\[::\]:*|:::*) api="127.0.0.1:${api##*:}";; esac
   T="http://${api:-127.0.0.1:9091}"
-  rt=$(wget -qO- "$T/v1/runtime/connections/summary" 2>/dev/null)
+  # auth_header is the exact Authorization value telemt expects, e.g. "Bearer TOKEN"
+  auth=$(awk '/^\[server\.api\]/{f=1;next} /^\[/{f=0} f && /^auth_header[ \t]*=/{sub(/^auth_header[ \t]*=[ \t]*/,""); q=substr($0,1,1); v=substr($0,2); print substr(v,1,index(v,q)-1); exit}' "$TELEMT_CONF" 2>/dev/null)
+  tget() { if [ -n "$auth" ]; then wget -qO- --header "Authorization: $auth" "$T$1"; else wget -qO- "$T$1"; fi 2>/dev/null; }
+  rt=$(tget /v1/runtime/connections/summary)
   tot=$(printf '%s' "$rt" | grep -o '"totals":{[^}]*}')
-  sm=$(wget -qO- "$T/v1/stats/summary" 2>/dev/null)
-  users=$(wget -qO- "$T/v1/stats/users" 2>/dev/null)
+  sm=$(tget /v1/stats/summary)
+  users=$(tget /v1/stats/users)
   oct=$(printf '%s' "$users" | grep -o '"total_octets":[0-9]*' | cut -d: -f2 | awk '{s+=$1} END{printf "%.0f", s}')
   echo "telemt_ok $([ -n "$sm" ] && echo 1 || echo 0)"
   echo "telemt_conn $(num current_connections "$tot" | d0)"
