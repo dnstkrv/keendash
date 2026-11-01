@@ -20,6 +20,8 @@ printf '],"telemt":{"ok":%s,"conn":%s,"users":%s,"cfg":%s,"up":%s,"bad":%s,"list
 rows u 'printf "%s[\"%s\",%s,%s,%s]", (n++?",":""), $2,$3,$4,$5'
 printf ']},"awg":{"up":%s,"total":%s,"tun":[' "$(v awg_up)" "$(v awg_total)"
 rows tun 'printf "%s[\"%s\",%s,%s,%s,%s]", (n++?",":""), $2,$3,$4,$5,$6'
+printf '],"px":['
+rows px 'printf "%s[\"%s\",\"%s\",%s,%s,%s,\"%s\"]", (n++?",":""), $2,$3,$4,($5==""?0:$5),($6==""?"null":$6),$7'
 printf ']},"firc":{"domains":%s,"groups":%s,"enabled":%s,"list":[' "$(v firc_domains)" "$(v firc_groups)" "$(v firc_enabled)"
 rows g 'printf "%s[\"%s\",\"%s\",%s,%s]", (n++?",":""), $2,$3,$4,$5'
 printf ']},"ascn":{"ips":%s,"subnets":%s,"honeypot":%s,"candidates":%s,"bans":[' "$(v ascn_ips)" "$(v ascn_subnets)" "$(v ascn_honeypot)" "$(v ascn_candidates)"

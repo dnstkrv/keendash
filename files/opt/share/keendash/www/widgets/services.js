@@ -14,6 +14,7 @@
   /* tab id -> services whose web UI the "Открыть" link points to (link itself is auto-detected) */
   var TABSVC = { telemt: ["telemt-panel"], awg: ["awg-manager"], firc: ["firc"], nfqws: ["nfqws2", "nfqws"] };
   var TABWEB = { nfqws: /nfqws/i };
+  var PXKIND = { "freeturn-server": "FreeTurn", "wdtt-server": "WDTT" };
   var OK = "#3ecf8e", BAD = "#ff6b6b", ACC = "#4da3ff", WARN = "#f5a623", OFF = "#7b8798";
 
   var row = null, bodyEl = null, lastData = null, dragging = false, placeholder = null;
@@ -97,8 +98,17 @@
     (a.tun || []).forEach(function (x) {
       h += line(x[1] ? OK : OFF, esc(x[0]), x[1] ? "↓ " + fmtBytes(x[3]) + " · ↑ " + fmtBytes(x[4]) + " · " + fmtDur(x[5]) : "выключен", !x[1]);
     });
-    return h + '<div class="us-grid">' + blk("Трафик туннелей", fmtBytes(last(ar)) + "/с", ar, OK) +
+    h += '<div class="us-grid">' + blk("Трафик туннелей", fmtBytes(last(ar)) + "/с", ar, OK) +
       blk("Активных туннелей", a.up + " / " + a.total, s.awg_up || [], ACC) + "</div>";
+    if ((a.px || []).length) h += sec("Раздача");
+    (a.px || []).forEach(function (x) {
+      var kind = PXKIND[x[1]] || x[1], r = [];
+      if (x[4] !== null) r.push("клиентов " + x[4]);
+      if (x[5]) r.push(":" + x[5]);
+      r.push(fmtDur(x[3]));
+      h += line(x[2] ? OK : OFF, esc(x[0] ? x[0] + " · " + kind : kind), x[2] ? esc(r.join(" · ")) : "остановлен", !x[2]);
+    });
+    return h;
   }
   function tabFirc(d, s) {
     var f = d.firc || {}, list = (f.list || []).slice().sort(function (a, b) { return b[3] - a[3] || b[2] - a[2]; });

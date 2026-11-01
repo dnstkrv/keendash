@@ -53,9 +53,11 @@ fi
 if [ $HAS_AWG = 1 ]; then
   AP=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' /opt/etc/awg-manager/settings.json 2>/dev/null | head -1)
   A="http://127.0.0.1:${AP:-2222}/api"
+  # first "key":"string" / "key":number of a JSON chunk (string kept JSON-escaped)
+  JF='function get(s, k) { return match(s, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"") ? substr(s, RSTART + length(k) + 4, RLENGTH - length(k) - 5) : "" }
+    function num(s, k) { return match(s, "\"" k "\":-?[0-9]+") ? substr(s, RSTART + length(k) + 3, RLENGTH - length(k) - 3) : "" }'
   # "iface|NdmsName|name" lines; only the "tunnels" array of tunnels/all (its "system" list holds native WG servers)
-  tl=$( { wget -qO- "$A/tunnels/all" | sed -n 's/.*"tunnels":\[//p'; echo; wget -qO- "$A/singbox/tunnels"; echo; grep -o 'opkgtun[0-9]*' /proc/net/dev | sort -u; } 2>/dev/null | awk -F'|' '
-    function get(s, k) { return match(s, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"") ? substr(s, RSTART + length(k) + 4, RLENGTH - length(k) - 5) : "" }
+  tl=$( { wget -qO- "$A/tunnels/all" | sed -n 's/.*"tunnels":\[//p'; echo; wget -qO- "$A/singbox/tunnels"; echo; grep -o 'opkgtun[0-9]*' /proc/net/dev | sort -u; } 2>/dev/null | awk -F'|' "$JF"'
     /^opkgtun[0-9]+$/ { n = $0; sub(/opkgtun/, "", n); if (!s[$0]++) print $0 "|OpkgTun" n "|"; next }
     { gsub(/\{"(id|tag)":/, "\n&"); m = split($0, o, "\n")
       for (i = 2; i <= m; i++) {
@@ -82,6 +84,14 @@ EOF
   echo "awg_bytes $(awk -v l="$ifs" '{gsub(":"," ")} index(l, " " $1 " "){s+=$2+$10} END{printf "%.0f", s}' /proc/net/dev)"
   echo "awg_up $up"
   echo "awg_total $total"
+  # sharing instances (FreeTurn, WDTT servers): px|name|kind|running|uptime|clients|port; clients only where reported
+  wget -qO- "$A/proxyrt/instances" 2>/dev/null | awk "$JF"'
+    { gsub(/\{"key":/, "\n&"); m = split($0, o, "\n")
+      for (i = 2; i <= m; i++) {
+        k = get(o[i], "kind"); if (k == "") continue
+        p = get(o[i], "listen"); sub(/.*:/, "", p)
+        print "px|" get(o[i], "name") "|" k "|" (o[i] ~ /"running":true/ ? 1 : 0) "|" num(o[i], "uptimeS") "|" num(o[i], "clients") "|" p
+      } }'
 fi
 
 # ---- firc ----
