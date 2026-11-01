@@ -114,7 +114,7 @@ if [ $HAS_NFQWS = 1 ]; then
   M=/opt/etc/nfqws-ui/monitor.json
   [ -f "$M" ] && grep -o '"[A-Za-z0-9._-]*":\[\[[0-9,null.-]*\]\(,\[[0-9,null.-]*\]\)*\]' "$M" | while IFS= read -r l; do
     s=${l%%\":*}; s=${s#\"}
-    t=$(printf '%s' "$l" | sed 's/.*,\[\([^]]*\)\]\]$/\1/' | cut -d, -f1,2,3 | tr , '|')
+    t=$(printf '%s' "$l" | sed 's/.*\[\([^]]*\)\]\]$/\1/' | cut -d, -f1,2,3 | tr , '|')
     echo "m|$s|$t"
   done
 fi

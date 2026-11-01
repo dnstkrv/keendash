@@ -1,6 +1,6 @@
 {
   "name": "keendash",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "Dashboard widgets for the Keenetic web UI (tests)",
   "scripts": { "test": "node tests/widget.test.js" },
