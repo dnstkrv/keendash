@@ -1,0 +1,72 @@
+name: telegram
+
+# Notifications to Telegram: new issues, comments, finished builds.
+# Repository secrets: TELEGRAM_TOKEN (bot token from @BotFather), TELEGRAM_CHAT_ID.
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  notify:
+    # not the owner's own comments, not builds of main (only tags and PRs)
+    if: >-
+      !(github.event_name == 'issue_comment' && github.event.comment.user.login == github.repository_owner) &&
+      !(github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: send
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          # user-written text goes through env, never into the script itself
+          NUM: ${{ github.event.issue.number }}
+          TITLE: ${{ github.event.issue.title }}
+          IS_PR: ${{ github.event.issue.pull_request && 'PR' || 'issue' }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          ISSUE_USER: ${{ github.event.issue.user.login }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          COMMENT_URL: ${{ github.event.comment.html_url }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_MSG: ${{ github.event.workflow_run.head_commit.message }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          # cut by characters (bash, UTF-8 locale): a cut multibyte char makes Telegram reject the text
+          short() { s=$1; [ ${#s} -gt 600 ] && s="${s:0:600}…"; printf '%s' "$s"; }
+          case "$EVENT" in
+            issues)
+              text="🆕 $REPO: новый $IS_PR #$NUM от $ISSUE_USER
+          $TITLE
+
+          $(short "$ISSUE_BODY")
+
+          $ISSUE_URL" ;;
+            issue_comment)
+              text="💬 $REPO: комментарий в $IS_PR #$NUM от $COMMENT_USER
+          $TITLE
+
+          $(short "$COMMENT_BODY")
+
+          $COMMENT_URL" ;;
+            workflow_run)
+              case "$RUN_CONCLUSION" in success) icon="✅" ;; cancelled|skipped) icon="⚪" ;; *) icon="❌" ;; esac
+              text="$icon $REPO: сборка $RUN_CONCLUSION ($RUN_BRANCH, $RUN_EVENT)
+          $(printf '%s' "$RUN_MSG" | head -1)
+
+          $RUN_URL" ;;
+          esac
+          curl -sS --fail-with-body "https://api.telegram.org/bot$TOKEN/sendMessage" \
+            --data-urlencode "chat_id=$CHAT" --data-urlencode "text=$text" \
+            --data-urlencode "disable_web_page_preview=true"
