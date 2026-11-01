@@ -30,10 +30,12 @@ printf ']},"nfq":{"run":%s,"pkts":%s,"drop":%s,"up":%s,"mem":%s,"user":%s,"auto"
 rows n 'gsub(/"/,"",$3); gsub(/"/,"",$4); printf "%s[\"%s\",\"%s\",\"%s\"]", (n++?",":""), $2,$3,$4'
 printf '],"mon":['
 rows m 'printf "%s[\"%s\",%s,%s,%s]", (n++?",":""), $2,$3,$4,$5'
+printf ']},"hydra":{"run":%s,"up":%s,"mem":%s,"keys":%s,"ips":%s,"list":[' "$(v hr_running)" "$(v hr_up)" "$(v hr_mem)" "$(v hr_keys)" "$(v hr_ips)"
+rows hr 'printf "%s[\"%s\",%s,%s,%s,%s]", (n++?",":""), $2,$3,$4,$5,$6'
 printf ']},"sys":{"load":%s,"mem":%s,"memtotal":%s,"temp":%s,"disk":%s,"free":%s,"up":%s}' "$(v sys_load)" "$(v sys_mem)" "$(v sys_memtotal)" "$(vn sys_temp)" "$(v sys_disk)" "$(v sys_free)" "$(v sys_uptime)"
 printf ',"series":{'
 sep=''
-for k in telemt_conn telemt_octets awg_bytes awg_up firc_domains ascn_ips ascn_honeypot nfq_pkts nfq_auto sys_load sys_mem sys_temp; do
+for k in telemt_conn telemt_octets awg_bytes awg_up firc_domains ascn_ips ascn_honeypot nfq_pkts nfq_auto hr_ips sys_load sys_mem sys_temp; do
   printf '%s"%s":[%s]' "$sep" "$k" "$(ser $k)"; sep=','
 done
 printf '}'

@@ -10,9 +10,9 @@
   var API = BASE + "cgi-bin/status.cgi";
   var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip";
   var TITLE = "Сервисы";
-  var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["ascn", "Antiscan"], ["sys", "Система"]];
+  var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["ascn", "Antiscan"], ["sys", "Система"]];
   /* tab id -> services whose web UI the "Открыть" link points to (link itself is auto-detected) */
-  var TABSVC = { telemt: ["telemt-panel"], awg: ["awg-manager"], firc: ["firc"], nfqws: ["nfqws2", "nfqws"] };
+  var TABSVC = { telemt: ["telemt-panel"], awg: ["awg-manager"], firc: ["firc"], nfqws: ["nfqws2", "nfqws"], hydra: ["hrweb"] };
   var TABWEB = { nfqws: /nfqws/i };
   var PXKIND = { "freeturn-server": "FreeTurn", "wdtt-server": "WDTT" };
   var OK = "#3ecf8e", BAD = "#ff6b6b", ACC = "#4da3ff", WARN = "#f5a623", OFF = "#7b8798";
@@ -174,6 +174,20 @@
     }
     return h;
   }
+  function tabHydra(d, s) {
+    var y = d.hydra || {}, list = y.list || [];
+    var h = '<div class="us-grid">' + blk("Адресов в маршрутизации", y.ips, s.hr_ips || [], ACC) +
+      blk("Доменов в списках", y.keys, null) + "</div>";
+    h += line(y.run ? OK : BAD, "hrneo", y.run ? fmtDur(y.up) + " · " + (y.mem / 1024).toFixed(1) + " МБ" : "не запущен");
+    if (!list.length) return h + note("Правил нет — их можно добавить в HRweb");
+    h += sec("Правила");
+    list.forEach(function (t) {
+      var ips = t[2] + t[3];
+      h += line(ips ? OK : OFF, esc(t[0]) + ' <span class="us-tag">' + (t[4] ? "интерфейс" : "политика") + "</span>",
+        (t[1] ? "доменов " + t[1] + " · " : "") + "адресов " + ips, !ips);
+    });
+    return h;
+  }
   function tabLinks(id, svc, web) {
     var re = TABWEB[id], out = [], names = TABSVC[id] || [];
     (web || []).forEach(function (w) {
@@ -269,16 +283,20 @@
         own.forEach(function (w) { h += chip(w[2] || (x[0] + ":" + w[1]), x[1], url(w[1]), x[0] + " · " + (w[2] || "порт " + w[1]) + " · открыть"); });
       } else h += chip(x[0], x[1], ws.length ? url(ws[0][1]) : nweb[x[0]] ? "" : linkOf(x));
     });
-    h += '</div><div class="us-tabs">';
+    h += '</div><div class="us-tabs"><div class="us-tl">';
     avail.forEach(function (t) { h += '<button type="button" class="us-tab' + (t[0] === tab ? " us-on" : "") + '" data-tab="' + t[0] + '">' + t[1] + "</button>"; });
+    h += "</div>";
     var tls = tabLinks(tab, svc, d.web);
     tls.forEach(function (x) {
       h += '<a class="us-open" href="' + esc(x[1]) + '" target="_blank" rel="noopener">' + (tls.length > 1 ? esc(x[0]) + " ↗" : "Открыть ↗") + "</a>";
     });
     h += "</div>";
     var s = d.series || {};
-    h += (tab === "awg" ? tabAwg : tab === "firc" ? tabFirc : tab === "ascn" ? tabAscn : tab === "nfqws" ? tabNfqws : tab === "sys" ? tabSys : tabTelemt)(d, s);
+    h += (tab === "awg" ? tabAwg : tab === "firc" ? tabFirc : tab === "ascn" ? tabAscn : tab === "nfqws" ? tabNfqws : tab === "hydra" ? tabHydra : tab === "sys" ? tabSys : tabTelemt)(d, s);
     bodyEl.innerHTML = h;
+    /* re-rendering resets the tab strip's scroll: keep the active tab visible */
+    var tl = bodyEl.querySelector(".us-tl"), on = tl && tl.querySelector(".us-on");
+    if (on) { var a = on.getBoundingClientRect(), b = tl.getBoundingClientRect(); if (a.right > b.right) tl.scrollLeft += a.right - b.right; }
   }
 
   function update() {
@@ -301,10 +319,12 @@
       ".us-chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;opacity:.9;white-space:nowrap;color:inherit;text-decoration:none}" +
       ".us-lnk:hover{opacity:1;color:" + ACC + "}.us-ext{font-size:11px;opacity:.55}" +
       ".us-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}" +
-      ".us-tabs{display:flex;align-items:center;gap:4px;border-bottom:1px solid rgba(128,128,128,.28)}" +
-      ".us-tab{background:none;border:0;border-bottom:2px solid transparent;color:inherit;opacity:.6;font:inherit;font-size:13px;padding:6px 10px;margin-bottom:-1px;cursor:pointer}" +
+      ".us-tabs{display:flex;align-items:center;gap:4px;box-shadow:inset 0 -1px rgba(128,128,128,.28)}" +
+      /* tabs scroll sideways in a narrow card, the "Открыть" links stay in view */
+      ".us-tl{display:flex;gap:4px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}.us-tl::-webkit-scrollbar{display:none}" +
+      ".us-tab{background:none;border:0;border-bottom:2px solid transparent;color:inherit;opacity:.6;font:inherit;font-size:13px;padding:6px 10px;cursor:pointer;flex:none;white-space:nowrap}" +
       ".us-tab:hover{opacity:.9}.us-tab.us-on{opacity:1;border-bottom-color:" + ACC + ";font-weight:600}" +
-      ".us-open{margin-left:auto;font-size:12px;color:" + ACC + ";text-decoration:none;white-space:nowrap}.us-open:hover{text-decoration:underline}" +
+      ".us-open{margin-left:8px;flex:none;font-size:12px;color:" + ACC + ";text-decoration:none;white-space:nowrap}.us-open:hover{text-decoration:underline}" +
       ".us-open + .us-open{margin-left:10px}" +
       ".us-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}" +
       ".us-blk{display:flex;flex-direction:column;gap:6px;min-width:0}" +

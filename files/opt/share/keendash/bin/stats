@@ -3,7 +3,7 @@
 PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 num() { printf '%s' "$2" | grep -o "\"$1\":[0-9]*" | head -1 | cut -d: -f2; }
-cnt() { ipset list "$1" 2>/dev/null | tail -n +8 | grep -c '^'; }
+cnt() { ipset list "$1" 2>/dev/null | awk 'f{n++} /^Members:/{f=1} END{print n+0}'; }
 d0() { grep . || echo 0; }
 
 # ---- which providers are installed ----
@@ -15,11 +15,14 @@ HAS_ASCN=0; { ipset list -n 2>/dev/null | grep -q '^ascn_' || [ -f /opt/etc/anti
 NF_DIR=""; for d in /opt/etc/nfqws2 /opt/etc/nfqws; do [ -d "$d" ] && { NF_DIR=$d; break; }; done
 NF_PID=$(pidof nfqws2 2>/dev/null || pidof nfqws 2>/dev/null); NF_PID=${NF_PID%% *}
 HAS_NFQWS=0; { [ -n "$NF_DIR" ] || [ -n "$NF_PID" ]; } && HAS_NFQWS=1
+HR_PID=$(pidof hrneo 2>/dev/null); HR_PID=${HR_PID%% *}
+HAS_HR=0; { [ -f /opt/etc/HydraRoute/hrneo.conf ] || [ -n "$HR_PID" ]; } && HAS_HR=1
 [ $HAS_TELEMT = 1 ] && echo "tab|telemt"
 [ $HAS_AWG = 1 ] && echo "tab|awg"
 [ $HAS_FIRC = 1 ] && echo "tab|firc"
 [ $HAS_ASCN = 1 ] && echo "tab|ascn"
 [ $HAS_NFQWS = 1 ] && echo "tab|nfqws"
+[ $HAS_HR = 1 ] && echo "tab|hydra"
 echo "tab|sys"
 
 # ---- telemt (API address is read from its config) ----
@@ -145,6 +148,30 @@ if [ $HAS_NFQWS = 1 ]; then
     t=$(printf '%s' "$l" | sed 's/.*\[\([^]]*\)\]\]$/\1/' | cut -d, -f1,2,3 | tr , '|')
     echo "m|$s|$t"
   done
+fi
+
+# ---- HydraRoute Neo: per target (Keenetic policy or interface) watchlist domains and addresses in its ipsets ----
+if [ $HAS_HR = 1 ]; then
+  echo "hr_running $([ -n "$HR_PID" ] && echo 1 || echo 0)"
+  if [ -n "$HR_PID" ]; then
+    st=$(sed 's/.*) //' /proc/$HR_PID/stat 2>/dev/null | awk '{print $20}')
+    echo "hr_up $(awk -v s="${st:-0}" '{printf "%d", $1 - s/100}' /proc/uptime)"
+    echo "hr_mem $(awk '/VmRSS/{print $2}' /proc/$HR_PID/status 2>/dev/null | d0)"
+  else echo "hr_up 0"; echo "hr_mem 0"; fi
+  # the watchlist changes only when hrneo restarts: dump it (can be MBs) once per hrneo pid
+  WL=/tmp/keendash/hr.targets
+  if [ -n "$HR_PID" ] && [ "$(head -1 "$WL" 2>/dev/null)" != "$HR_PID" ]; then
+    mkdir -p /tmp/keendash
+    t=$(hrneo --dump 2>/dev/null | awk '$1=="T"{t[$2]=$3} $1=="K"{c[$3]++} $1=="END"{ok=1} END{if(!ok) exit 1; for(r in t) print r "|" t[r] "|" c[r]+0}') &&
+      { echo "$HR_PID"; printf '%s\n' "$t" | sort -n; } > "$WL"
+  fi
+  # hrneo keeps two ipsets per target: <name> (IPv4) and <name>v6
+  hr=$(tail -n +2 "$WL" 2>/dev/null | while IFS='|' read -r r n k; do
+    [ -n "$n" ] || continue
+    echo "hr|$n|$k|$(cnt "$n")|$(cnt "${n}v6")|$([ -d "/sys/class/net/$n" ] && echo 1 || echo 0)"
+  done)
+  [ -n "$hr" ] && printf '%s\n' "$hr"
+  printf '%s\n' "$hr" | awk -F'|' '{k+=$3; i+=$4+$5} END{print "hr_keys " k+0; print "hr_ips " i+0}'
 fi
 
 # ---- system ----
