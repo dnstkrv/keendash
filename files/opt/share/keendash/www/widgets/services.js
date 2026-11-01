@@ -9,6 +9,7 @@
   var BASE = (window.__keendash && window.__keendash.base) || ("http://" + location.hostname + ":8189/");
   var API = BASE + "cgi-bin/status.cgi";
   var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip", MTABKEY = "ui.services.media";
+  var ORDKEY = "ui.services.order", MORDKEY = "ui.services.morder";
   var TITLE = "Сервисы";
   var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["agh", "AdGuard"], ["media", "Медиа"], ["ascn", "Antiscan"], ["sys", "Система"]];
   /* "Медиа" tab: one sub-tab per configured service; [id, name, its keendash.conf keys] */
@@ -21,7 +22,7 @@
   var PXKIND = { "freeturn-server": "FreeTurn", "wdtt-server": "WDTT" };
   var OK = "#3ecf8e", BAD = "#ff6b6b", ACC = "#4da3ff", WARN = "#f5a623", OFF = "#7b8798";
 
-  var row = null, bodyEl = null, lastData = null, dragging = false, placeholder = null;
+  var row = null, bodyEl = null, lastData = null, dragging = false, placeholder = null, tabDrag = null;
   var tab = "telemt";
   /* upgrade started from this page: target version; upRun once update.cgi accepted it; upErr after a failed one */
   var upTo = "", upRun = false, upErr = false, upTimer = null;
@@ -29,6 +30,13 @@
   var mtab = "";
   try { mtab = localStorage.getItem(MTABKEY) || ""; } catch (e) {}
 
+  /* the user's tab order (tabs are dragged to reorder); tabs not in it yet go after the saved ones, in default order */
+  function ordered(list, key) {
+    var o = [];
+    try { o = JSON.parse(localStorage.getItem(key)) || []; } catch (e) {}
+    function rank(t) { var i = o.indexOf(t[0]); return i < 0 ? o.length + list.indexOf(t) : i; }
+    return list.slice().sort(function (a, b) { return rank(a) - rank(b); });
+  }
   function loadPos() { try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; } }
   function savePos(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
   function columns() { return Array.prototype.slice.call(document.querySelectorAll(".ndw-drag-panel__column")); }
@@ -290,7 +298,7 @@
   function mediaOn(d) {
     var urls = {};
     ((d.media || {}).svc || []).forEach(function (x) { urls[x[0]] = x[1]; });
-    var on = MEDIA.filter(function (m) { return urls.hasOwnProperty(m[0]); }).map(function (m) { return m.concat([urls[m[0]]]); });
+    var on = ordered(MEDIA, MORDKEY).filter(function (m) { return urls.hasOwnProperty(m[0]); }).map(function (m) { return m.concat([urls[m[0]]]); });
     if (on.length && !on.some(function (m) { return m[0] === mtab; })) mtab = on[0][0];
     return on;
   }
@@ -298,7 +306,7 @@
     var on = mediaOn(d), h = "";
     if (on.length > 1) {
       h = '<div class="us-sub">';
-      on.forEach(function (m) { h += '<button type="button" class="us-mt' + (m[0] === mtab ? " us-on" : "") + '" data-m="' + m[0] + '">' + m[1] + "</button>"; });
+      on.forEach(function (m) { h += '<button type="button" draggable="true" class="us-mt' + (m[0] === mtab ? " us-on" : "") + '" data-m="' + m[0] + '">' + m[1] + "</button>"; });
       h += "</div>";
     }
     var m = on.filter(function (x) { return x[0] === mtab; })[0], x = (d.media || {})[mtab] || {};
@@ -369,11 +377,12 @@
   }
 
   function render() {
-    if (!bodyEl) return;
+    /* a re-render would drop the tab being dragged; dragend renders */
+    if (!bodyEl || tabDrag) return;
     var d = lastData, h = "";
     if (!d) { bodyEl.innerHTML = '<div class="us-note">загрузка…</div>'; return; }
     var svc = d.svc || [], have = d.tabs || ["sys"];
-    var avail = TABS.filter(function (t) { return have.indexOf(t[0]) >= 0; });
+    var avail = ordered(TABS, ORDKEY).filter(function (t) { return have.indexOf(t[0]) >= 0; });
     if (!avail.some(function (t) { return t[0] === tab; })) tab = avail.length ? avail[0][0] : "sys";
     var STATE = { 1: [OK, "работает"], 0: [BAD, "не запущен"], 2: [OFF, "отключён"], 3: [OFF, "состояние неизвестно"] };
     h += updBar(d.upd) + '<div class="us-chips">';
@@ -401,7 +410,7 @@
       } else h += chip(x[0], x[1], ws.length ? url(ws[0][1]) : nweb[x[0]] ? "" : linkOf(x));
     });
     h += '</div><div class="us-tabs"><div class="us-tl">';
-    avail.forEach(function (t) { h += '<button type="button" class="us-tab' + (t[0] === tab ? " us-on" : "") + '" data-tab="' + t[0] + '">' + t[1] + "</button>"; });
+    avail.forEach(function (t) { h += '<button type="button" draggable="true" class="us-tab' + (t[0] === tab ? " us-on" : "") + '" data-tab="' + t[0] + '">' + t[1] + "</button>"; });
     h += "</div>";
     /* third-party services may run anywhere: link to the address from keendash.conf */
     var eu = tab === "agh" ? d.agh && d.agh.url : tab === "media" ? (mediaOn(d).filter(function (m) { return m[0] === mtab; })[0] || [])[3] : null;
@@ -516,6 +525,31 @@
       if (!b) return;
       tab = b.getAttribute("data-tab");
       try { localStorage.setItem(TABKEY, tab); } catch (x) {}
+      render();
+    });
+    /* tabs and media sub-tabs reorder by drag and drop (HTML5: on touch screens it starts with a long press) */
+    var DRAG = ".us-tab,.us-mt";
+    bodyEl.addEventListener("dragstart", function (e) {
+      tabDrag = e.target.closest ? e.target.closest(DRAG) : null;
+      if (!tabDrag || !e.dataTransfer) return;
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", ""); } catch (x) {}
+    });
+    bodyEl.addEventListener("dragover", function (e) {
+      var b = tabDrag && e.target.closest ? e.target.closest(DRAG) : null;
+      if (!b || b.parentNode !== tabDrag.parentNode) return;
+      e.preventDefault();
+      if (b === tabDrag) return;
+      var r = b.getBoundingClientRect();
+      b.parentNode.insertBefore(tabDrag, e.clientX < r.left + r.width / 2 ? b : b.nextSibling);
+    });
+    bodyEl.addEventListener("drop", function (e) { if (tabDrag) e.preventDefault(); });
+    bodyEl.addEventListener("dragend", function () {
+      if (!tabDrag) return;
+      var mt = tabDrag.classList.contains("us-mt");
+      var ids = Array.prototype.map.call(tabDrag.parentNode.querySelectorAll(DRAG), function (b) { return b.getAttribute(mt ? "data-m" : "data-tab"); });
+      tabDrag = null;
+      try { localStorage.setItem(mt ? MORDKEY : ORDKEY, JSON.stringify(ids)); } catch (x) {}
       render();
     });
     content.appendChild(bodyEl);

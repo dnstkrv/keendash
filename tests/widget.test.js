@@ -109,6 +109,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("media overseerr: pending first", /^Ждут одобрения2$/.test(rows()[0]) && rows().length === 4, rows().join(" / "));
     click('[data-m="immich"]');
     ok("media immich: totals + users", /18 230/.test(m.querySelector(".us-grid").textContent) && /412 ГБ/.test(m.querySelector(".us-grid").textContent) && /^Alice15 000 фото · 1 000 видео/.test(rows()[0]), m.querySelector(".us-grid").textContent + " " + rows().join(" / "));
+    // drag and drop reorders tabs (jsdom has zero-size boxes, so a drop lands after the target)
+    const ids = (sel, a) => Array.from(m.querySelectorAll(sel)).map(b => b.getAttribute(a)).join();
+    const drag = (from, to) => {
+      m.querySelector(from).dispatchEvent(new w.Event("dragstart", { bubbles: true }));
+      m.querySelector(to).dispatchEvent(new w.MouseEvent("dragover", { bubbles: true, cancelable: true, clientX: 5 }));
+      m.querySelector(from).dispatchEvent(new w.Event("dragend", { bubbles: true }));
+    };
+    drag('[data-tab="telemt"]', '[data-tab="awg"]');
+    ok("drag tab: order saved and kept on re-render", ids(".us-tab", "data-tab").startsWith("awg,telemt,firc") && w.localStorage.getItem("ui.services.order").startsWith('["awg","telemt"'), ids(".us-tab", "data-tab"));
+    drag('[data-m="qb"]', '[data-m="immich"]');
+    ok("drag media sub-tab: own order", ids(".us-mt", "data-m") === "plex,sonarr,radarr,prowlarr,overseerr,immich,qb" && /"qb"\]$/.test(w.localStorage.getItem("ui.services.morder")), ids(".us-mt", "data-m"));
+    w.localStorage.setItem("ui.services.order", '["sys","gone"]'); click('[data-tab="media"]');
+    ok("saved order first, unsaved tabs after in default order", ids(".us-tab", "data-tab") === "sys,telemt,awg,firc,nfqws,hydra,agh,media,ascn", ids(".us-tab", "data-tab"));
   });
   await run(Object.assign({}, mini, { tabs: ["media", "sys"], media: { svc: [["sonarr", "http://127.0.0.1:8989"]], sonarr: { ok: 0 } } }), (w, m) => {
     m.querySelector('[data-tab="media"]').dispatchEvent(new w.Event("click", { bubbles: true }));
