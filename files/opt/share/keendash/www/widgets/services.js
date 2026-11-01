@@ -98,7 +98,7 @@
   function tabAwg(d, s) {
     var a = d.awg || {}, ar = rates(s.awg_bytes || []), h = sec("Туннели");
     (a.tun || []).forEach(function (x) {
-      h += line(x[1] ? OK : OFF, esc(x[0]), x[1] ? "↓ " + fmtBytes(x[3]) + " · ↑ " + fmtBytes(x[4]) + " · " + fmtDur(x[5]) : "выключен", !x[1]);
+      h += line(x[1] ? OK : OFF, esc(x[0]), x[1] ? "↓ " + fmtBytes(x[2]) + " · ↑ " + fmtBytes(x[3]) + " · " + fmtDur(x[4]) : "выключен", !x[1]);
     });
     h += '<div class="us-grid">' + blk("Трафик туннелей", fmtBytes(last(ar)) + "/с", ar, OK) +
       blk("Активных туннелей", a.up + " / " + a.total, s.awg_up || [], ACC) + "</div>";
