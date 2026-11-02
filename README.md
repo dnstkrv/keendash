@@ -59,7 +59,7 @@
 Узнайте архитектуру Entware (`opkg print-architecture`: `aarch64-3.10`, `mipsel-3.4` или `mips-3.4`), добавьте фид и установите пакет:
 
 ```sh
-echo "src/gz keendash https://dnstkrv.github.io/keendash/aarch64-3.10" >> /opt/etc/opkg.conf
+echo "src/gz keendash https://dnstkrv.github.io/keendash/aarch64-3.10" > /opt/etc/opkg/keendash.conf
 opkg update && opkg install keendash
 ```
 
