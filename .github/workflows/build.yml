@@ -19,13 +19,16 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           files="scripts/*.sh ipk/postinst ipk/prerm ipk/postrm
-                 files/opt/share/keendash/bin/* files/opt/etc/init.d/*
+                 files/opt/share/keendash/bin/* files/opt/etc/init.d/* files/opt/etc/ndm/netfilter.d/*
                  files/opt/share/keendash/www/cgi-bin/*"
           for f in $files; do sh -n "$f"; done
           # warnings only: the scripts target busybox ash on routers
           shellcheck -S error -s sh $files || true
       - name: keendashd warnings
-        run: cc -std=c99 -Wall -Wextra -Werror -O2 -o /tmp/keendashd src/keendashd.c
+        run: |
+          cc -std=c99 -Wall -Wextra -Werror -O2 -o /tmp/keendashd src/keendashd.c
+          D=$(sh scripts/mbedtls.sh)
+          cc -std=c99 -Wall -Wextra -Werror -O2 -c -DKEENDASH_TLS '-DMBEDTLS_CONFIG_FILE="keendash_tls.h"' -Isrc -I"$D/include" -o /tmp/keendashd.o src/keendashd.c
       - uses: actions/setup-node@v4
         with:
           node-version: 20

@@ -8,6 +8,8 @@
   /* base URL of keendash's web server; the loader injected by keendash sets window.__keendash.base */
   var BASE = (window.__keendash && window.__keendash.base) || ("http://" + location.hostname + ":8189/");
   var API = BASE + "cgi-bin/status.cgi";
+  /* over HTTPS keendash answers only with the web UI session cookie */
+  var CRED = (window.__keendash && window.__keendash.cred) || "same-origin";
   var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip", MTABKEY = "ui.services.media";
   var ORDKEY = "ui.services.order", MORDKEY = "ui.services.morder";
   var TITLE = "Сервисы";
@@ -362,7 +364,7 @@
   }
   function startUpdate(v) {
     upTo = v; upRun = false; upErr = false; render();
-    fetch(BASE + "cgi-bin/update.cgi", { method: "POST", cache: "no-store" })
+    fetch(BASE + "cgi-bin/update.cgi", { method: "POST", cache: "no-store", credentials: CRED })
       .then(function (r) { if (!r.ok) throw r.status; upRun = true; update(); })
       .catch(function () { upTo = ""; upErr = true; render(); });
   }
@@ -428,7 +430,7 @@
   }
 
   function update() {
-    fetch(API, { cache: "no-store" })
+    fetch(API, { cache: "no-store", credentials: CRED })
       .then(function (r) { return r.json(); })
       .then(function (d) { lastData = d; watchUpdate(d.upd); render(); })
       .catch(function () {
@@ -544,6 +546,14 @@
       b.parentNode.insertBefore(tabDrag, e.clientX < r.left + r.width / 2 ? b : b.nextSibling);
     });
     bodyEl.addEventListener("drop", function (e) { if (tabDrag) e.preventDefault(); });
+    /* the tab strip has no scrollbar and dragging a tab reorders it: the mouse wheel scrolls it sideways */
+    bodyEl.addEventListener("wheel", function (e) {
+      var tl = e.target.closest ? e.target.closest(".us-tl") : null, dy = e.deltaMode ? e.deltaY * 16 : e.deltaY;
+      if (!tl || !dy || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      var x = tl.scrollLeft;
+      tl.scrollLeft += dy;
+      if (tl.scrollLeft !== x) e.preventDefault();
+    }, { passive: false });
     bodyEl.addEventListener("dragend", function () {
       if (!tabDrag) return;
       var mt = tabDrag.classList.contains("us-mt");
