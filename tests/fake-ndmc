@@ -1,0 +1,18 @@
+#!/bin/sh
+# Fake ndmc for bin/rci: RCI tokens of keendash and other packages. NDMC=old answers like firmware before 5.2.
+# Every command goes to $LOG.
+echo "ndmc $2" >> "${LOG:-/dev/null}"
+[ "$NDMC" = old ] && { echo "Command::Base error[7405600]: no such command: authentication."; exit 127; }
+E=$(printf '\033[K')
+case "$2" in
+  # ESC[K like the real one, the value on the lines below "value:"
+  "authentication token generate keendash")
+    printf '%s\n' "$E" "            token: " "                   id: 9" "                value: " "                       Tk0123456789abcdefghij$E" \
+      "                       klmnopqrstuvWXYZ" "              expires: never" "$E" ;;
+  "show authentication token")
+    for x in 3:firc 4:keendash 5:awg-manager 8:keendash-x 9:keendash; do
+      printf '            token: \n                   id: %s\n              user: admin\n            user-data: %s\n              expires: never\n\n' "${x%%:*}" "${x#*:}"
+    done ;;
+  "authentication token delete "*) ;;
+  *) exit 1 ;;
+esac

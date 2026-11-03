@@ -78,10 +78,12 @@ if [ $HAS_AWG = 1 ]; then
         d = get(o[i], "name"); if (d == "") d = get(o[i], "tag")
         if (f != "" && N != "" && !s[f]++) print f "|" N "|" d
       } }')
+  # every NDMS interface at once ("Name.field<TAB>value"), one RCI request per run
+  [ -n "$tl" ] && IF=$("${0%/*}/rci" show/interface)
   up=0; total=0; ifs=" "
   while IFS='|' read -r n N d; do
     [ -n "$n" ] || continue
-    o=$(ndmc -c "show interface $N" 2>/dev/null)
+    o=$(printf '%s\n' "$IF" | awk -F'\t' -v p="$N." 'index($1, p) == 1 { print substr($1, length(p) + 1) ": " $2 }')
     [ -n "$d" ] || d=$(printf '%s\n' "$o" | sed -n 's/^ *description: *//p' | head -1)
     c=$(printf '%s\n' "$o" | sed -n 's/^ *connected: *//p' | head -1)
     ut=$(printf '%s\n' "$o" | sed -n 's/^ *uptime: *//p' | head -1)

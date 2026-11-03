@@ -1,11 +1,17 @@
 #!/bin/sh
-# Fake wget for the bin/ext and bin/agh tests: answers with tests/fixtures/<api>/*.json by URL (the last argument),
+# Fake wget for the collector tests: answers with tests/fixtures/<api>/*.json by URL (the last argument),
 # fails like a 401/403 when the service's auth header is missing.
 F=${FIX:-$(cd "$(dirname "$0")" && pwd)/fixtures}
 for u; do :; done
 a=" $* "
 need() { case "$a" in *"$1"*) ;; *) exit 8 ;; esac; }
 case "$u" in
+  # RCI: the token tests/fake-ndmc issues or none (before 5.2); any other is refused like ndm does. Requests go to $LOG
+  http://127.0.0.1:79/rci/*)
+    t=; case "$a" in *" X-NDMA-TKN: "*) t=${a#* X-NDMA-TKN: }; t=${t%% *} ;; esac
+    d=; case "$a" in *" --post-data "*) d=${a#* --post-data }; d=${d%" $u "} ;; esac
+    echo "rci /${u#*/rci/} ${t:--}${d:+ $d}" >> "${LOG:-/dev/null}"
+    [ -z "$t" ] || [ "$t" = Tk0123456789abcdefghijklmnopqrstuvWXYZ ] || { printf '  HTTP/1.1 403 Forbidden\n  X-Detail: 0x2312, not identified\n' >&2; exit 8; } ;;
   # cookie only for admin / p&s=s, percent-encoded
   */api/v2/auth/login) need "username=%61%64%6d%69%6e&password=%70%26%73%3d%73"; echo "  Set-Cookie: SID=test123; HttpOnly; path=/" >&2; exit 0 ;;
   */api/v2/*) need "Cookie: SID=test123" ;;
@@ -34,6 +40,11 @@ case "$u" in
   */api/v1/indexerstats*) f=media/prowlarr_stats ;;
   */api/v1/request/count) f=media/overseerr_count ;;
   */api/server/statistics) f=media/immich_stats ;;
+  */rci/show/interface) f=rci/interface ;;
+  */rci/show/ip/http/proxy) f=rci/proxy ;;
+  */rci/) f=rci/system_name ;;
+  */api/tunnels/all) f=awg/tunnels_all ;;
+  */api/singbox/tunnels) f=awg/singbox_tunnels ;;
   *) exit 8 ;;
 esac
 # release dates relative to now, so the "next 7 days" filters have something to keep

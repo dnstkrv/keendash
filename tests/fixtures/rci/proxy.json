@@ -1,0 +1,5 @@
+{
+  "firc": { "fqdn": "firc.r.example.net", "proto": "http", "upstream": "127.0.0.1:666", "host": "127.0.0.1", "allow": "public", "ndns": true },
+  "adguard": { "fqdn": "adguard.r.example.net", "proto": "http", "upstream": "10.0.0.2:3000", "host": "10.0.0.2", "allow": "public", "ndns": true },
+  "printer": { "fqdn": "printer.r.example.net", "proto": "http", "upstream": "", "host": "", "allow": "public", "ndns": true }
+}

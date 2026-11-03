@@ -1,0 +1,69 @@
+#!/bin/sh
+# The router's RCI (HTTP API on 127.0.0.1:79) as "path<TAB>value" lines (keendashd json), with keendash's own token:
+# since KeeneticOS 5.2 ndm logs a warning for every RCI request without one, and on some firmwares every ndmc call logs
+# a session pair. The token is issued through ndmc (its unix socket needs no auth) once per boot and kept in RAM:
+# /opt and /tmp/mnt are readable by any web UI user through /storage/, and this is an admin token.
+#   rci PATH       GET /rci/PATH, e.g. rci show/interface
+#   rci "" JSON    POST a command or an array of them
+#   rci --revoke   delete keendash's tokens on the router and the token file (opkg remove)
+PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+D=${KEENDASH_TMP:-/tmp/keendash}; mkdir -p "$D"
+# the token, or "-": firmware before 5.2, no tokens there (until a reboot clears /tmp)
+TK=$D/rci.token
+ESC=$(printf '\033')
+
+nd() { ndmc -c "$1" 2>&1 | sed "s/$ESC\[K//g" | tr -d '\r'; }
+# keendash's tokens but $1; ids change after a reboot, so they are found by user-data
+del() {
+  nd 'show authentication token' | awk -v k="$1" '$1 == "id:" { id = $2 } $1 == "user-data:" && $2 == "keendash" && NF == 2 && id != "" && id != k { print id }' |
+    while read -r id; do nd "authentication token delete $id" >/dev/null; done
+}
+# a new token, then the older ones go: a failed issue doesn't leave keendash without a working one
+issue() {
+  date +%s > "$D/rci.try"
+  o=$(nd 'authentication token generate keendash')
+  case "$o" in *"no such command"*) echo - > "$TK"; return ;; esac
+  # "id: N" and "value:", a long value wrapped over the next lines
+  set -- $(printf '%s\n' "$o" | awk '{ s = $0; gsub(/^[ \t]+|[ \t]+$/, "", s); i = index(s, ":") }
+    i { if (on) exit; k = substr(s, 1, i - 1); v = substr(s, i + 1); gsub(/^[ \t]+/, "", v)
+        if (k == "id") id = v; else if (k == "value") { on = 1; t = v }; next }
+    on { if (s == "") exit; t = t s }
+    END { if (t ~ /^[A-Za-z0-9]+$/ && length(t) >= 32) print (id == "" ? "-" : id), t }')
+  # issued but not read: delete it, or every retry would leave one more admin token on the router
+  [ -n "$2" ] || { del ""; return; }
+  [ "$1" = - ] || del "$1"
+  (umask 077; echo "$2" > "$TK.t") && mv "$TK.t" "$TK"
+}
+# one issue at a time; a lock left by a killed run is taken over after 5 s
+locked() {
+  i=0; until mkdir "$D/rci.lock" 2>/dev/null; do i=$((i + 1)); [ $i -gt 5 ] && break; sleep 1; done
+  "$@"; rmdir "$D/rci.lock" 2>/dev/null
+}
+# at most once a minute: a wrong token counts toward the router's lockout
+due() { t=$(cat "$D/rci.try" 2>/dev/null); [ $(( $(date +%s) - ${t:-0} )) -ge 60 ]; }
+# replace the token $1 unless another run already has
+renew() { [ "$(cat "$TK" 2>/dev/null)" = "$1" ] || return 0; rm -f "$TK"; due && issue; }
+# 9: the token is refused (X-Detail 0x2312 not identified, 0x1218 token required); busybox wget shows no headers
+# of an error answer, there any 401/403 counts
+req() {
+  case "$tok" in ""|-) ;; *) set -- --header "X-NDMA-TKN: $tok" "$@" ;; esac
+  { e=$(wget -q -S -O - "$@" 2>&1 >&3); } 3>&1
+  r=$?
+  case "$e" in *0x2312*|*0x1218*) return 9 ;; *[Xx]-[Dd]etail*) return $r ;; *" 401 "*|*" 403 "*) return 9 ;; esac
+  return $r
+}
+
+if [ "$1" = --revoke ]; then
+  [ "$(cat "$TK" 2>/dev/null)" = - ] || del ""
+  rm -f "$TK" "$D/rci.try"; exit 0
+fi
+U=http://127.0.0.1:79/rci/$1
+if [ -n "$2" ]; then set -- --header "Content-Type: application/json" --post-data "$2" "$U"; else set -- "$U"; fi
+{
+  [ -s "$TK" ] || { due && locked renew ""; }
+  tok=$(cat "$TK" 2>/dev/null)
+  req "$@"
+  # refused: a new token and one more try (without one when the last issue was less than a minute ago)
+  [ $? = 9 ] && { locked renew "$tok"; tok=$(cat "$TK" 2>/dev/null); req "$@"; }
+} | "${0%/*}/keendashd" json

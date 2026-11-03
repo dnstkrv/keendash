@@ -19,15 +19,14 @@ case "$1" in
 5)
   $BIN/services --discover
   # interface names as people gave them, for bin/stats: "kernel name|name" from the NDMS interface descriptions
-  # (ndmc tells the kernel name of one interface at a time, too slow for every status) and firc's own tunnels
+  # (the kernel names take one more RCI request, a batch: too slow for every status) and firc's own tunnels
   if [ -f /opt/etc/firc/groups.yaml ]; then
     {
-      ndmc -c 'show interface' 2>/dev/null | tr -d '\r' |
-        awk '$1 == "id:" { id = $2 } $1 == "description:" { sub(/^ *description: */, ""); gsub(/[|"]/, ""); if ($0 != "") print id "|" $0 }' |
-        while IFS='|' read -r id name; do
-          s=$(ndmc -c "show interface $id system-name" 2>/dev/null | tr -d '\r' | awk '$1 == "system-name:" { print $2 }')
-          [ -n "$s" ] && echo "$s|$name"
-        done
+      ds=$($BIN/rci show/interface | awk -F'\t' '$1 ~ /^[^.]+\.description$/ { sub(/\.description$/, "", $1); gsub(/[|"]/, "", $2); if ($2 != "") print $1 "|" $2 }')
+      q=$(printf '%s\n' "$ds" | awk -F'|' '{ printf "%s{\"show\":{\"interface\":{\"system-name\":{\"name\":\"%s\"}}}}", (NR > 1 ? "," : ""), $1 }')
+      # the answers come in the order asked: the Nth one is for the Nth "id|name" line
+      [ -n "$ds" ] && { printf '%s\n' "$ds"; $BIN/rci "" "[$q]"; } | awk -F'\t' 'NF == 1 { L[++n] = $0; next }
+        $1 ~ /^[0-9]+\.show\.interface\.system-name$/ && $2 != "" { split($1, k, "."); d = L[k[1] + 1]; sub(/^[^|]*\|/, "", d); print $2 "|" d }'
       awk '/^- / { dev = "" } /^  device:/ { dev = $2; gsub(/"/, "", dev) }
         /^  description:/ && dev != "" { sub(/^  description: */, ""); gsub(/[|"]/, ""); if ($0 != "") print dev "|" $0 }' /opt/etc/firc/tunnels.yaml 2>/dev/null
     } > "$D/ifnames.t"

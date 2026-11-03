@@ -194,16 +194,23 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/stats firc: no names yet", g2.split("\n")[1] === "g|chat_gpt|opkgtun10, opkgtun11|1|2", JSON.stringify(g2));
     fs.rmSync(tmp, { recursive: true, force: true });
   }
-  // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers)
-  function collect(script, args, conf) {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kd-"));
-    fs.copyFileSync(path.join(__dirname, "fake-wget"), path.join(tmp, "wget")); fs.chmodSync(path.join(tmp, "wget"), 0o755);
+  // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers) and tests/fake-ndmc.
+  // o.state: the dir for /tmp/keendash (the RCI token) and the fakes' request log; o.edit(script, dir): paths for the test;
+  // o.files: more files next to the script; o.env: "NAME=value " for the fakes
+  function collect(script, args, conf, o) {
+    o = o || {};
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kd-")), t = unix(tmp), st = unix(o.state || tmp);
+    ["wget", "ndmc"].forEach(n => { fs.copyFileSync(path.join(__dirname, "fake-" + n), path.join(tmp, n)); fs.chmodSync(path.join(tmp, n), 0o755); });
     if (haveCc) { fs.copyFileSync(kd, path.join(tmp, "keendashd")); fs.chmodSync(path.join(tmp, "keendashd"), 0o755); }
     fs.writeFileSync(path.join(tmp, "conf"), conf);
-    // the scripts pin PATH; drop that line so the fake wget comes first. They find keendashd next to themselves
-    fs.writeFileSync(path.join(tmp, script), fs.readFileSync(path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", script), "utf8").replace(/^PATH=.*$/m, ":"));
-    const t = unix(tmp);
-    const out = cp.execFileSync("sh", ["-c", 'PATH="' + t + ':$PATH" KEENDASH_CONF="' + t + '/conf" FIX="' + unix(path.join(__dirname, "fixtures")) + '" sh "' + t + "/" + script + '" ' + args], { encoding: "utf8" });
+    Object.keys(o.files || {}).forEach(n => { fs.mkdirSync(path.dirname(path.join(tmp, n)), { recursive: true }); fs.writeFileSync(path.join(tmp, n), o.files[n], { mode: 0o755 }); });
+    // the scripts pin PATH; drop that line so the fakes come first. They find keendashd and bin/rci next to themselves
+    const src = s => fs.readFileSync(s.includes("/") ? path.join(__dirname, "..", s) : path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", s), "utf8").replace(/^PATH=.*$/m, ":");
+    const name = path.basename(script);
+    fs.writeFileSync(path.join(tmp, "rci"), src("rci"), { mode: 0o755 });
+    fs.writeFileSync(path.join(tmp, name), (o.edit || (s => s))(src(script), t), { mode: 0o755 });
+    const out = cp.execFileSync("sh", ["-c", 'PATH="' + t + ':$PATH" KEENDASH_CONF="' + t + '/conf" KEENDASH_TMP="' + st + '" LOG="' + st + '/log" ' + (o.env || "") +
+      'FIX="' + unix(path.join(__dirname, "fixtures")) + '" sh "' + t + "/" + name + '" ' + args], { encoding: "utf8" });
     fs.rmSync(tmp, { recursive: true, force: true });
     return out;
   }
@@ -243,6 +250,58 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.rmSync(cache, { recursive: true, force: true });
     ok("bin/ext: wrong key -> service down", collect("ext", "sonarr", "SONARR_URL=http://sonarr.test\nSONARR_KEY=bad\n").trim() === "sn_ok 0");
     ok("bin/ext: wrong qBittorrent password -> down", collect("ext", "qb", "QBIT_URL=http://qb.test\nQBIT_USER=admin\nQBIT_PASS=x\n").trim() === "qb_ok 0");
+  }
+  if (haveCc) {
+    // bin/rci: NDMS over RCI with keendash's own token, issued through ndmc (tests/fake-ndmc); the log lists ndmc and RCI calls in order
+    const TK = "Tk0123456789abcdefghijklmnopqrstuvWXYZ", STALE = "Stale0123456789abcdefghijklmnopqrstuv", states = [];
+    const state = (token, tried) => {
+      const d = fs.mkdtempSync(path.join(os.tmpdir(), "kd-st-")); states.push(d);
+      if (token) fs.writeFileSync(path.join(d, "rci.token"), token + "\n");
+      if (tried) fs.writeFileSync(path.join(d, "rci.try"), Math.floor(Date.now() / 1000) + "\n");
+      return d;
+    };
+    const log = d => fs.existsSync(path.join(d, "log")) ? fs.readFileSync(path.join(d, "log"), "utf8").trim().split("\n") : [];
+    const tok = d => fs.existsSync(path.join(d, "rci.token")) ? fs.readFileSync(path.join(d, "rci.token"), "utf8").trim() : null;
+    const issue = ["ndmc authentication token generate keendash", "ndmc show authentication token", "ndmc authentication token delete 4"];
+    const proxy = d => collect("rci", "show/ip/http/proxy", "", { state: d });
+    let d = state(), out = proxy(d);
+    ok("bin/rci: RCI answer flattened", /^firc\.fqdn\tfirc\.r\.example\.net$/m.test(out) && /^adguard\.upstream\t10\.0\.0\.2:3000$/m.test(out), out);
+    ok("bin/rci: token issued, only older keendash ones deleted, sent as X-NDMA-TKN", log(d).join() === issue.concat("rci /show/ip/http/proxy " + TK).join(), log(d).join(" / "));
+    ok("bin/rci: token file 600", tok(d) === TK && (fs.statSync(path.join(d, "rci.token")).mode & 0o777) === 0o600, tok(d));
+    fs.rmSync(path.join(d, "log")); proxy(d);
+    ok("bin/rci: the token is kept, no more ndmc", log(d).join() === "rci /show/ip/http/proxy " + TK, log(d).join(" / "));
+    d = state(STALE); out = proxy(d);
+    ok("bin/rci: refused token (403 0x2312) -> a new one, one retry", /^firc\.fqdn/m.test(out) && tok(d) === TK &&
+      log(d).join() === ["rci /show/ip/http/proxy " + STALE].concat(issue, "rci /show/ip/http/proxy " + TK).join(), log(d).join(" / "));
+    d = state(STALE, true); out = proxy(d);
+    ok("bin/rci: a new token at most once a minute, none till then", /^firc\.fqdn/m.test(out) && tok(d) === null &&
+      log(d).join() === ["rci /show/ip/http/proxy " + STALE, "rci /show/ip/http/proxy -"].join(), log(d).join(" / "));
+    d = state(); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=old " }); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=old " });
+    ok("bin/rci: before 5.2 no token, the issue tried once", log(d).join() === ["ndmc authentication token generate keendash", "rci /show/ip/http/proxy -", "rci /show/ip/http/proxy -"].join(), log(d).join(" / "));
+    const prerm = { edit: (x, t) => x.replace("/opt/share/keendash/bin/", t + "/") };
+    d = state(TK); collect("ipk/prerm", "", "", Object.assign({ state: d }, prerm));
+    ok("prerm: deletes only keendash's tokens, the token file", tok(d) === null &&
+      log(d).join() === ["ndmc show authentication token", "ndmc authentication token delete 4", "ndmc authentication token delete 9"].join(), log(d).join(" / "));
+    d = state(TK); collect("ipk/prerm", "", "", Object.assign({ state: d, env: "PKG_UPGRADE=1 " }, prerm));
+    ok("prerm: upgrade keeps the token", tok(d) === TK && !log(d).length, log(d).join(" / "));
+
+    // the collectors: the same lines as from ndmc before, one RCI request for all interfaces
+    d = state(); out = collect("stats", "", "", { state: d, edit: x => x.replace(/^(HAS_\w+)=0;.*$/gm, (m, v) => v + "=" + (v === "HAS_AWG" ? 1 : 0)) });
+    const tun = out.split("\n").filter(l => /^(tun\||awg_up |awg_total )/.test(l)).join("\n");
+    ok("bin/stats: tunnels from RCI", tun === "tun|Warp|1|0|0|431836\ntun|Home WG|0|0|0|0\ntun|mihomo|1|0|0|1234\nawg_up 2\nawg_total 3" &&
+      log(d).filter(l => l.startsWith("rci ")).join() === "rci /show/interface " + TK, tun + " || " + log(d).join(" / "));
+    d = state();
+    collect("tick", "5", "", { state: d, files: { services: "#!/bin/sh\n", update: "#!/bin/sh\n", "firc/groups.yaml": "groups:\n",
+      "firc/tunnels.yaml": 'tunnels:\n- id: t1\n  device: fw0\n  description: "Firc tunnel"\n' },
+      edit: (x, t) => x.replace(/^BIN=.*$/m, "BIN=" + t).replace(/^D=\/tmp\/keendash/m, 'D="$KEENDASH_TMP"').replace(/\/opt\/etc\/firc\//g, t + "/firc/") });
+    const batch = "[" + ["GigabitEthernet1", "Bridge0", "OpkgTun10", "OpkgTun11", "Proxy0", "Wireguard1"].map(n => '{"show":{"interface":{"system-name":{"name":"' + n + '"}}}}').join() + "]";
+    const ifn = fs.existsSync(path.join(d, "ifnames")) && fs.readFileSync(path.join(d, "ifnames"), "utf8");
+    ok("bin/tick 5: interface names from 2 RCI requests (interfaces, a batch of kernel names)", ifn === "eth3|Провайдер\nopkgtun10|Warp main\nopkgtun11|Home WG\nt2s0|mihomo\nnwg1|Wireguard VPN\nfw0|Firc tunnel\n" &&
+      log(d).filter(l => l.startsWith("rci ")).join("\n") === "rci /show/interface " + TK + "\nrci / " + TK + " " + batch, JSON.stringify(ifn) + " || " + log(d).join(" / "));
+    d = state(); fs.writeFileSync(path.join(d, "links"), "");
+    out = collect("services", "", "", { state: d, edit: x => x.replace(/^INITD=.*$/m, "INITD=/nonexistent").replace(/^D=\/tmp\/keendash;/m, 'D="$KEENDASH_TMP";') });
+    ok("bin/services: KeenDNS web apps from RCI", out === "ndp|firc.r.example.net|127.0.0.1|666|1\nndp|adguard.r.example.net|10.0.0.2|3000|0\n", out);
+    states.forEach(x => fs.rmSync(x, { recursive: true, force: true }));
   }
   if (haveCc) {
     // keendashd json: keys and indexes joined with ".", \" \/ \\ decoded, other escapes kept, tab and | -> space

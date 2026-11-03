@@ -1,0 +1,27 @@
+{
+  "GigabitEthernet1": {
+    "id": "GigabitEthernet1", "index": 1, "interface-name": "GigabitEthernet1", "type": "GigabitEthernet", "description": "Провайдер",
+    "traits": ["Ip", "Ethernet"], "link": "up", "connected": "yes", "state": "up", "mtu": 1500, "uptime": 90000
+  },
+  "Bridge0": {
+    "id": "Bridge0", "index": 0, "type": "Bridge", "description": "Home network", "link": "up", "connected": "yes", "state": "up", "uptime": 90000
+  },
+  "WifiMaster0/AccessPoint2": {
+    "id": "WifiMaster0/AccessPoint2", "index": 2, "type": "AccessPoint", "description": "", "link": "down", "connected": "no", "state": "down"
+  },
+  "OpkgTun10": {
+    "uptime": 431836, "id": "OpkgTun10", "index": 10, "type": "OpkgTun", "description": "Warp \"main\"",
+    "traits": ["Ip", "Ip6", "OpkgTun"], "link": "up", "connected": "yes", "state": "up", "mtu": 1280,
+    "ipv6": { "addresses": [ { "address": "fe80::1", "prefix-length": 64 } ] }
+  },
+  "OpkgTun11": {
+    "id": "OpkgTun11", "index": 11, "type": "OpkgTun", "description": "Home WG", "link": "down", "connected": "no", "state": "down"
+  },
+  "Proxy0": {
+    "id": "Proxy0", "index": 0, "type": "Proxy", "description": "mihomo", "link": "up", "connected": "yes", "state": "up", "uptime": 1234
+  },
+  "Wireguard1": {
+    "id": "Wireguard1", "index": 1, "type": "Wireguard", "description": "Wireguard VPN", "link": "up", "connected": "yes", "state": "up", "uptime": 5000,
+    "wireguard": { "peer": [ { "description": "laptop", "online": true } ] }
+  }
+}
