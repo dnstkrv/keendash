@@ -176,6 +176,24 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const b = cp.spawnSync("cc", ["-std=c99", "-O2", "-Wall", "-o", kd, path.join(__dirname, "..", "src", "keendashd.c")], { encoding: "utf8" });
     ok("keendashd builds", b.status === 0, b.stderr);
   } else res.push("SKIP keendashd and bin/ext tests: no C compiler (cc)");
+  // bin/stats firc groups: its awk on a groups.yaml with one interface, a block list and a flow list; names from ifnames
+  {
+    const st = fs.readFileSync(path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", "stats"), "utf8").replace(/\r/g, "");
+    const prog = /\n  awk -v nf=\$IFN -v pf=\$POOL '(function out\(\)[\s\S]*?END\{ out\(\) \})'/.exec(st)[1];
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kdf-"));
+    fs.writeFileSync(path.join(tmp, "pool"), "map x a1\nmap y b2\nmap z b2\n");
+    fs.writeFileSync(path.join(tmp, "names"), "opkgtun10|test_warp_1\nnwg1|Wireguard VPN\n");
+    fs.writeFileSync(path.join(tmp, "groups"), "groups:\n- id: a1\n  name: one\n  interface: eth2.4\n  enable: true\n  rules:\n  - id: r1\n    rule: a.com\n" +
+      "- id: b2\n  name: chat_gpt\n  interface:\n  - opkgtun10\n  - \"opkgtun11\"\n  enable: true\n  rules:\n  - id: r2\n    rule: b.com\n" +
+      "- id: c3\n  name: flow\n  interface: [nwg0, 'nwg1']\n  enable: false\n");
+    const f = n => path.join(tmp, n);
+    const g = cp.spawnSync("awk", ["-v", "nf=" + f("names"), "-v", "pf=" + f("pool"), prog, f("names"), f("pool"), f("groups")], { encoding: "utf8" }).stdout;
+    ok("bin/stats firc: interface lists, names", g === "g|one|eth2.4|1|1\ng|chat_gpt|test_warp_1, opkgtun11|1|2\ng|flow|nwg0, Wireguard VPN|0|0\n", JSON.stringify(g));
+    // no ifnames file yet (before the first bin/tick 5): kernel names
+    const g2 = cp.spawnSync("awk", ["-v", "nf=" + f("nope"), "-v", "pf=" + f("pool"), prog, f("pool"), f("groups")], { encoding: "utf8" }).stdout;
+    ok("bin/stats firc: no names yet", g2.split("\n")[1] === "g|chat_gpt|opkgtun10, opkgtun11|1|2", JSON.stringify(g2));
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
   // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers)
   function collect(script, args, conf) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kd-"));

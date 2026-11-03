@@ -18,6 +18,21 @@ case "$1" in
   ;;
 5)
   $BIN/services --discover
+  # interface names as people gave them, for bin/stats: "kernel name|name" from the NDMS interface descriptions
+  # (ndmc tells the kernel name of one interface at a time, too slow for every status) and firc's own tunnels
+  if [ -f /opt/etc/firc/groups.yaml ]; then
+    {
+      ndmc -c 'show interface' 2>/dev/null | tr -d '\r' |
+        awk '$1 == "id:" { id = $2 } $1 == "description:" { sub(/^ *description: */, ""); gsub(/[|"]/, ""); if ($0 != "") print id "|" $0 }' |
+        while IFS='|' read -r id name; do
+          s=$(ndmc -c "show interface $id system-name" 2>/dev/null | tr -d '\r' | awk '$1 == "system-name:" { print $2 }')
+          [ -n "$s" ] && echo "$s|$name"
+        done
+      awk '/^- / { dev = "" } /^  device:/ { dev = $2; gsub(/"/, "", dev) }
+        /^  description:/ && dev != "" { sub(/^  description: */, ""); gsub(/[|"]/, ""); if ($0 != "") print dev "|" $0 }' /opt/etc/firc/tunnels.yaml 2>/dev/null
+    } > "$D/ifnames.t"
+    mv "$D/ifnames.t" "$D/ifnames"
+  fi
   $BIN/update check
   ;;
 *) echo "usage: tick 1|5" >&2; exit 2 ;;

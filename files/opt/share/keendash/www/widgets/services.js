@@ -148,7 +148,7 @@
     var h = '<div class="us-grid">' + blk("Доменов в пуле", f.domains, s.firc_domains || [], ACC) +
       blk("Групп включено", f.enabled + " / " + f.groups, null) + "</div>" + sec("Группы по числу доменов");
     list.slice(0, 8).forEach(function (g) {
-      h += line(g[2] ? OK : OFF, esc(g[0]) + ' <span class="us-tag">' + esc(g[1]) + "</span>", g[3], !g[2]);
+      h += line(g[2] ? OK : OFF, esc(g[0]) + (g[1] ? ' <span class="us-tag">' + esc(g[1]) + "</span>" : ""), g[3], !g[2]);
     });
     if (list.length > 8) h += note("и ещё " + (list.length - 8) + " групп");
     return h;
