@@ -306,6 +306,16 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.utimesSync(pf, now, old);
     await pubServe(3, 0); await until(() => fs.readFileSync(pf, "utf8") !== "x");
     ok("keendashd publish: read -> rebuilt", fs.readFileSync(pf, "utf8").startsWith("{"));
+    // the "update" file: a read runs the upgrade once, an unread one nothing
+    const uf = path.join(pub, "update"), ran = path.join(pub, "ran");
+    penv.KEENDASH_UPDATE = "echo x >> '" + ran + "'";
+    fs.writeFileSync(uf, "\n"); fs.utimesSync(uf, old, now);
+    await pubServe(4, 1000);
+    ok("keendashd update file: not read -> no upgrade", !fs.existsSync(ran));
+    fs.utimesSync(uf, now, old);
+    await pubServe(5, 300); await until(() => fs.existsSync(ran));
+    const us = fs.statSync(uf);
+    ok("keendashd update file: read -> upgrade once, marked unread", fs.existsSync(ran) && fs.readFileSync(ran, "utf8") === "x\n" && us.atimeMs <= us.mtimeMs, fs.existsSync(ran) && fs.readFileSync(ran, "utf8"));
     fs.rmSync(pub, { recursive: true, force: true });
     [sd, www].forEach(d => fs.rmSync(d, { recursive: true, force: true }));
   }
@@ -323,15 +333,20 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("mini: stored tab fallback", /Нагрузка/.test(m.textContent));
   });
   const upd = Object.assign({}, mini, { upd: { cur: "1.0.7", new: "1.0.8", busy: 0 } });
-  // over https (the loader sets st): status.json from /storage/, a stale one is asked again, no update button
+  // over https (the loader sets st): status.json from /storage/, a stale one is asked again; the update button reads
+  // the "update" file, and a status.json that doesn't show the upgrade yet is no failure
   {
     let urls = [];
     await run(null, (w, m) => new Promise(r => setTimeout(() => {
       ok("storage: status.json, stale -> asked again", urls[0] === "/storage/.keendash/status.json" && urls.length === 2, urls.join());
-      ok("storage: new version shown, no update button", /1\.0\.8/.test(m.querySelector(".us-upd").textContent) && /opkg upgrade/.test(m.textContent) && !m.querySelector(".us-upd-go"));
-      r();
+      m.querySelector(".us-upd-go").dispatchEvent(new w.Event("click", { bubbles: true }));
+      setTimeout(() => {
+        ok("storage: update reads the update file", urls.some(u => u[0] === "/storage/.keendash/update" && !u[1].method), JSON.stringify(urls));
+        ok("storage: upgrade not in status.json yet -> still waiting", /Обновление keendash до/.test(m.querySelector(".us-upd").textContent), m.querySelector(".us-upd").textContent);
+        r();
+      }, 300);
     }, 5500)), w => { w.__keendash = { base: "/storage/.keendash/", st: true };
-      return u => { urls.push(u); return Promise.resolve({ ok: true, json: () => Promise.resolve(Object.assign({}, upd, { now: Date.now() / 1000 - 600 })) }); }; }, "https://r.example.net/");
+      return (u, o) => { urls.push(urls.length ? [u, o || {}] : u); return Promise.resolve({ ok: true, json: () => Promise.resolve(Object.assign({}, upd, { now: Date.now() / 1000 - 600 })) }); }; }, "https://r.example.net/");
   }
   await run(upd, (w, m) => {
     const bar = m.querySelector(".us-upd");

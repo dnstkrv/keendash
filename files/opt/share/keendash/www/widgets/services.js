@@ -8,7 +8,7 @@
   /* base URL of keendash's web server; the loader injected by keendash sets window.__keendash.base */
   var BASE = (window.__keendash && window.__keendash.base) || ("http://" + location.hostname + ":8189/");
   /* over https the loader points BASE at the web UI's /storage/: keendashd keeps status.json there, rebuilt only
-   * while it is read, and nothing can be POSTed, so no update from here */
+   * while it is read; nothing can be POSTed there, the update button reads keendash's "update" file instead */
   var ST = !!(window.__keendash && window.__keendash.st);
   var API = BASE + (ST ? "status.json" : "cgi-bin/status.cgi");
   var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip", MTABKEY = "ui.services.media";
@@ -28,7 +28,7 @@
   var row = null, bodyEl = null, lastData = null, dragging = false, placeholder = null, tabDrag = null;
   var tab = "telemt";
   /* upgrade started from this page: target version; upRun once update.cgi accepted it; upErr after a failed one */
-  var upTo = "", upRun = false, upErr = false, upTimer = null;
+  var upTo = "", upRun = false, upErr = false, upTimer = null, upAt = 0;
   try { tab = localStorage.getItem(TABKEY) || "telemt"; } catch (e) {}
   var mtab = "";
   try { mtab = localStorage.getItem(MTABKEY) || ""; } catch (e) {}
@@ -417,15 +417,14 @@
     var busy = !!(upTo || u.busy), v = upTo || u.new, t;
     if (busy) t = "Обновление keendash до <b>" + esc(v) + "</b>…";
     else if (upErr) t = '<span style="color:' + BAD + '">Не удалось обновить</span> · подробности в /tmp/keendash/upd.log';
-    else t = "Доступна новая версия keendash <b>" + esc(v) + "</b> · установлена " + esc(u.cur) +
-      (ST ? " · обновить можно из веб-интерфейса по http или командой opkg upgrade keendash" : "");
+    else t = "Доступна новая версия keendash <b>" + esc(v) + "</b> · установлена " + esc(u.cur);
     return '<div class="us-upd"><div class="us-upd-t">' + t + '</div><div class="us-upd-b">' +
-      (ST && !busy ? "" : '<button type="button" class="us-upd-go" data-v="' + esc(v) + '"' + (busy ? " disabled" : "") + ">" + (busy ? "Обновление…" : "Обновить") + "</button>") +
+      '<button type="button" class="us-upd-go" data-v="' + esc(v) + '"' + (busy ? " disabled" : "") + ">" + (busy ? "Обновление…" : "Обновить") + "</button>" +
       (busy ? "" : '<button type="button" class="us-upd-skip" data-v="' + esc(v) + '">Пропустить эту версию</button>') + "</div></div>";
   }
   function startUpdate(v) {
-    upTo = v; upRun = false; upErr = false; render();
-    fetch(BASE + "cgi-bin/update.cgi", { method: "POST", cache: "no-store" })
+    upTo = v; upRun = false; upErr = false; upAt = Date.now(); render();
+    fetch(BASE + (ST ? "update" : "cgi-bin/update.cgi"), ST ? { cache: "no-store" } : { method: "POST", cache: "no-store" })
       .then(function (r) { if (!r.ok) throw r.status; upRun = true; update(); })
       .catch(function () { upTo = ""; upErr = true; render(); });
   }
@@ -435,7 +434,8 @@
     if (!upTo || !upRun) return;
     /* the new widget only arrives with a page reload */
     if (u.cur === upTo) { location.reload(); return; }
-    if (!u.busy) { upTo = ""; upRun = false; upErr = true; return; }
+    /* over https keendashd starts it within 5 s and status.json shows it up to ~20 s later */
+    if (!u.busy && !(ST && Date.now() - upAt < 45000)) { upTo = ""; upRun = false; upErr = true; return; }
     clearTimeout(upTimer); upTimer = setTimeout(update, 3000);
   }
 

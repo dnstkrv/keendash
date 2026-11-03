@@ -2,7 +2,7 @@
 # keendash: dashboard card for the Keenetic web UI. One service that
 #  1) runs keendashd: the web server for the widgets (status JSON, CGI, widget scripts) on the LAN address,
 #     which also runs the periodic jobs (bin/tick) and keeps the status JSON in $PUB for the web UI over https
-#     (it reads $PUB through its own /storage/ path, see bin/patch), and
+#     (it reads $PUB through its own /storage/ path, see bin/patch; reading $PUB/update there upgrades keendash), and
 #  2) bind-mounts the Keenetic index.html with the widget loader (bin/patch).
 # All settings: /opt/etc/keendash/keendash.conf
 #
@@ -52,8 +52,9 @@ start() {
         sleep 2
     done
 
-    # the dot hides it from the /storage/ listing; widgets.json is the widget list (the CGI's last line)
-    mkdir -p "$PUB" && ln -sfn "$WWW/widgets" "$PUB/widgets" && "$WWW/cgi-bin/widgets.cgi" | tail -n 1 > "$PUB/widgets.json"
+    # the dot hides it from the /storage/ listing; widgets.json is the widget list (the CGI's last line); update is not
+    # empty: nginx sends an empty file without reading it, so its atime would not move
+    mkdir -p "$PUB" && ln -sfn "$WWW/widgets" "$PUB/widgets" && "$WWW/cgi-bin/widgets.cgi" | tail -n 1 > "$PUB/widgets.json" && echo > "$PUB/update"
     # keendashd goes to the background once the port is bound and prints its pid; a busy port fails here
     if "$BIN" serve "$ip" "$PORT" "$WWW" >/dev/null; then
         # no address here: keendash's own port serves only the card's data, users opened it and got lost

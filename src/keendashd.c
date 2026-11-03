@@ -2,6 +2,7 @@
  *   keendashd serve <ip> <port> <www>  serve the widgets on <ip>:<port> (prints the daemon's pid once the port is bound);
  *                                     runs bin/tick 1 every minute and bin/tick 5 every 5 minutes, so no cron is needed,
  *                                     and keeps the status JSON in /tmp/mnt/.keendash for the web UI over https
+ *                                     (reading its "update" file there upgrades keendash, as update.cgi does)
  *   keendashd status                  the /cgi-bin/status.cgi JSON, built from the output of bin/stats and bin/services
  *   keendashd json                    JSON on stdin -> "path<TAB>value" lines: records.0.series.title<TAB>Silo
  * Only libc: built static with musl for every Entware architecture (scripts/build-ipk.sh). */
@@ -493,16 +494,22 @@ static pid_t tick(const char *what) {
 }
 
 /* The web UI over https can't load keendash's http port (mixed content), but it reads files under /tmp/mnt through
- * its own /storage/ path, which nginx serves only to a logged-in user. The status JSON is kept there and rebuilt
- * only while someone reads it: a read moves the file's atime past its mtime (relatime). */
-static pid_t publish(void) {
+ * its own /storage/ path, which nginx serves only to a logged-in user. A read is seen there as the file's atime
+ * moving past its mtime (relatime). 1 if <name> in that directory was read since its last write, -1 if it is missing */
+static int was_read(const char *name, char *f, size_t fn) {
   const char *d = getenv("KEENDASH_PUB");
-  char f[512], t[520]; struct stat st;
+  struct stat st;
   if (!d || !*d) d = PUB;
   if (stat(d, &st) || !S_ISDIR(st.st_mode)) return 0;
-  snprintf(f, sizeof f, "%s/status.json", d);
-  if (!stat(f, &st) && (st.st_atim.tv_sec < st.st_mtim.tv_sec ||
-      (st.st_atim.tv_sec == st.st_mtim.tv_sec && st.st_atim.tv_nsec <= st.st_mtim.tv_nsec))) return 0;
+  snprintf(f, fn, "%s/%s", d, name);
+  if (stat(f, &st)) return -1;
+  return st.st_atim.tv_sec > st.st_mtim.tv_sec || (st.st_atim.tv_sec == st.st_mtim.tv_sec && st.st_atim.tv_nsec > st.st_mtim.tv_nsec);
+}
+
+/* the status JSON, rebuilt only while someone reads it */
+static pid_t publish(void) {
+  char f[512], t[520];
+  if (!was_read("status.json", f, sizeof f)) return 0;
   pid_t p = fork();
   if (p == 0) {
     signal(SIGCHLD, SIG_DFL);
@@ -512,6 +519,17 @@ static pid_t publish(void) {
     if (fd >= 0) { writeall(fd, o.p, o.n); close(fd); rename(t, f); }
     _exit(0);
   }
+  return p > 0 ? p : 0;
+}
+
+/* the card's update button over https reads the empty "update" file: then upgrade (S81keendash makes the file) */
+static pid_t upgrade(void) {
+  char f[512];
+  if (was_read("update", f, sizeof f) != 1) return 0;
+  utimensat(AT_FDCWD, f, NULL, 0); /* atime = mtime again: one read, one run */
+  const char *u = getenv("KEENDASH_UPDATE");
+  pid_t p = fork();
+  if (p == 0) { execl("/bin/sh", "sh", "-c", u && *u ? u : SHARE "/bin/update run", (char *)NULL); _exit(127); }
   return p > 0 ? p : 0;
 }
 
@@ -535,24 +553,26 @@ static int serve(const char *ip, const char *port, const char *www) {
   struct sigaction sa; memset(&sa, 0, sizeof sa);
   sa.sa_handler = woken; sigaction(SIGCHLD, &sa, NULL);
 
-  time_t next1 = 0, next5 = 0, nextp = 0;
-  pid_t t1 = 0, t5 = 0, tp = 0; int conns = 0;
+  time_t next1 = 0, next5 = 0, nextp = 0, nextu = 0;
+  pid_t t1 = 0, t5 = 0, tp = 0, tu = 0; int conns = 0;
   for (;;) {
     pid_t w;
-    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else conns--; }
+    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else if (w == tu) tu = 0; else conns--; }
     time_t now = mono();
     /* a run still going when the next one is due is skipped, not doubled */
     if (now >= next1) { if (!t1) t1 = tick("1"); next1 = now + 60; }
     if (now >= next5) { if (!t5) t5 = tick("5"); next5 = now + 300; }
     /* the card asks every 30 s: the JSON it gets is at most ~20 s old */
     if (now >= nextp) { if (!tp) tp = publish(); nextp = now + 15; }
+    if (now >= nextu) { if (!tu) tu = upgrade(); nextu = now + 5; }
     time_t next = next1 < next5 ? next1 : next5;
     if (nextp < next) next = nextp;
+    if (nextu < next) next = nextu;
     struct pollfd pf = { l, POLLIN, 0 };
     if (poll(&pf, 1, (int)(next - now) * 1000) <= 0) continue;
     int c = accept4(l, NULL, NULL, SOCK_CLOEXEC);
     if (c < 0) continue;
-    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else conns--; }
+    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else if (w == tu) tu = 0; else conns--; }
     if (conns >= MAXCONN) { close(c); continue; }
     pid_t h = fork();
     if (h == 0) { signal(SIGCHLD, SIG_DFL); close(l); handle(c, www); close(c); _exit(0); }
