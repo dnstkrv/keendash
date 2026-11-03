@@ -202,7 +202,7 @@ static void status(buf *o) {
   bs(o, "],\"ndp\":["); rows(o, &V, "ndp", "ssnn");
   bs(o, "],\"telemt\":{"); kv(o, &S, "ok=telemt_ok conn=telemt_conn users=telemt_users cfg=telemt_cfg up=telemt_up bad=telemt_bad");
   bs(o, ",\"list\":["); rows(o, &S, "u", "snnn");
-  bs(o, "]},\"awg\":{"); kv(o, &S, "up=awg_up total=awg_total");
+  bs(o, "]},\"awg\":{"); kv(o, &S, "up=awg_up total=awg_total nokey=awg_nokey");
   bs(o, ",\"tun\":["); rows(o, &S, "tun", "snnnn");
   bs(o, "],\"px\":["); rows(o, &S, "px", "ssnnNs");
   bs(o, "]},\"firc\":{"); kv(o, &S, "domains=firc_domains groups=firc_groups enabled=firc_enabled");

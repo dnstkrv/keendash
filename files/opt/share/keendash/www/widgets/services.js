@@ -128,6 +128,7 @@
   }
   function tabAwg(d, s) {
     var a = d.awg || {}, ar = rates(s.awg_bytes || []), h = sec("Туннели");
+    if (a.nokey) h += note('<span style="color:' + BAD + '">В awg-manager включён вход по паролю</span> · чтобы keendash видел туннели, сгенерируйте API-ключ в настройках awg-manager');
     (a.tun || []).forEach(function (x) {
       h += line(x[1] ? OK : OFF, esc(x[0]), x[1] ? "↓ " + fmtBytes(x[2]) + " · ↑ " + fmtBytes(x[3]) + " · " + fmtDur(x[4]) : "выключен", !x[1]);
     });

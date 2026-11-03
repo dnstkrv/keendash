@@ -163,6 +163,15 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const hrefs = Array.from(m.querySelectorAll("a.us-lnk, a.us-open")).map(a => a.href).join(" ");
     ok("KeenDNS web apps: by address in the LAN", hrefs === "http://192.168.0.1:666/ http://192.168.0.1:2000/ http://10.0.0.5:3000/", hrefs);
   });
+  // awg-manager with its login on and no API key: a hint instead of an empty list
+  await run(Object.assign({}, mini, { tabs: ["awg", "sys"], awg: { up: 0, total: 0, nokey: 1, tun: [], px: [] } }), (w, m) => {
+    m.querySelector('[data-tab="awg"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+    ok("awg: no API key hint", /сгенерируйте API-ключ в настройках awg-manager/.test(m.textContent), m.textContent);
+  });
+  await run(Object.assign({}, mini, { tabs: ["awg", "sys"], awg: { up: 1, total: 1, nokey: 0, tun: [["wg", 1, 0, 0, 60]], px: [] } }), (w, m) => {
+    m.querySelector('[data-tab="awg"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+    ok("awg: no hint with the key", !/API-ключ/.test(m.textContent), m.textContent);
+  });
   await run(Object.assign({}, mini, { tabs: ["media", "sys"], media: { svc: [["immich", "http://10.0.0.5:2283"]], immich: { ok: null } } }), (w, m) => {
     m.querySelector('[data-tab="media"]').dispatchEvent(new w.Event("click", { bubbles: true }));
     ok("media before the first cron run: wait note", /появятся в течение минуты/.test(m.textContent));
@@ -288,10 +297,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("prerm: upgrade keeps the token", tok(d) === TK && !log(d).length, log(d).join(" / "));
 
     // the collectors: the same lines as from ndmc before, one RCI request for all interfaces
-    d = state(); out = collect("stats", "", "", { state: d, edit: x => x.replace(/^(HAS_\w+)=0;.*$/gm, (m, v) => v + "=" + (v === "HAS_AWG" ? 1 : 0)) });
-    const tun = out.split("\n").filter(l => /^(tun\||awg_up |awg_total )/.test(l)).join("\n");
-    ok("bin/stats: tunnels from RCI", tun === "tun|Warp|1|0|0|431836\ntun|Home WG|0|0|0|0\ntun|mihomo|1|0|0|1234\nawg_up 2\nawg_total 3" &&
-      log(d).filter(l => l.startsWith("rci ")).join() === "rci /show/interface " + TK, tun + " || " + log(d).join(" / "));
+    // only the awg provider, whatever the test machine has; awg-manager's settings.json from the test
+    const awg = (settings, env) => {
+      const s = state(), o = collect("stats", "", "", { state: s, env: env || "", files: { "awgm.json": settings || "{}" },
+        edit: (x, t) => x.replace(/^(HAS_\w+)=0;.*$/gm, (m, v) => v + "=" + (v === "HAS_AWG" ? 1 : 0)).replace(/^  AS=.*$/m, "  AS=" + t + "/awgm.json") });
+      return { tun: o.split("\n").filter(l => /^(tun\||awg_up |awg_total |awg_nokey )/.test(l)).join("\n"), log: log(s) };
+    };
+    const tuns = "tun|Warp|1|0|0|431836\ntun|Home WG|0|0|0|0\ntun|mihomo|1|0|0|1234\nawg_up 2\nawg_total 3";
+    let a = awg('{\n  "port": 2222,\n  "authEnabled": false\n}\n');
+    ok("bin/stats: tunnels from RCI", a.tun === tuns && a.log.filter(l => l.startsWith("rci ")).join() === "rci /show/interface " + TK, a.tun + " || " + a.log.join(" / "));
+    a = awg('{\n  "apiKey": "k-123",\n  "server": { "port": 2222 },\n  "authEnabled": true\n}\n', "AWG_KEY=k-123 ");
+    ok("bin/stats: awg-manager login on -> its API key", a.tun === tuns, a.tun + " || " + a.log.join(" / "));
+    a = awg('{\n  "port": 2222,\n  "authEnabled": true\n}\n', "AWG_KEY=k-123 ");
+    ok("bin/stats: awg-manager login on, no API key -> not asked, awg_nokey", a.tun === "awg_nokey 1\nawg_up 0\nawg_total 0" && !a.log.some(l => l.startsWith("awg ")), a.tun + " || " + a.log.join(" / "));
     d = state();
     collect("tick", "5", "", { state: d, files: { services: "#!/bin/sh\n", update: "#!/bin/sh\n", "firc/groups.yaml": "groups:\n",
       "firc/tunnels.yaml": 'tunnels:\n- id: t1\n  device: fw0\n  description: "Firc tunnel"\n' },
@@ -314,7 +332,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
 
     // keendashd status: stats/services output -> the card's JSON; broken numbers become 0/null, strings are escaped
     const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));
-    fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "telemt_ok 1", "telemt_conn 12", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
+    fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "awg_nokey 1", "telemt_ok 1", "telemt_conn 12", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
       "agh_url http://10.0.0.5:3000", "agh_ok 1", "agh_sq 1,2,x,3", "al|1793540467|ads.example.com|tv", "ms|qb|http://q", "qb_ok 0", 'pwb|Tracker "One"',
       "sys_load 007", "sys_temp", "ts_running 1", "ts_online 1", "tss|Running|router|100.64.0.1|waw||0||", "tsp|pc|windows|1|1|1||0001-01-01T00:00:00Z|10|20|0|0|"].join("\n") + "\n");
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
@@ -326,7 +344,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     if (s) {
       const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       ok("keendashd status: tabs, services, links", eq(s.tabs, ["telemt", "sys"]) && eq(s.svc, [["cron", 1, ""]]) && eq(s.web, [["lighttpd", 8090, "nfqws2"]]) && eq(s.ndp, [["firc.r.example.net", "127.0.0.1", 666, 1]]), JSON.stringify([s.tabs, s.svc, s.web, s.ndp]));
-      ok("keendashd status: values, missing ones 0", s.telemt.ok === 1 && s.telemt.conn === 12 && s.telemt.users === 0 && s.sys.mem === 0, JSON.stringify(s.telemt));
+      ok("keendashd status: values, missing ones 0", s.telemt.ok === 1 && s.telemt.conn === 12 && s.telemt.users === 0 && s.sys.mem === 0 && s.awg.nokey === 1 && s.awg.up === 0, JSON.stringify(s.telemt) + JSON.stringify(s.awg));
       ok("keendashd status: strings escaped", eq(s.telemt.list, [['alice "a"\\b', 3, 100, 200]]) && eq(s.media.prowlarr.list, ['Tracker "One"']), JSON.stringify(s.telemt.list));
       ok("keendashd status: empty fields 0 / null", eq(s.awg.px, [["home", "freeturn-server", 1, 0, null, ""]]), JSON.stringify(s.awg.px));
       ok("keendashd status: AdGuard url, series, recent", s.agh.ok === 1 && s.agh.url === "http://10.0.0.5:3000" && eq(s.agh.sq, [1, 2, 3]) && eq(s.agh.sb, []) && eq(s.agh.last, [[1793540467, "ads.example.com", "tv"]]), JSON.stringify(s.agh));
