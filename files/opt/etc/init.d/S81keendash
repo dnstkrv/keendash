@@ -58,15 +58,16 @@ start() {
     tls=""; [ "${HTTPS_PORT:-0}" != 0 ] && tls=$HTTPS_PORT
     # shellcheck disable=SC2086
     if out=$("$BIN" serve "$ip" "$PORT" "$WWW" $tls) || { [ -n "$tls" ] && tls="" && "$BIN" serve "$ip" "$PORT" "$WWW" >/dev/null; }; then
-        echo "keendash started: http://$ip:$PORT/"
+        # no addresses here: keendash's own ports serve only the card's data, users opened them and got lost
+        echo "keendash started"
         if [ -n "$tls" ]; then
             mkdir -p "$TLS"; echo "$out" | sed -n 2p > "$TLS/fqdn"; echo "$HTTPS_PORT" > "$TLS/port"
             type=iptables table=filter "$FW"
-            echo "keendash HTTPS: https://$(cat "$TLS/fqdn"):$HTTPS_PORT/ (the web UI opened via KeenDNS)"
         else
             rm -rf "$TLS"
         fi
-        "$PATCH" stop >/dev/null 2>&1; "$PATCH" start
+        "$PATCH" stop >/dev/null 2>&1
+        p=$("$PATCH" start); [ "$p" = "смонтировано" ] || echo "$p"
     else
         echo "keendash: failed to start on $ip:$PORT (port busy?)"
         return 1
