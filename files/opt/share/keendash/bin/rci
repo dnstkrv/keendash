@@ -22,8 +22,11 @@ del() {
 # a new token, then the older ones go: a failed issue doesn't leave keendash without a working one
 issue() {
   date +%s > "$D/rci.try"
+  # before 5.2 (release 5.01.x) the token commands are missing: every try would log an error in the router's log
+  case "$(nd 'show version' | awk '$1 == "release:" { print $2 }')" in [0-4].*|5.0[01].*) echo - > "$TK"; return ;; esac
   o=$(nd 'authentication token generate keendash')
-  case "$o" in *"no such command"*) echo - > "$TK"; return ;; esac
+  # the parser's own error ("no such command", 5.1 says "argument parse error"): no token commands either
+  case "$o" in *"Command::Base error"*) echo - > "$TK"; return ;; esac
   # "id: N" and "value:", a long value wrapped over the next lines
   set -- $(printf '%s\n' "$o" | awk '{ s = $0; gsub(/^[ \t]+|[ \t]+$/, "", s); i = index(s, ":") }
     i { if (on) exit; k = substr(s, 1, i - 1); v = substr(s, i + 1); gsub(/^[ \t]+/, "", v)
@@ -31,7 +34,7 @@ issue() {
     on { if (s == "") exit; t = t s }
     END { if (t ~ /^[A-Za-z0-9]+$/ && length(t) >= 32) print (id == "" ? "-" : id), t }')
   # issued but not read: delete it, or every retry would leave one more admin token on the router
-  [ -n "$2" ] || { del ""; return; }
+  [ -n "$2" ] || { case "$o" in *value:*) del "" ;; esac; return; }
   [ "$1" = - ] || del "$1"
   (umask 077; echo "$2" > "$TK.t") && mv "$TK.t" "$TK"
 }

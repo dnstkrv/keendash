@@ -262,7 +262,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     };
     const log = d => fs.existsSync(path.join(d, "log")) ? fs.readFileSync(path.join(d, "log"), "utf8").trim().split("\n") : [];
     const tok = d => fs.existsSync(path.join(d, "rci.token")) ? fs.readFileSync(path.join(d, "rci.token"), "utf8").trim() : null;
-    const issue = ["ndmc authentication token generate keendash", "ndmc show authentication token", "ndmc authentication token delete 4"];
+    const issue = ["ndmc show version", "ndmc authentication token generate keendash", "ndmc show authentication token", "ndmc authentication token delete 4"];
     const proxy = d => collect("rci", "show/ip/http/proxy", "", { state: d });
     let d = state(), out = proxy(d);
     ok("bin/rci: RCI answer flattened", /^firc\.fqdn\tfirc\.r\.example\.net$/m.test(out) && /^adguard\.upstream\t10\.0\.0\.2:3000$/m.test(out), out);
@@ -277,7 +277,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/rci: a new token at most once a minute, none till then", /^firc\.fqdn/m.test(out) && tok(d) === null &&
       log(d).join() === ["rci /show/ip/http/proxy " + STALE, "rci /show/ip/http/proxy -"].join(), log(d).join(" / "));
     d = state(); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=old " }); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=old " });
-    ok("bin/rci: before 5.2 no token, the issue tried once", log(d).join() === ["ndmc authentication token generate keendash", "rci /show/ip/http/proxy -", "rci /show/ip/http/proxy -"].join(), log(d).join(" / "));
+    ok("bin/rci: before 5.2 (5.01 release) no token commands at all", log(d).join() === ["ndmc show version", "rci /show/ip/http/proxy -", "rci /show/ip/http/proxy -"].join(), log(d).join(" / "));
+    d = state(); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=noversion " }); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=noversion " });
+    ok("bin/rci: 5.1 argument parse error -> no token, tried once, nothing to delete", log(d).join() === ["ndmc show version", "ndmc authentication token generate keendash", "rci /show/ip/http/proxy -", "rci /show/ip/http/proxy -"].join(), log(d).join(" / "));
     const prerm = { edit: (x, t) => x.replace("/opt/share/keendash/bin/", t + "/") };
     d = state(TK); collect("ipk/prerm", "", "", Object.assign({ state: d }, prerm));
     ok("prerm: deletes only keendash's tokens, the token file", tok(d) === null &&

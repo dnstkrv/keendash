@@ -1,18 +1,20 @@
 #!/bin/sh
-# Fake ndmc for bin/rci: RCI tokens of keendash and other packages. NDMC=old answers like firmware before 5.2.
-# Every command goes to $LOG.
+# Fake ndmc for bin/rci: RCI tokens of keendash and other packages. NDMC=old answers like 5.1 (no token commands),
+# NDMC=noversion like 5.1 without a release in "show version". Every command goes to $LOG.
 echo "ndmc $2" >> "${LOG:-/dev/null}"
-[ "$NDMC" = old ] && { echo "Command::Base error[7405600]: no such command: authentication."; exit 127; }
 E=$(printf '\033[K')
-case "$2" in
+case "$NDMC:$2" in
+  *":show version") [ "$NDMC" = noversion ] && exit 1; printf '%s\n' "$E" "          release: $([ "$NDMC" = old ] && echo 5.01.C.2.0-2 || echo 5.02.A.11.0-1)" ;;
+  old:show*|noversion:show*) echo "${E}Command::Base error[7405600]: no such command: authentication." ;;
+  old:*|noversion:*) echo "${E}Command::Base error[7405602]: argument parse error." ;;
   # ESC[K like the real one, the value on the lines below "value:"
-  "authentication token generate keendash")
+  *":authentication token generate keendash")
     printf '%s\n' "$E" "            token: " "                   id: 9" "                value: " "                       Tk0123456789abcdefghij$E" \
       "                       klmnopqrstuvWXYZ" "              expires: never" "$E" ;;
-  "show authentication token")
+  *":show authentication token")
     for x in 3:firc 4:keendash 5:awg-manager 8:keendash-x 9:keendash; do
       printf '            token: \n                   id: %s\n              user: admin\n            user-data: %s\n              expires: never\n\n' "${x%%:*}" "${x#*:}"
     done ;;
-  "authentication token delete "*) ;;
+  *":authentication token delete "*) ;;
   *) exit 1 ;;
 esac
