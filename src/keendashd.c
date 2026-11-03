@@ -225,6 +225,9 @@ static void status(buf *o) {
   bs(o, "],\"mon\":["); rows(o, &S, "m", "snnn");
   bs(o, "]},\"hydra\":{"); kv(o, &S, "run=hr_running up=hr_up mem=hr_mem keys=hr_keys ips=hr_ips");
   bs(o, ",\"list\":["); rows(o, &S, "hr", "snnnn");
+  bs(o, "]},\"ts\":{"); kv(o, &S, "run=ts_running up=ts_up mem=ts_mem online=ts_online total=ts_total");
+  bs(o, ",\"self\":["); rows(o, &S, "tss", "sssssnss");
+  bs(o, "],\"list\":["); rows(o, &S, "tsp", "ssnnnssnnnns");
   /* third-party services: "ok" is null until bin/ext has asked the API once */
   bs(o, "]},\"agh\":{"); kv(o, &S, "ok=?agh_ok");
   bs(o, ",\"url\":"); v = val(&S, "agh_url", &n); jstr(o, v ? v : "", v ? n : 0);
@@ -254,7 +257,7 @@ static void status(buf *o) {
   bs(o, "]}},\"sys\":{"); kv(o, &S, "load=sys_load mem=sys_mem memtotal=sys_memtotal temp=?sys_temp disk=sys_disk free=sys_free up=sys_uptime");
   bs(o, "},\"series\":{");
   static const char *ser[] = { "telemt_conn", "telemt_octets", "awg_bytes", "awg_up", "firc_domains", "ascn_ips", "ascn_honeypot",
-                               "nfq_pkts", "nfq_auto", "hr_ips", "qb_dl", "qb_up", "sys_load", "sys_mem", "sys_temp" };
+                               "nfq_pkts", "nfq_auto", "hr_ips", "ts_bytes", "ts_online", "qb_dl", "qb_up", "sys_load", "sys_mem", "sys_temp" };
   for (size_t i = 0; i < sizeof ser / sizeof *ser; i++) { bf(o, "%s\"%s\":[", i ? "," : "", ser[i]); series(o, tmp, ser[i]); bs(o, "]"); }
 
   /* update: installed version, a newer one from the feed (bin/update check), an upgrade in progress */

@@ -134,6 +134,23 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     m.querySelector('[data-tab="media"]').dispatchEvent(new w.Event("click", { bubbles: true }));
     ok("media single service: no sub-tabs, keys hint, loopback link", !m.querySelector(".us-sub") && /API Sonarr недоступен/.test(m.textContent) && /SONARR_KEY/.test(m.textContent) && m.querySelector("a.us-open").href === "http://192.168.0.1:8989/", m.textContent);
   });
+  const tsData = { run: 1, up: 3600, mem: 51200, online: 2, total: 4, self: [["Running", "router", "100.64.0.1", "waw", "vps", 1, "192.168.1.0/24", ""]],
+    list: [["old-pc", "windows", 0, 0, 0, "", "2024-08-29T23:44:19.1Z", 0, 0, 0, 0, ""],
+      ["phone", "android", 0, 0, 0, "", new Date((1793438837 - 7200) * 1000).toISOString(), 0, 0, 0, 0, ""],
+      ["laptop", "linux", 1, 1, 1, "fra", "0001-01-01T00:00:00Z", 2048, 1024, 0, 0, ""],
+      ["vps", "linux", 1, 0, 0, "fra", "0001-01-01T00:00:00Z", 0, 0, 1, 1, "10.0.0.0/24"]] };
+  await run(Object.assign({}, mini, { now: 1793438837, tabs: ["tailscale", "sys"], ts: tsData, series: { ts_bytes: [0, 6000, 12000], ts_online: [1, 2] } }), (w, m) => {
+    const rows = Array.from(m.querySelectorAll(".us-row")).map(r => r.textContent);
+    ok("tailscale: tab, admin console link", !!m.querySelector('[data-tab="tailscale"].us-on') && m.querySelector("a.us-open").href === "https://login.tailscale.com/admin/machines", m.textContent);
+    ok("tailscale: traffic and devices online", /100 Б\/с/.test(m.querySelector(".us-grid").textContent) && /2 \/ 4/.test(m.querySelector(".us-grid").textContent), m.querySelector(".us-grid").textContent);
+    ok("tailscale: daemon + this router", /^tailscaled1ч 0м · 50\.0 МБ$/.test(rows[0]) && /^Этот роутерподключён · 100\.64\.0\.1 · DERP waw$/.test(rows[1]), rows.slice(0, 2).join(" / "));
+    ok("tailscale: exit node in use, offered, subnets", /выход в интернет через vps/.test(m.textContent) && /выходной узел/.test(m.textContent) && /подсети: 192\.168\.1\.0\/24/.test(m.textContent), m.textContent);
+    ok("tailscale: peers online first, then last seen", rows.slice(2).map(r => r.split(" ")[0]).join() === "laptop,vps,phone,old-pc", rows.join(" / "));
+    ok("tailscale: direct with traffic, idle online, ago, old date", /напрямую · ↓ 2\.0 КБ · ↑ 1\.0 КБ$/.test(rows[2]) && /выход.*подсети.*в сети$/.test(rows[3]) && /был в сети 2ч 0м назад$/.test(rows[4]) && /был в сети 30\.08\.2024$|был в сети 29\.08\.2024$/.test(rows[5]), rows.slice(2).join(" / "));
+  });
+  await run(Object.assign({}, mini, { tabs: ["tailscale", "sys"], ts: { run: 1, up: 60, mem: 1024, online: 0, total: 0, self: [["NeedsLogin", "", "", "", "", 0, "", "some warning"]], list: [] } }), (w, m) => {
+    ok("tailscale: needs login, health warning, no peers", /нужен вход: tailscale up/.test(m.textContent) && /some warning/.test(m.textContent) && !/Устройства/.test(m.textContent), m.textContent);
+  });
   await run(Object.assign({}, mini, { tabs: ["media", "sys"], media: { svc: [["immich", "http://10.0.0.5:2283"]], immich: { ok: null } } }), (w, m) => {
     m.querySelector('[data-tab="media"]').dispatchEvent(new w.Event("click", { bubbles: true }));
     ok("media before the first cron run: wait note", /появятся в течение минуты/.test(m.textContent));
@@ -216,7 +233,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));
     fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "telemt_ok 1", "telemt_conn 12", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
       "agh_url http://10.0.0.5:3000", "agh_ok 1", "agh_sq 1,2,x,3", "al|1793540467|ads.example.com|tv", "ms|qb|http://q", "qb_ok 0", 'pwb|Tracker "One"',
-      "sys_load 007", "sys_temp"].join("\n") + "\n");
+      "sys_load 007", "sys_temp", "ts_running 1", "ts_online 1", "tss|Running|router|100.64.0.1|waw||0||", "tsp|pc|windows|1|1|1||0001-01-01T00:00:00Z|10|20|0|0|"].join("\n") + "\n");
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
@@ -233,6 +250,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: media ok null until asked", eq(s.media.svc, [["qb", "http://q"]]) && s.media.qb.ok === 0 && s.media.plex.ok === null && s.media.sonarr.missing === null, JSON.stringify(s.media.qb));
       ok("keendashd status: 007 -> 7, empty temp -> null", s.sys.load === 7 && s.sys.temp === null, JSON.stringify(s.sys));
       ok("keendashd status: graph history, broken lines skipped", eq(s.series.sys_load, [10, 20, 30]) && eq(s.series.awg_bytes, []), JSON.stringify(s.series.sys_load));
+      ok("keendashd status: Tailscale", s.ts.run === 1 && s.ts.online === 1 && s.ts.total === 0 && eq(s.ts.self, [["Running", "router", "100.64.0.1", "waw", "", 0, "", ""]]) &&
+        eq(s.ts.list, [["pc", "windows", 1, 1, 1, "", "0001-01-01T00:00:00Z", 10, 20, 0, 0, ""]]), JSON.stringify(s.ts));
       ok("keendashd status: newer version", s.upd.new === "9.9.9" && s.upd.busy === 0, JSON.stringify(s.upd));
     }
 

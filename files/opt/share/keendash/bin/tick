@@ -9,7 +9,7 @@ case "$1" in
 1)
   $BIN/stats | while read -r k v; do
     case "$k" in
-      telemt_conn|telemt_octets|awg_bytes|awg_up|firc_domains|ascn_ips|ascn_honeypot|nfq_pkts|nfq_auto|hr_ips|qb_dl|qb_up|sys_load|sys_mem|sys_temp)
+      telemt_conn|telemt_octets|awg_bytes|awg_up|firc_domains|ascn_ips|ascn_honeypot|nfq_pkts|nfq_auto|hr_ips|ts_bytes|ts_online|qb_dl|qb_up|sys_load|sys_mem|sys_temp)
         f="$D/$k"; { tail -n 179 "$f" 2>/dev/null; echo "$v"; } > "$f.t" && mv "$f.t" "$f";;
     esac
   done

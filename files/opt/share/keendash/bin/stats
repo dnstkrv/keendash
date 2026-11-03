@@ -18,12 +18,15 @@ NF_PID=$(pidof nfqws2 2>/dev/null || pidof nfqws 2>/dev/null); NF_PID=${NF_PID%%
 HAS_NFQWS=0; { [ -n "$NF_DIR" ] || [ -n "$NF_PID" ]; } && HAS_NFQWS=1
 HR_PID=$(pidof hrneo 2>/dev/null); HR_PID=${HR_PID%% *}
 HAS_HR=0; { [ -f /opt/etc/HydraRoute/hrneo.conf ] || [ -n "$HR_PID" ]; } && HAS_HR=1
+TS_PID=$(pidof tailscaled 2>/dev/null); TS_PID=${TS_PID%% *}
+HAS_TS=0; { command -v tailscale >/dev/null 2>&1 || [ -n "$TS_PID" ]; } && HAS_TS=1
 [ $HAS_TELEMT = 1 ] && echo "tab|telemt"
 [ $HAS_AWG = 1 ] && echo "tab|awg"
 [ $HAS_FIRC = 1 ] && echo "tab|firc"
 [ $HAS_ASCN = 1 ] && echo "tab|ascn"
 [ $HAS_NFQWS = 1 ] && echo "tab|nfqws"
 [ $HAS_HR = 1 ] && echo "tab|hydra"
+[ $HAS_TS = 1 ] && echo "tab|tailscale"
 [ -n "${ADGUARD_URL:-}" ] && printf 'tab|agh\nagh_url %s\n' "${ADGUARD_URL%/}"
 # media services: "ms|id|url" for each configured one, and their tab when there is any
 for x in qb:QBIT_URL plex:PLEX_URL sonarr:SONARR_URL radarr:RADARR_URL prowlarr:PROWLARR_URL overseerr:OVERSEERR_URL immich:IMMICH_URL; do
@@ -178,6 +181,51 @@ if [ $HAS_HR = 1 ]; then
   done)
   [ -n "$hr" ] && printf '%s\n' "$hr"
   printf '%s\n' "$hr" | awk -F'|' '{k+=$3; i+=$4+$5} END{print "hr_keys " k+0; print "hr_ips " i+0}'
+fi
+
+# ---- Tailscale: this node (tss|state|name|ip|relay|exit node in use|offers exit|routes|health) and its peers
+#      (tsp|name|os|online|active|direct|relay|last seen|rx|tx|our exit node|offers exit|routes) from its status JSON ----
+if [ $HAS_TS = 1 ]; then
+  echo "ts_running $([ -n "$TS_PID" ] && echo 1 || echo 0)"
+  if [ -n "$TS_PID" ]; then
+    st=$(sed 's/.*) //' /proc/$TS_PID/stat 2>/dev/null | awk '{print $20}')
+    echo "ts_up $(awk -v s="${st:-0}" '{printf "%d", $1 - s/100}' /proc/uptime)"
+    echo "ts_mem $(awk '/VmRSS/{print $2}' /proc/$TS_PID/status 2>/dev/null | d0)"
+  else echo "ts_up 0"; echo "ts_mem 0"; fi
+  echo "ts_bytes $(awk '{gsub(":"," ")} $1=="tailscale0"{printf "%.0f", $2+$10; f=1} END{if(!f) print 0}' /proc/net/dev)"
+  # peers are keyed by node key: Peer.nodekey:<hex>.Field
+  [ -n "$TS_PID" ] && tailscale status --json 2>/dev/null | /opt/share/keendash/bin/keendashd json | awk -F'\t' '
+    { split($1, k, ".") }
+    $1 == "BackendState" { st = $2 }
+    $1 == "Self.HostName" { nm = $2 }
+    $1 == "Self.TailscaleIPs.0" { ip = $2 }
+    $1 == "Self.Relay" { rl = $2 }
+    $1 == "Self.ExitNodeOption" { xo = $2 == "true" }
+    k[1] == "Self" && k[2] == "PrimaryRoutes" { rt = rt (rt != "" ? ", " : "") $2 }
+    # on Keenetic /etc is read-only: tailscale always fails to set DNS there, nothing to fix
+    k[1] == "Health" && hl == "" && $2 !~ /resolv/ { hl = $2 }
+    k[1] == "Peer" {
+      id = k[2]; if (!(id in P)) { P[id] = 1; o[++n] = id }
+      f = k[3]
+      if (f == "HostName") H[id] = $2
+      else if (f == "OS") O[id] = $2
+      else if (f == "Online") ON[id] = $2 == "true"
+      else if (f == "Active") A[id] = $2 == "true"
+      else if (f == "CurAddr") C[id] = $2 != ""
+      else if (f == "Relay") R[id] = $2
+      else if (f == "LastSeen") L[id] = $2
+      else if (f == "RxBytes") RX[id] = $2
+      else if (f == "TxBytes") TX[id] = $2
+      else if (f == "ExitNode" && $2 == "true") ex = id
+      else if (f == "ExitNodeOption") XO[id] = $2 == "true"
+      else if (f == "PrimaryRoutes") PR[id] = PR[id] (PR[id] != "" ? ", " : "") $2
+    }
+    END {
+      print "tss|" st "|" nm "|" ip "|" rl "|" (ex != "" ? H[ex] : "") "|" xo + 0 "|" rt "|" hl
+      for (i = 1; i <= n; i++) { id = o[i]; on += ON[id]
+        print "tsp|" H[id] "|" O[id] "|" ON[id] + 0 "|" A[id] + 0 "|" C[id] + 0 "|" R[id] "|" L[id] "|" RX[id] + 0 "|" TX[id] + 0 "|" (id == ex) "|" XO[id] + 0 "|" PR[id] }
+      print "ts_online " on + 0; print "ts_total " n + 0
+    }'
 fi
 
 # ---- third-party services (AdGuard Home, media): bin/ext keeps their API answers here, refreshed every minute ----

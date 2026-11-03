@@ -13,7 +13,7 @@
   var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip", MTABKEY = "ui.services.media";
   var ORDKEY = "ui.services.order", MORDKEY = "ui.services.morder";
   var TITLE = "Сервисы";
-  var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["agh", "AdGuard"], ["media", "Медиа"], ["ascn", "Antiscan"], ["sys", "Система"]];
+  var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["tailscale", "Tailscale"], ["agh", "AdGuard"], ["media", "Медиа"], ["ascn", "Antiscan"], ["sys", "Система"]];
   /* "Медиа" tab: one sub-tab per configured service; [id, name, its keendash.conf keys] */
   var MEDIA = [["qb", "qBittorrent", "QBIT_URL, QBIT_USER и QBIT_PASS"], ["plex", "Plex", "PLEX_URL и PLEX_TOKEN"], ["sonarr", "Sonarr", "SONARR_URL и SONARR_KEY"],
     ["radarr", "Radarr", "RADARR_URL и RADARR_KEY"], ["prowlarr", "Prowlarr", "PROWLARR_URL и PROWLARR_KEY"], ["overseerr", "Overseerr", "OVERSEERR_URL и OVERSEERR_KEY"],
@@ -202,6 +202,44 @@
       h += line(ips ? OK : OFF, esc(t[0]) + ' <span class="us-tag">' + (t[4] ? "интерфейс" : "политика") + "</span>",
         (t[1] ? "доменов " + t[1] + " · " : "") + "адресов " + ips, !ips);
     });
+    return h;
+  }
+  var TSSTATE = { Running: [OK, "подключён"], Starting: [WARN, "подключается"], NeedsLogin: [BAD, "нужен вход: tailscale up"],
+    NeedsMachineAuth: [WARN, "ждёт одобрения в админке"], Stopped: [OFF, "остановлен: tailscale up"] };
+  /* tailscale's LastSeen: ISO time, year 1 when it never was or the peer is online */
+  function seen(iso, now) {
+    var t = Date.parse(iso) / 1000;
+    if (!(t > 0)) return "не в сети";
+    return "был в сети " + (now - t > 30 * 86400 ? new Date(t * 1000).toLocaleDateString("ru-RU") : fmtDur(now - t) + " назад");
+  }
+  function tabTs(d, s) {
+    var t = d.ts || {}, me = (t.self || [])[0], br = rates(s.ts_bytes || []), now = d.now || Date.now() / 1000;
+    var h = '<div class="us-grid">' + blk("Трафик", fmtBytes(last(br)) + "/с", br, OK) +
+      blk("Устройств в сети", (t.online || 0) + " / " + (t.total || 0), s.ts_online || [], ACC) + "</div>";
+    h += line(t.run ? OK : BAD, "tailscaled", t.run ? fmtDur(t.up) + " · " + (t.mem / 1024).toFixed(1) + " МБ" : "не запущен");
+    if (!t.run || !me) return h;
+    /* this router: state, name, Tailscale address, home DERP region */
+    var st = TSSTATE[me[0]] || [WARN, me[0] || "состояние неизвестно"], r = [st[1]];
+    if (me[2]) r.push(me[2]);
+    if (me[3]) r.push("DERP " + me[3]);
+    h += line(st[0], '<span title="' + esc(me[1]) + '">Этот роутер</span>', esc(r.join(" · ")));
+    var x = [];
+    if (me[4]) x.push("выход в интернет через <b>" + esc(me[4]) + "</b>");
+    if (me[5]) x.push("роутер предлагается как выходной узел");
+    if (me[6]) x.push("раздаёт подсети: " + esc(me[6]));
+    if (x.length) h += note(x.join(" · "));
+    if (me[7]) h += note('<span style="color:' + WARN + '">' + esc(me[7]) + "</span>");
+    /* peers: online first, then the most recently seen */
+    var list = (t.list || []).slice().sort(function (a, b) { return b[2] - a[2] || (Date.parse(b[6]) || 0) - (Date.parse(a[6]) || 0); });
+    if (list.length) h += sec("Устройства");
+    list.slice(0, 8).forEach(function (p) {
+      var tags = ' <span class="us-tag">' + esc(p[1]) + "</span>" + (p[9] ? ' <span class="us-tag">выход</span>' : p[10] ? ' <span class="us-tag">exit node</span>' : "") +
+        (p[11] ? ' <span class="us-tag" title="' + esc(p[11]) + '">подсети</span>' : "");
+      /* the connection type is known only while there is traffic */
+      var rt = !p[2] ? seen(p[6], now) : !p[3] ? "в сети" : (p[4] ? "напрямую" : "через DERP" + (p[5] ? " " + p[5] : "")) + " · ↓ " + fmtBytes(p[7]) + " · ↑ " + fmtBytes(p[8]);
+      h += line(p[2] ? OK : OFF, esc(p[0]) + tags, esc(rt), !p[2]);
+    });
+    if (list.length > 8) h += note("и ещё " + (list.length - 8) + " устройств");
     return h;
   }
   function fmtN(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
@@ -416,13 +454,13 @@
     h += "</div>";
     /* third-party services may run anywhere: link to the address from keendash.conf */
     var eu = tab === "agh" ? d.agh && d.agh.url : tab === "media" ? (mediaOn(d).filter(function (m) { return m[0] === mtab; })[0] || [])[3] : null;
-    var tls = tab === "agh" || tab === "media" ? (eu ? [["", extUrl(eu)]] : []) : tabLinks(tab, svc, d.web);
+    var tls = tab === "agh" || tab === "media" ? (eu ? [["", extUrl(eu)]] : []) : tab === "tailscale" ? [["", "https://login.tailscale.com/admin/machines"]] : tabLinks(tab, svc, d.web);
     tls.forEach(function (x) {
       h += '<a class="us-open" href="' + esc(x[1]) + '" target="_blank" rel="noopener">' + (tls.length > 1 ? esc(x[0]) + " ↗" : "Открыть ↗") + "</a>";
     });
     h += "</div>";
     var s = d.series || {};
-    h += (tab === "awg" ? tabAwg : tab === "firc" ? tabFirc : tab === "ascn" ? tabAscn : tab === "nfqws" ? tabNfqws : tab === "hydra" ? tabHydra : tab === "agh" ? tabAgh : tab === "media" ? tabMedia : tab === "sys" ? tabSys : tabTelemt)(d, s);
+    h += (tab === "awg" ? tabAwg : tab === "firc" ? tabFirc : tab === "ascn" ? tabAscn : tab === "nfqws" ? tabNfqws : tab === "hydra" ? tabHydra : tab === "tailscale" ? tabTs : tab === "agh" ? tabAgh : tab === "media" ? tabMedia : tab === "sys" ? tabSys : tabTelemt)(d, s);
     bodyEl.innerHTML = h;
     /* re-rendering resets the tab strip's scroll: keep the active tab visible */
     var tl = bodyEl.querySelector(".us-tl"), on = tl && tl.querySelector(".us-on");
