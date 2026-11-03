@@ -172,17 +172,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   const unix = p => p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase());
   // keendashd built with the host C compiler; its tests are skipped where there is none (Windows), CI has gcc
   const kd = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kdd-")), "keendashd"), haveCc = !cp.spawnSync("cc", ["--version"]).error;
-  // with HTTPS as in the package when Mbed TLS can be fetched (scripts/mbedtls.sh) and openssl makes a test certificate
-  let haveTls = false;
   if (haveCc) {
-    const src = path.join(__dirname, "..", "src");
-    const mb = cp.spawnSync("sh", [path.join(__dirname, "..", "scripts", "mbedtls.sh")], { encoding: "utf8" });
-    haveTls = mb.status === 0 && !cp.spawnSync("openssl", ["version"]).error;
-    const lib = haveTls ? fs.readdirSync(path.join(mb.stdout.trim(), "library")).filter(f => f.endsWith(".c")).map(f => path.join(mb.stdout.trim(), "library", f)) : [];
-    const tlsArgs = haveTls ? ["-DKEENDASH_TLS", '-DMBEDTLS_CONFIG_FILE="keendash_tls.h"', "-I" + src, "-I" + path.join(mb.stdout.trim(), "include")] : [];
-    const b = cp.spawnSync("cc", ["-std=c99", "-O2", "-Wall", ...tlsArgs, "-o", kd, path.join(src, "keendashd.c"), ...lib], { encoding: "utf8" });
-    ok("keendashd builds" + (haveTls ? " with HTTPS" : ""), b.status === 0, b.stderr);
-    if (!haveTls) res.push("SKIP keendashd HTTPS tests: no Mbed TLS source or openssl");
+    const b = cp.spawnSync("cc", ["-std=c99", "-O2", "-Wall", "-o", kd, path.join(__dirname, "..", "src", "keendashd.c")], { encoding: "utf8" });
+    ok("keendashd builds", b.status === 0, b.stderr);
   } else res.push("SKIP keendashd and bin/ext tests: no C compiler (cc)");
   // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers)
   function collect(script, args, conf) {
@@ -296,68 +288,25 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("keendashd serve: status JSON with CORS", x.code === 200 && x.h["access-control-allow-origin"] === "*" && st && st.tabs.length === 2, x.code + " " + x.body.slice(0, 200));
     try { process.kill(pid); } catch (e) {}
 
-    if (haveTls) {
-      // HTTPS: only with a live web UI session, checked by the router (here a fake auth endpoint: cookie s=good, UA ua1)
-      // the certificate comes from fake config partitions: a zlib-compressed store as NDMS keeps it
-      const certDir = fs.mkdtempSync(path.join(os.tmpdir(), "kdc-")), pem = n => path.join(certDir, n);
-      for (const n of ["c", "ca"]) cp.spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=" + n, "-days", "1", "-keyout", pem(n + ".key"), "-out", pem(n + ".crt")]);
-      const rd = n => fs.readFileSync(pem(n), "utf8").trim(), zlib = require("zlib");
-      // "NAME\0value\0" pairs, PEM values end with a newline
-      const store = (fq, date, key) => ["SYSTEM_NAME", "interface Home\n ip address 192.168.1.1\n".repeat(40),
-        `ACME_CERT_${fq}_CERT_PEM`, rd("c.crt") + "\n", `ACME_CERT_${fq}_CHAIN_PEM`, rd("ca.crt") + "\n", `ACME_CERT_${fq}_DOMAIN_PEM`, key + "\n",
-        `ACME_CERT_${fq}_ISSUE_DATE`, String(date), `ACME_CERT_${fq}_REISSUE_DATE`, String(date + 50), `ACME_CERT_${fq}_NDNS`, "yes", ""].join("\0");
-      const broken = "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----";
-      const part = (name, ...streams) => { fs.writeFileSync(pem(name), Buffer.concat([Buffer.from("ndm3\0\0"), Buffer.from([0x78, 0x9c, 0x01]), Buffer.from("junk"), ...streams, Buffer.alloc(64)])); return pem(name); };
-      const parts = [
-        // older entry with a broken key, another name with a newer one: both must lose
-        part("p1", zlib.deflateSync(store("kd.test", 100, broken)), zlib.deflateSync(store("other.test", 900, broken))),
-        part("p2", zlib.deflateSync(store("kd.test", 200, rd("c.key"))))].join(" ");
-      const seen = [];
-      const auth = http.createServer((q, s) => { seen.push(q.headers.cookie); s.writeHead(q.url === "/auth" && /(^|; )s=good(;|$)/.test(q.headers.cookie || "") && q.headers["user-agent"] === "ua1" ? 200 : 401); s.end(); });
-      await new Promise(r => auth.listen(0, "127.0.0.1", r));
-      const hp = 20000 + Math.floor(Math.random() * 20000), tp = hp + 1;
-      const tenv = Object.assign({}, env, { KEENDASH_AUTH: "127.0.0.1:" + auth.address().port, KEENDASH_NDNS: "printf '   name: kd\\n   domain: test\\n'", KEENDASH_CONFIG: parts });
-      const out = cp.execFileSync(kd, ["serve", "127.0.0.1", String(hp), www, String(tp)], { env: tenv, encoding: "utf8" }).split("\n");
-      const tpid = parseInt(out[0], 10);
-      ok("keendashd https: prints the KeenDNS name", out[1] === "kd.test", out.join("|"));
-      const https = require("https");
-      const sget = (method, p, headers, body) => new Promise(r => {
-        const q = https.request({ host: "127.0.0.1", port: tp, method, path: p, rejectUnauthorized: false, headers: Object.assign({ Host: "localhost:" + tp }, headers) }, x => {
-          let d = ""; x.setEncoding("utf8"); x.on("data", c => d += c); x.on("end", () => r({ code: x.statusCode, h: x.headers, body: d }));
-        });
-        q.on("error", e => r({ code: 0, h: {}, body: String(e) })); if (body) q.write(body); q.end();
-      });
-      const good = { Cookie: "lang=ru; s=good", "User-Agent": "ua1", Origin: "https://localhost" };
-      ok("keendashd https: no session cookie -> 401", (await sget("GET", "/cgi-bin/status.cgi", { Origin: "https://localhost" })).code === 401);
-      ok("keendashd https: wrong session -> 401", (await sget("GET", "/cgi-bin/status.cgi", Object.assign({}, good, { Cookie: "s=bad" }))).code === 401);
-      ok("keendashd https: other browser (User-Agent) -> 401", (await sget("GET", "/widgets/a.js", Object.assign({}, good, { "User-Agent": "ua2" }))).code === 401);
-      x = await sget("GET", "/cgi-bin/status.cgi", good);
-      st = null; try { st = JSON.parse(x.body); } catch (e) {}
-      ok("keendashd https: status JSON, CORS for this host's page with credentials", x.code === 200 && st && st.tabs.length === 2 && x.h["access-control-allow-origin"] === "https://localhost" && x.h["access-control-allow-credentials"] === "true", x.code + " " + JSON.stringify(x.h));
-      ok("keendashd https: all cookies passed to the router's check", seen.includes("lang=ru; s=good"), JSON.stringify(seen));
-      x = await sget("GET", "/cgi-bin/status.cgi", Object.assign({}, good, { Origin: "https://evil.example" }));
-      ok("keendashd https: no CORS for other sites", x.code === 200 && !x.h["access-control-allow-origin"], JSON.stringify(x.h));
-      x = await sget("GET", "/widgets/a.js", good);
-      ok("keendashd https: static file", x.code === 200 && x.body === "var a = 1;\n", x.code + " " + x.body);
-      x = await sget("POST", "/cgi-bin/echo.cgi?x=1", Object.assign({ "Content-Length": 2 }, good), "hi");
-      ok("keendashd https: CGI with body", x.code === 201 && x.body === "POST x=1 https://localhost hi\n", JSON.stringify(x));
-      x = await new Promise(r => http.get({ host: "127.0.0.1", port: hp, path: "/widgets/a.js" }, y => { y.resume(); r(y.statusCode); }).on("error", () => r(0)));
-      ok("keendashd https: plain HTTP port still without session", x === 200, x);
-      x = await new Promise(r => { const q = https.get({ host: "127.0.0.1", port: tp, path: "/", rejectUnauthorized: false }, y => { r(y.socket.getPeerCertificate().subject.CN); y.resume(); }); q.on("error", e => r(String(e))); });
-      ok("keendashd https: the router's newest certificate for its name", x === "c", x);
-      try { process.kill(tpid); } catch (e) {}
-      // the other deflate block types (fixed Huffman, stored); no certificate for the name: no start
-      for (const [i, [kind, opt]] of [["fixed", { strategy: zlib.constants.Z_FIXED }], ["stored", { level: 0 }]].entries()) {
-        const e2 = Object.assign({}, tenv, { KEENDASH_CONFIG: part("p3" + i, zlib.deflateSync(store("kd.test", 1, rd("c.key")), opt)) });
-        const p2 = parseInt(cp.execFileSync(kd, ["serve", "127.0.0.1", String(hp + 2 + 2 * i), www, String(tp + 2 + 2 * i)], { env: e2, encoding: "utf8" }), 10);
-        x = await new Promise(r => https.get({ host: "127.0.0.1", port: tp + 2 + 2 * i, path: "/", rejectUnauthorized: false }, y => { r(y.statusCode); y.resume(); }).on("error", e => r(String(e))));
-        ok("keendashd https: certificate from a " + kind + " deflate block", x === 401, x);
-        try { process.kill(p2); } catch (e) {}
-      }
-      x = cp.spawnSync(kd, ["serve", "127.0.0.1", String(hp + 6), www, String(tp + 6)], { env: Object.assign({}, tenv, { KEENDASH_NDNS: "printf 'name: none\\ndomain: test\\n'" }), encoding: "utf8" });
-      ok("keendashd https: no certificate -> fails with a message", x.status === 1 && /no KeenDNS certificate/.test(x.stderr), x.status + " " + x.stderr);
-      auth.close(); fs.rmSync(certDir, { recursive: true, force: true });
-    }
+    // status.json for the web UI over https: written at start, then rebuilt only after it was read (atime > mtime)
+    const pub = fs.mkdtempSync(path.join(os.tmpdir(), "kdp-")), pf = path.join(pub, "status.json"), penv = Object.assign({}, env, { KEENDASH_PUB: pub });
+    const pubServe = async (n, wait) => {
+      const p = parseInt(cp.execFileSync(kd, ["serve", "127.0.0.1", String(port + n), www], { env: penv, encoding: "utf8" }), 10);
+      await new Promise(r => setTimeout(r, wait)); try { process.kill(p); } catch (e) {}
+    };
+    const until = async f => { for (let i = 0; i < 50 && !f(); i++) await new Promise(r => setTimeout(r, 100)); };
+    let pj = null;
+    await pubServe(1, 0); await until(() => fs.existsSync(pf));
+    try { pj = JSON.parse(fs.readFileSync(pf, "utf8")); } catch (e) {}
+    ok("keendashd publish: status.json at start", pj && pj.tabs.length === 2 && !fs.existsSync(pf + ".tmp"), pj);
+    const old = new Date(Date.now() - 100000), now = new Date();
+    fs.writeFileSync(pf, "x"); fs.utimesSync(pf, old, now);
+    await pubServe(2, 1000);
+    ok("keendashd publish: not read since -> kept", fs.readFileSync(pf, "utf8") === "x");
+    fs.utimesSync(pf, now, old);
+    await pubServe(3, 0); await until(() => fs.readFileSync(pf, "utf8") !== "x");
+    ok("keendashd publish: read -> rebuilt", fs.readFileSync(pf, "utf8").startsWith("{"));
+    fs.rmSync(pub, { recursive: true, force: true });
     [sd, www].forEach(d => fs.rmSync(d, { recursive: true, force: true }));
   }
   // issue #1: the only lighttpd UI is nfqws2-ui
@@ -374,6 +323,16 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("mini: stored tab fallback", /Нагрузка/.test(m.textContent));
   });
   const upd = Object.assign({}, mini, { upd: { cur: "1.0.7", new: "1.0.8", busy: 0 } });
+  // over https (the loader sets st): status.json from /storage/, a stale one is asked again, no update button
+  {
+    let urls = [];
+    await run(null, (w, m) => new Promise(r => setTimeout(() => {
+      ok("storage: status.json, stale -> asked again", urls[0] === "/storage/.keendash/status.json" && urls.length === 2, urls.join());
+      ok("storage: new version shown, no update button", /1\.0\.8/.test(m.querySelector(".us-upd").textContent) && /opkg upgrade/.test(m.textContent) && !m.querySelector(".us-upd-go"));
+      r();
+    }, 5500)), w => { w.__keendash = { base: "/storage/.keendash/", st: true };
+      return u => { urls.push(u); return Promise.resolve({ ok: true, json: () => Promise.resolve(Object.assign({}, upd, { now: Date.now() / 1000 - 600 })) }); }; }, "https://r.example.net/");
+  }
   await run(upd, (w, m) => {
     const bar = m.querySelector(".us-upd");
     ok("update: banner first, new + current version", bar && m.querySelector(".us-body").firstElementChild === bar && /1\.0\.8/.test(bar.textContent) && /1\.0\.7/.test(bar.textContent), bar && bar.textContent);

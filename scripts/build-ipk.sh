@@ -25,18 +25,14 @@ case "$ARCH" in
   mips-*)    TARGET=mips-linux-musl CPU=-mcpu=mips32r2+soft_float ;;
   *) echo "build-ipk.sh: no compiler target for $ARCH" >&2; exit 1 ;;
 esac
-# HTTPS: Mbed TLS compiled in, only the parts src/keendash_tls.h enables
-MBEDTLS=$(sh "$ROOT/scripts/mbedtls.sh")
 # shellcheck disable=SC2086
-${ZIG:-zig} cc -target "$TARGET" $CPU -std=c99 -Os -s -static -Wall -ffunction-sections -fdata-sections -Wl,--gc-sections \
-  -DKEENDASH_TLS '-DMBEDTLS_CONFIG_FILE="keendash_tls.h"' -I"$ROOT/src" -I"$MBEDTLS/include" \
-  -o "$WORK/data/opt/share/keendash/bin/keendashd" "$ROOT/src/keendashd.c" "$MBEDTLS"/library/*.c
+${ZIG:-zig} cc -target "$TARGET" $CPU -std=c99 -Os -s -static -Wall -o "$WORK/data/opt/share/keendash/bin/keendashd" "$ROOT/src/keendashd.c"
 
 # permissions do not depend on how the repo was checked out
 find "$WORK/data" -type d -exec chmod 755 {} +
 find "$WORK/data" -type f -exec chmod 644 {} +
 chmod 755 "$WORK"/data/opt/share/keendash/bin/* "$WORK"/data/opt/share/keendash/www/cgi-bin/* \
-          "$WORK"/data/opt/etc/init.d/* "$WORK"/data/opt/etc/ndm/netfilter.d/*
+          "$WORK"/data/opt/etc/init.d/*
 
 SIZE=$(du -sk "$WORK/data" | cut -f1)
 sed -e "s|@VERSION@|$VERSION|" -e "s|@ARCH@|$ARCH|" -e "s|@SOURCE@|$SOURCE|" -e "s|@SIZE@|$SIZE|" \

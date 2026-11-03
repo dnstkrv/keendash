@@ -6,6 +6,18 @@ rm -f /opt/etc/init.d/S82uipatch /opt/sbin/uipatch /opt/sbin/uistats /opt/sbin/u
 # up to 1.0.14: lighttpd copy, its config and log (opkg itself removes the old cron jobs and status.cgi)
 killall keendash-httpd >/dev/null 2>&1
 rm -rf /opt/sbin/keendash-httpd /opt/var/run/keendash.conf /opt/var/run/keendash.pid /opt/var/log/keendash
+# 1.2.0-1.2.2: HTTPS on its own port (the new S81keendash doesn't close it, opkg removes the firewall hook) and its setting
+p=$(cat /tmp/keendash/tls/port 2>/dev/null)
+if [ -n "$p" ]; then
+  PATH=/opt/sbin:/opt/bin:$PATH
+  while iptables -w -D INPUT -p tcp --dport "$p" -m comment --comment keendash -j ACCEPT 2>/dev/null; do :; done
+  while iptables -w -D INPUT -p tcp --dport "$p" -j ACCEPT 2>/dev/null; do :; done
+fi
+rm -rf /tmp/keendash/tls
+c=/opt/etc/keendash/keendash.conf
+[ -f "$c" ] && grep -q '^HTTPS_PORT=' "$c" && sed -i -e '/^# HTTPS for the web UI opened via KeenDNS/d' -e "/^# port with the router's own KeenDNS certificate/d" \
+  -e '/^# firewall, also from the internet. Needs direct KeenDNS/d' -e '/^# http only; to turn it on e.g. HTTPS_PORT=/d' -e '/^HTTPS_PORT=/d' "$c" &&
+  sed -i '/^$/N;/^\n$/D' "$c"
 /opt/etc/init.d/S81keendash restart >/dev/null 2>&1
 ( /opt/share/keendash/bin/services --discover >/dev/null 2>&1 & )
 echo "keendash installed. Reload the Keenetic web UI main page (Ctrl+F5). Settings: /opt/etc/keendash/keendash.conf"

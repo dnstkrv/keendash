@@ -5,28 +5,26 @@
 #   patch start   - build + bind-mount over the original
 #   patch stop    - umount (back to stock UI)
 #   patch status
-# The loader fetches the widget list from keendash's own web server (PORT in /opt/etc/keendash/keendash.conf).
+# The loader fetches the widget list from keendash's own web server (PORT in /opt/etc/keendash/keendash.conf),
+# over https from the files S81keendash keeps in /tmp/mnt/.keendash.
 TARGET=/usr/share/htdocs_/index.html
 DIR=/opt/var/lib/keendash
 ORIG=$DIR/index.orig.html
 OUT=$DIR/index.patched.html
 SNIPPETS="$DIR/widgets-loader.html"
 CONF=/opt/etc/keendash/keendash.conf
-PORT=8189; HTTPS_PORT=0
+PORT=8189
 [ -f "$CONF" ] && . "$CONF"
-# HTTPS (S81keendash writes these while keendashd serves it): the KeenDNS name the certificate is for
-TLS=/tmp/keendash/tls
-FQDN=""; [ -f "$TLS/port" ] && FQDN=$(cat "$TLS/fqdn" 2>/dev/null)
 
 mounted() { grep -q " $TARGET " /proc/mounts; }
 
-# The web UI over https can't load http (mixed content): then keendash's HTTPS on the KeenDNS name, which answers
-# only with the web UI session cookie (credentials: include) and says 401 before the login, so the loader tries
-# again every 5 s until the user is logged in; over http keendash's LAN port as before.
+# The web UI over https can't load http (mixed content): then the web UI's own /storage/ path (files under /tmp/mnt,
+# given only to a logged-in user: 401 before the login, so the loader tries again every 5 s); the card then reads
+# status.json there and can't update (st). Over http keendash's LAN port as before.
 make_snippet() {
   mkdir -p "$DIR"
   cat > "$SNIPPETS" <<EOF
-<script id="ui-widgets-loader">(function(){try{var t="$FQDN",h=location.protocol=="https:"&&t,b=h?"https://"+t+":$HTTPS_PORT/":"http://"+location.hostname+":$PORT/",c=h?"include":"same-origin";window.__keendash={base:b,cred:c};(function g(){fetch(b+"cgi-bin/widgets.cgi",{cache:"no-store",credentials:c}).then(function(r){if(r.status==401){setTimeout(g,5000);return []}return r.json()}).then(function(l){l.forEach(function(n){var s=document.createElement("script");s.src=b+"widgets/"+n+"?"+Date.now();document.head.appendChild(s)})}).catch(function(){})})()}catch(e){}})();</script>
+<script id="ui-widgets-loader">(function(){try{var h=location.protocol=="https:",b=h?"/storage/.keendash/":"http://"+location.hostname+":$PORT/";window.__keendash={base:b,st:h};(function g(){fetch(b+(h?"widgets.json":"cgi-bin/widgets.cgi"),{cache:"no-store"}).then(function(r){if(r.status==401){setTimeout(g,5000);return []}return r.json()}).then(function(l){l.forEach(function(n){var s=document.createElement("script");s.src=b+"widgets/"+n+"?"+Date.now();document.head.appendChild(s)})}).catch(function(){})})()}catch(e){}})();</script>
 EOF
 }
 

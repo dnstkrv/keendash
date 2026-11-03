@@ -1,15 +1,10 @@
 /* keendashd: keendash's web server and scheduler, the status JSON, and a JSON flattener for the collectors.
- *   keendashd serve <ip> <port> <www> [<https port>]
- *                                     serve the widgets on <ip>:<port> (prints the daemon's pid once the ports are bound);
- *                                     runs bin/tick 1 every minute and bin/tick 5 every 5 minutes, so no cron is needed.
- *                                     With an HTTPS port it also listens there on all addresses, for the web UI opened
- *                                     via KeenDNS, with the router's KeenDNS certificate (re-read every 6 hours), and
- *                                     prints the KeenDNS name on a second line; fails without the certificate.
- *                                     HTTPS requests are answered only with a live web UI session.
+ *   keendashd serve <ip> <port> <www>  serve the widgets on <ip>:<port> (prints the daemon's pid once the port is bound);
+ *                                     runs bin/tick 1 every minute and bin/tick 5 every 5 minutes, so no cron is needed,
+ *                                     and keeps the status JSON in /tmp/mnt/.keendash for the web UI over https
  *   keendashd status                  the /cgi-bin/status.cgi JSON, built from the output of bin/stats and bin/services
  *   keendashd json                    JSON on stdin -> "path<TAB>value" lines: records.0.series.title<TAB>Silo
- * Only libc (and Mbed TLS when built with KEENDASH_TLS): built static with musl for every Entware architecture
- * (scripts/build-ipk.sh). */
+ * Only libc: built static with musl for every Entware architecture (scripts/build-ipk.sh). */
 #define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -29,20 +24,12 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-#ifdef KEENDASH_TLS
-#include <mbedtls/ctr_drbg.h>
-#include <mbedtls/entropy.h>
-#include <mbedtls/net_sockets.h>
-#include <mbedtls/pk.h>
-#include <mbedtls/platform_util.h>
-#include <mbedtls/ssl.h>
-#include <mbedtls/x509_crt.h>
-#endif
 
 #define SHARE "/opt/share/keendash"
 #define MAXCONN 16       /* parallel requests; more are dropped */
 #define MAXBODY 65536    /* POST body */
 #define MAXOUT (4 << 20) /* CGI output */
+#define PUB "/tmp/mnt/.keendash" /* made by S81keendash; tests: KEENDASH_PUB */
 
 /* ---- growable string ---- */
 typedef struct { char *p; size_t n, cap; } buf;
@@ -331,9 +318,6 @@ static int json(void) {
 }
 
 /* ======================= web server ======================= */
-/* this request came over HTTPS: its client address, and the CORS headers for the web UI page it came from */
-static int https; static char peer[64], cors[512], fqdn[256];
-
 static void writeall(int fd, const char *p, size_t n) {
   while (n) {
     ssize_t w = write(fd, p, n);
@@ -343,16 +327,7 @@ static void writeall(int fd, const char *p, size_t n) {
 }
 static void reply(int c, int head, const char *st, const char *hdrs, const char *body, size_t n) {
   buf b = { 0 };
-  bf(&b, "HTTP/1.1 %s\r\n", st);
-  if (!https) bs(&b, hdrs);
-  else {
-    /* HTTPS requests carry the session cookie, so "*" is not allowed: only the page of this host may read the answer */
-    for (const char *l = hdrs, *e; *l; l = e + (*e != 0)) {
-      e = strchr(l, '\n'); if (!e) e = l + strlen(l);
-      if (strncasecmp(l, "Access-Control-Allow-Origin:", 28)) bput(&b, l, e - l + (*e != 0));
-    }
-    bs(&b, cors);
-  }
+  bf(&b, "HTTP/1.1 %s\r\n", st); bs(&b, hdrs);
   bf(&b, "Content-Length: %lu\r\nConnection: close\r\n\r\n", (unsigned long)n);
   if (!head && n) bput(&b, body, n);
   writeall(c, b.p, b.n);
@@ -376,30 +351,7 @@ static const char *mime(const char *p) {
   return "application/octet-stream";
 }
 
-typedef struct { const char *method, *path, *query, *host, *origin, *ctype, *cookie, *ua, *body; size_t blen; int head; char addr[64]; } request;
-
-/* HTTPS: is this a live Keenetic web UI session? NDMS answers that on nginx's internal auth endpoint, from the
- * browser's cookies (the session cookie's name differs per router) and its User-Agent. */
-static int session(const char *cookie, const char *ua) {
-  const char *e = getenv("KEENDASH_AUTH"); /* tests: ip:port */
-  char ip[64] = "127.0.0.1"; int port = 79;
-  if (e && *e) { const char *c = strchr(e, ':'); if (!c || c - e >= (int)sizeof ip) return 0; memcpy(ip, e, c - e); ip[c - e] = 0; port = atoi(c + 1); }
-  if (!*cookie) return 0;
-  struct sockaddr_in a; memset(&a, 0, sizeof a);
-  a.sin_family = AF_INET; a.sin_port = htons((unsigned short)port);
-  if (inet_pton(AF_INET, ip, &a.sin_addr) != 1) return 0;
-  int s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-  if (s < 0) return 0;
-  if (connect(s, (struct sockaddr *)&a, sizeof a)) { close(s); return 0; }
-  buf q = { 0 };
-  bs(&q, "GET /auth HTTP/1.0\r\nHost: 127.0.0.1\r\nCookie: "); bs(&q, cookie);
-  bs(&q, "\r\nUser-Agent: "); bs(&q, ua); bs(&q, "\r\n\r\n");
-  writeall(s, q.p, q.n); free(q.p);
-  char r[64]; size_t n = 0; ssize_t k;
-  while (n < sizeof r - 1 && (k = read(s, r + n, sizeof r - 1 - n)) != 0) { if (k < 0) { if (errno == EINTR) continue; break; } n += k; }
-  close(s); r[n] = 0;
-  return !strncmp(r, "HTTP/1.", 7) && !strncmp(r + 8, " 200", 4);
-}
+typedef struct { const char *method, *path, *query, *host, *origin, *ctype, *body; size_t blen; int head; char addr[64]; } request;
 
 static void cgi(int c, const char *file, request *r) {
   int in[2], out[2];
@@ -470,7 +422,7 @@ static void handle(int c, const char *www) {
   if (!(sp = strchr(t, ' '))) { fail(c, "400 Bad Request"); return; }
   *sp = 0;
   hl = strstr(sp + 1, "\r\n");
-  r.host = r.origin = r.ctype = r.cookie = r.ua = "";
+  r.host = r.origin = r.ctype = "";
   long clen = 0;
   for (char *l = hl ? strtok(hl + 2, "\r\n") : NULL; l; l = strtok(NULL, "\r\n")) {
     char *v = strchr(l, ':');
@@ -480,8 +432,6 @@ static void handle(int c, const char *www) {
     else if (!strcasecmp(l, "Origin")) r.origin = v;
     else if (!strcasecmp(l, "Content-Type")) r.ctype = v;
     else if (!strcasecmp(l, "Content-Length")) clen = atol(v);
-    else if (!strcasecmp(l, "Cookie")) r.cookie = v;
-    else if (!strcasecmp(l, "User-Agent")) r.ua = v;
   }
   if ((sp = strchr(t, '?'))) { *sp = 0; r.query = sp + 1; } else r.query = "";
   r.path = t;
@@ -492,16 +442,7 @@ static void handle(int c, const char *www) {
     fail(c, "400 Bad Request"); return;
   }
   struct sockaddr_in a; socklen_t al = sizeof a;
-  if (https) snprintf(r.addr, sizeof r.addr, "%s", peer);
-  else if (!getpeername(c, (struct sockaddr *)&a, &al)) inet_ntop(AF_INET, &a.sin_addr, r.addr, sizeof r.addr);
-  if (https) {
-    /* CORS only for the web UI on this very host (any port): https://<Host without port> */
-    size_t hn = strcspn(r.host, ":");
-    if (!strncmp(r.origin, "https://", 8) && strlen(r.origin + 8) == hn && hn && !strncmp(r.origin + 8, r.host, hn)
-        && strlen(r.origin) < sizeof cors - 128)
-      snprintf(cors, sizeof cors, "Access-Control-Allow-Origin: %s\r\nAccess-Control-Allow-Credentials: true\r\nVary: Origin\r\n", r.origin);
-    if (!session(r.cookie, r.ua)) { fail(c, "401 Unauthorized"); return; }
-  }
+  if (!getpeername(c, (struct sockaddr *)&a, &al)) inet_ntop(AF_INET, &a.sin_addr, r.addr, sizeof r.addr);
 
   if (post) {
     if (clen < 0 || clen > MAXBODY) { fail(c, "413 Payload Too Large"); return; }
@@ -543,255 +484,6 @@ static void handle(int c, const char *www) {
   free(o.p);
 }
 
-#ifdef KEENDASH_TLS
-static int tsend(void *fd, const unsigned char *p, size_t n) {
-  ssize_t w = write(*(int *)fd, p, n);
-  return w >= 0 ? (int)w : errno == EINTR ? MBEDTLS_ERR_SSL_WANT_WRITE : MBEDTLS_ERR_NET_SEND_FAILED;
-}
-static int trecv(void *fd, unsigned char *p, size_t n) {
-  ssize_t r = read(*(int *)fd, p, n);
-  return r >= 0 ? (int)r : errno == EINTR ? MBEDTLS_ERR_SSL_WANT_READ : MBEDTLS_ERR_NET_RECV_FAILED;
-}
-#define AGAIN(r) ((r) == MBEDTLS_ERR_SSL_WANT_READ || (r) == MBEDTLS_ERR_SSL_WANT_WRITE)
-
-/* ---- inflate (RFC 1950/1951), for the router's config store ---- */
-#define ZMAX (16 << 20)
-typedef struct { const unsigned char *in; size_t n, pos; unsigned long bit; int cnt, bad; buf *out; } zs;
-typedef struct { short count[16], sym[288]; } huff;
-static int bits(zs *s, int need) {
-  while (s->cnt < need) {
-    if (s->pos >= s->n) { s->bad = 1; return 0; }
-    s->bit |= (unsigned long)s->in[s->pos++] << s->cnt; s->cnt += 8;
-  }
-  int v = (int)(s->bit & ((1UL << need) - 1));
-  s->bit >>= need; s->cnt -= need;
-  return v;
-}
-/* canonical Huffman code from code lengths: < 0 over-subscribed, > 0 incomplete */
-static int build(huff *h, const short *len, int n) {
-  short offs[16]; int left = 1;
-  memset(h->count, 0, sizeof h->count);
-  for (int i = 0; i < n; i++) h->count[len[i]]++;
-  if (h->count[0] == n) return 0;
-  for (int l = 1; l < 16; l++) { left = (left << 1) - h->count[l]; if (left < 0) return -1; }
-  offs[1] = 0;
-  for (int l = 1; l < 15; l++) offs[l + 1] = offs[l] + h->count[l];
-  for (int i = 0; i < n; i++) if (len[i]) h->sym[offs[len[i]]++] = (short)i;
-  return left;
-}
-static int decode(zs *s, const huff *h) {
-  int code = 0, first = 0, index = 0;
-  for (int l = 1; l < 16; l++) {
-    code |= bits(s, 1);
-    if (s->bad) return -1;
-    int c = h->count[l];
-    if (code - c < first) return h->sym[index + code - first];
-    index += c; first = (first + c) << 1; code <<= 1;
-  }
-  return -1;
-}
-static int codes(zs *s, const huff *lc, const huff *dc) {
-  static const short lb[29] = { 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258 },
-    le[29] = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0 },
-    db[30] = { 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577 },
-    de[30] = { 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13 };
-  for (;;) {
-    int y = decode(s, lc);
-    if (y < 0 || s->out->n > ZMAX) return -1;
-    if (y < 256) { char ch = (char)y; bput(s->out, &ch, 1); continue; }
-    if (y == 256) return 0;
-    if ((y -= 257) >= 29) return -1;
-    size_t len = lb[y] + bits(s, le[y]);
-    int d = decode(s, dc);
-    if (d < 0 || d >= 30) return -1;
-    size_t dist = db[d] + bits(s, de[d]);
-    if (s->bad || dist > s->out->n) return -1;
-    while (len--) { char ch = s->out->p[s->out->n - dist]; bput(s->out, &ch, 1); }
-  }
-}
-static int dynamic(zs *s) {
-  static const short ord[19] = { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
-  short len[316] = { 0 }; huff lc, dc;
-  int nl = bits(s, 5) + 257, nd = bits(s, 5) + 1, nc = bits(s, 4) + 4;
-  if (s->bad || nl > 286 || nd > 30) return -1;
-  for (int i = 0; i < nc; i++) len[ord[i]] = (short)bits(s, 3);
-  if (build(&lc, len, 19)) return -1;
-  for (int i = 0; i < nl + nd; ) {
-    int y = decode(s, &lc), l = 0, rep;
-    if (y < 0) return -1;
-    if (y < 16) { len[i++] = (short)y; continue; }
-    if (y == 16) { if (!i) return -1; l = len[i - 1]; rep = 3 + bits(s, 2); }
-    else rep = y == 17 ? 3 + bits(s, 3) : 11 + bits(s, 7);
-    if (s->bad || i + rep > nl + nd) return -1;
-    while (rep--) len[i++] = (short)l;
-  }
-  if (!len[256]) return -1;
-  int e = build(&lc, len, nl);
-  if (e < 0 || (e > 0 && nl - lc.count[0] != 1)) return -1;
-  e = build(&dc, len + nl, nd);
-  if (e < 0 || (e > 0 && nd - dc.count[0] != 1)) return -1;
-  return codes(s, &lc, &dc);
-}
-/* a zlib stream at p (no checksum check: the store's own text is checked) */
-static int inflate(const unsigned char *p, size_t n, buf *out) {
-  if (n < 2 || (p[0] & 15) != 8 || ((p[0] << 8) | p[1]) % 31 || (p[1] & 32)) return -1;
-  zs s = { p, n, 2, 0, 0, 0, out };
-  bput(out, "", 0);
-  for (int last = 0; !last; ) {
-    last = bits(&s, 1);
-    int t = bits(&s, 2), r;
-    if (s.bad) return -1;
-    if (t == 0) {
-      s.bit = 0; s.cnt = 0;
-      if (s.pos + 4 > n) return -1;
-      unsigned l = p[s.pos] | p[s.pos + 1] << 8, nl = p[s.pos + 2] | p[s.pos + 3] << 8;
-      if (l != (~nl & 0xffff) || (s.pos += 4) + l > n) return -1;
-      bput(out, (const char *)p + s.pos, l); s.pos += l; r = 0;
-    } else if (t == 1) {
-      static huff fl, fd; static int ready;
-      if (!ready) {
-        short l[288];
-        for (int i = 0; i < 288; i++) l[i] = i < 144 ? 8 : i < 256 ? 9 : i < 280 ? 7 : 8;
-        build(&fl, l, 288);
-        for (int i = 0; i < 30; i++) l[i] = 5;
-        build(&fd, l, 30); ready = 1;
-      }
-      r = codes(&s, &fl, &fd);
-    } else r = t == 2 ? dynamic(&s) : -1;
-    if (r) return -1;
-  }
-  return 0;
-}
-
-/* ---- the router's KeenDNS certificate (Let's Encrypt, renewed by the router itself) ----
- * NDMS keeps it in its config partitions (Config_1, Config_2): next to the startup-config there is a zlib-compressed
- * store of "NAME\0value\0" pairs, with ACME_CERT_<name>_CERT_PEM, _CHAIN_PEM, _DOMAIN_PEM (the key) and _ISSUE_DATE.
- * Read straight into memory: the key is never written to a file. */
-static buf tcrt, tkey; /* PEM: certificate + chain, key */
-static void wipe(buf *b) { if (b->p) { mbedtls_platform_zeroize(b->p, b->cap); free(b->p); } memset(b, 0, sizeof *b); }
-/* the certificate for fqdn in an inflated store (NUL-terminated by bput), kept if newer than *best */
-static void store(const char *s, size_t n, long *best) {
-  char pre[300]; size_t pl = (size_t)snprintf(pre, sizeof pre, "ACME_CERT_%s_", fqdn);
-  const char *crt = NULL, *chain = "", *key = NULL; long issue = 0;
-  for (const char *p = s, *e; p < s + n && (e = memchr(p, 0, s + n - p)); p = e + 1) {
-    const char *t = p + pl, *v = e + 1;
-    if ((size_t)(e - p) <= pl || memcmp(p, pre, pl)) continue;
-    if (!strcmp(t, "CERT_PEM")) crt = v;
-    else if (!strcmp(t, "CHAIN_PEM")) chain = v;
-    else if (!strcmp(t, "DOMAIN_PEM")) key = v;
-    else if (!strcmp(t, "ISSUE_DATE")) issue = atol(v);
-  }
-  if (issue > *best && crt && key && !strncmp(crt, "-----BEGIN CERTIFICATE", 22) && strstr(key, "PRIVATE KEY")) {
-    *best = issue; wipe(&tcrt); wipe(&tkey);
-    bs(&tcrt, crt); bs(&tcrt, chain); bs(&tkey, key);
-  }
-}
-/* 1 if found. The KeenDNS name from the router (tests: KEENDASH_NDNS), the partitions from /proc/mtd
- * (tests: KEENDASH_CONFIG, a list of files) */
-static int keendns(void) {
-  buf o = { 0 }; lines L = cmd("KEENDASH_NDNS", "ndmc -c 'show ndns' 2>/dev/null", &o);
-  char nm[128] = "", dm[128] = "";
-  for (int i = 0; i < L.n; i++) {
-    const char *p = L.l[i] + strspn(L.l[i], " \t");
-    if (!*nm && !strncmp(p, "name: ", 6)) sscanf(p + 6, "%127s", nm);
-    if (!*dm && !strncmp(p, "domain: ", 8)) sscanf(p + 8, "%127s", dm);
-  }
-  free(L.l); free(o.p);
-  if (!*nm || !*dm) return 0;
-  snprintf(fqdn, sizeof fqdn, "%s.%s", nm, dm);
-  char devs[1024] = "", *env = getenv("KEENDASH_CONFIG");
-  if (env) snprintf(devs, sizeof devs, "%s", env);
-  else {
-    /* mtd6: 00080000 00020000 "Config_1" */
-    FILE *f = fopen("/proc/mtd", "r"); char l[256], name[64]; int m;
-    while (f && fgets(l, sizeof l, f))
-      if (sscanf(l, "mtd%d: %*x %*x \"%63[^\"]\"", &m, name) == 2 && !strncasecmp(name, "config", 6))
-        snprintf(devs + strlen(devs), sizeof devs - strlen(devs), "/dev/mtd%d ", m);
-    if (f) fclose(f);
-  }
-  long best = 0;
-  for (char *d = strtok(devs, " "); d; d = strtok(NULL, " ")) {
-    int fd = open(d, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) continue;
-    buf part = { 0 }; slurp(fd, &part, ZMAX); close(fd);
-    const unsigned char *p = (const unsigned char *)part.p;
-    for (size_t i = 0; i + 1 < part.n; i++)
-      if (p[i] == 0x78 && (p[i + 1] == 0x01 || p[i + 1] == 0x5e || p[i + 1] == 0x9c || p[i + 1] == 0xda)) {
-        buf z = { 0 };
-        if (!inflate(p + i, part.n - i, &z)) store(z.p, z.n, &best);
-        wipe(&z);
-      }
-    wipe(&part);
-  }
-  return best > 0;
-}
-
-/* one HTTPS connection (a child of the server): the TLS side here, the request itself is handled by handle()
- * as plain HTTP on the other end of a socket pair. Everything is set up per connection, after the fork: the random
- * generator gets its own seed, and a renewed certificate (re-read by the server) is used without a restart. */
-static void tls(int c, const char *www) {
-  mbedtls_entropy_context ent; mbedtls_ctr_drbg_context rng; mbedtls_x509_crt cert; mbedtls_pk_context pk;
-  mbedtls_ssl_config cf; mbedtls_ssl_context s;
-  mbedtls_entropy_init(&ent); mbedtls_ctr_drbg_init(&rng); mbedtls_x509_crt_init(&cert); mbedtls_pk_init(&pk);
-  mbedtls_ssl_config_init(&cf); mbedtls_ssl_init(&s);
-  alarm(20);
-  if (mbedtls_ctr_drbg_seed(&rng, mbedtls_entropy_func, &ent, (const unsigned char *)"keendashd", 9)
-      || mbedtls_x509_crt_parse(&cert, (const unsigned char *)tcrt.p, tcrt.n + 1)
-      || mbedtls_pk_parse_key(&pk, (const unsigned char *)tkey.p, tkey.n + 1, NULL, 0, mbedtls_ctr_drbg_random, &rng)
-      || mbedtls_ssl_config_defaults(&cf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT))
-    return;
-  mbedtls_ssl_conf_rng(&cf, mbedtls_ctr_drbg_random, &rng);
-  if (mbedtls_ssl_conf_own_cert(&cf, &cert, &pk) || mbedtls_ssl_setup(&s, &cf)) return;
-  mbedtls_ssl_set_bio(&s, &c, tsend, trecv, NULL);
-  int r;
-  while ((r = mbedtls_ssl_handshake(&s))) if (!AGAIN(r)) return;
-  int sp[2];
-  if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sp)) return;
-  pid_t h = fork();
-  if (h < 0) return;
-  if (h == 0) { close(sp[0]); close(c); https = 1; handle(sp[1], www); _exit(0); }
-  close(sp[1]);
-  /* relay: the client's request to handle(), its answer back, until handle() is done */
-  unsigned char b[16384]; int up = 1;
-  for (;;) {
-    struct pollfd pf[2] = { { up ? c : -1, POLLIN, 0 }, { sp[0], POLLIN, 0 } };
-    if (up && mbedtls_ssl_get_bytes_avail(&s)) pf[0].revents = POLLIN; /* already decrypted, poll would not see it */
-    else if (poll(pf, 2, -1) < 0) { if (errno == EINTR) continue; break; }
-    if (up && pf[0].revents) {
-      int n = mbedtls_ssl_read(&s, b, sizeof b);
-      if (n > 0) writeall(sp[0], (char *)b, n);
-      else if (!AGAIN(n)) { up = 0; shutdown(sp[0], SHUT_WR); }
-    }
-    if (pf[1].revents) {
-      ssize_t n = read(sp[0], b, sizeof b);
-      if (n < 0 && errno == EINTR) continue;
-      if (n <= 0) break;
-      for (ssize_t o = 0; o < n; ) {
-        int w = mbedtls_ssl_write(&s, b + o, n - o);
-        if (w > 0) o += w; else if (!AGAIN(w)) goto done;
-      }
-    }
-  }
-  mbedtls_ssl_close_notify(&s);
-done:
-  close(sp[0]);
-  waitpid(h, NULL, 0);
-}
-#endif
-
-static int listener(const char *ip, const char *port) {
-  struct sockaddr_in a; memset(&a, 0, sizeof a);
-  a.sin_family = AF_INET; a.sin_port = htons((unsigned short)atoi(port));
-  if (inet_pton(AF_INET, ip, &a.sin_addr) != 1) { fprintf(stderr, "keendashd: bad address %s\n", ip); return -1; }
-  int l = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0), one = 1;
-  if (l < 0 || setsockopt(l, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one) || bind(l, (struct sockaddr *)&a, sizeof a) || listen(l, 32)) {
-    fprintf(stderr, "keendashd: %s:%s: %s\n", ip, port, strerror(errno));
-    if (l >= 0) close(l);
-    return -1;
-  }
-  return l;
-}
-
 static time_t mono(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec; }
 static void woken(int s) { (void)s; } /* SIGCHLD interrupts poll(), so finished children are reaped at once */
 static pid_t tick(const char *what) {
@@ -800,19 +492,40 @@ static pid_t tick(const char *what) {
   return p > 0 ? p : 0;
 }
 
-/* tport: HTTPS, or NULL */
-static int serve(const char *ip, const char *port, const char *www, const char *tport) {
-  int l = listener(ip, port), tl = -1;
-  if (l < 0) return 1;
-#ifdef KEENDASH_TLS
-  if (tport && (tl = listener("0.0.0.0", tport)) < 0) return 1;
-  if (tport && !keendns()) { fprintf(stderr, "keendashd: no KeenDNS certificate on the router, HTTPS is off\n"); return 1; }
-#else
-  if (tport) { fprintf(stderr, "keendashd: built without HTTPS\n"); return 1; }
-#endif
+/* The web UI over https can't load keendash's http port (mixed content), but it reads files under /tmp/mnt through
+ * its own /storage/ path, which nginx serves only to a logged-in user. The status JSON is kept there and rebuilt
+ * only while someone reads it: a read moves the file's atime past its mtime (relatime). */
+static pid_t publish(void) {
+  const char *d = getenv("KEENDASH_PUB");
+  char f[512], t[520]; struct stat st;
+  if (!d || !*d) d = PUB;
+  if (stat(d, &st) || !S_ISDIR(st.st_mode)) return 0;
+  snprintf(f, sizeof f, "%s/status.json", d);
+  if (!stat(f, &st) && (st.st_atim.tv_sec < st.st_mtim.tv_sec ||
+      (st.st_atim.tv_sec == st.st_mtim.tv_sec && st.st_atim.tv_nsec <= st.st_mtim.tv_nsec))) return 0;
+  pid_t p = fork();
+  if (p == 0) {
+    signal(SIGCHLD, SIG_DFL);
+    buf o = { 0 }; status(&o);
+    snprintf(t, sizeof t, "%s.tmp", f);
+    int fd = open(t, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd >= 0) { writeall(fd, o.p, o.n); close(fd); rename(t, f); }
+    _exit(0);
+  }
+  return p > 0 ? p : 0;
+}
+
+static int serve(const char *ip, const char *port, const char *www) {
+  struct sockaddr_in a; memset(&a, 0, sizeof a);
+  a.sin_family = AF_INET; a.sin_port = htons((unsigned short)atoi(port));
+  if (inet_pton(AF_INET, ip, &a.sin_addr) != 1) { fprintf(stderr, "keendashd: bad address %s\n", ip); return 1; }
+  int l = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0), one = 1;
+  if (l < 0 || setsockopt(l, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one) || bind(l, (struct sockaddr *)&a, sizeof a) || listen(l, 32)) {
+    fprintf(stderr, "keendashd: %s:%s: %s\n", ip, port, strerror(errno)); return 1;
+  }
   pid_t p = fork();
   if (p < 0) { perror("keendashd"); return 1; }
-  if (p) { printf("%d\n", (int)p); if (tl >= 0) printf("%s\n", fqdn); return 0; }
+  if (p) { printf("%d\n", (int)p); return 0; }
   setsid();
   if (chdir("/")) {}
   int z = open("/dev/null", O_RDWR);
@@ -822,47 +535,36 @@ static int serve(const char *ip, const char *port, const char *www, const char *
   struct sigaction sa; memset(&sa, 0, sizeof sa);
   sa.sa_handler = woken; sigaction(SIGCHLD, &sa, NULL);
 
-  time_t next1 = 0, next5 = 0;
-#ifdef KEENDASH_TLS
-  time_t nextc = mono() + 6 * 3600;
-#endif
-  pid_t t1 = 0, t5 = 0; int conns = 0;
+  time_t next1 = 0, next5 = 0, nextp = 0;
+  pid_t t1 = 0, t5 = 0, tp = 0; int conns = 0;
   for (;;) {
     pid_t w;
-    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else conns--; }
+    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else conns--; }
     time_t now = mono();
     /* a run still going when the next one is due is skipped, not doubled */
     if (now >= next1) { if (!t1) t1 = tick("1"); next1 = now + 60; }
     if (now >= next5) { if (!t5) t5 = tick("5"); next5 = now + 300; }
-#ifdef KEENDASH_TLS
-    /* a renewed certificate: read here, in the server, so the key stays in its memory */
-    if (tl >= 0 && now >= nextc) { keendns(); nextc = now + 6 * 3600; }
-#endif
-    struct pollfd pf[2] = { { l, POLLIN, 0 }, { tl, POLLIN, 0 } };
-    if (poll(pf, tl < 0 ? 1 : 2, (int)((next1 < next5 ? next1 : next5) - now) * 1000) <= 0) continue;
-    int sec = !pf[0].revents;
-    struct sockaddr_in a; socklen_t al = sizeof a;
-    int c = accept4(sec ? tl : l, (struct sockaddr *)&a, &al, SOCK_CLOEXEC);
+    /* the card asks every 30 s: the JSON it gets is at most ~20 s old */
+    if (now >= nextp) { if (!tp) tp = publish(); nextp = now + 15; }
+    time_t next = next1 < next5 ? next1 : next5;
+    if (nextp < next) next = nextp;
+    struct pollfd pf = { l, POLLIN, 0 };
+    if (poll(&pf, 1, (int)(next - now) * 1000) <= 0) continue;
+    int c = accept4(l, NULL, NULL, SOCK_CLOEXEC);
     if (c < 0) continue;
-    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else conns--; }
+    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else conns--; }
     if (conns >= MAXCONN) { close(c); continue; }
     pid_t h = fork();
-    if (h == 0) {
-      signal(SIGCHLD, SIG_DFL); close(l); if (tl >= 0) close(tl);
-#ifdef KEENDASH_TLS
-      if (sec) { inet_ntop(AF_INET, &a.sin_addr, peer, sizeof peer); tls(c, www); close(c); _exit(0); }
-#endif
-      handle(c, www); close(c); _exit(0);
-    }
+    if (h == 0) { signal(SIGCHLD, SIG_DFL); close(l); handle(c, www); close(c); _exit(0); }
     if (h > 0) conns++;
     close(c);
   }
 }
 
 int main(int argc, char **argv) {
-  if ((argc == 5 || argc == 6) && !strcmp(argv[1], "serve")) return serve(argv[2], argv[3], argv[4], argc == 6 ? argv[5] : NULL);
+  if (argc == 5 && !strcmp(argv[1], "serve")) return serve(argv[2], argv[3], argv[4]);
   if (argc == 2 && !strcmp(argv[1], "status")) { buf o = { 0 }; status(&o); fwrite(o.p, 1, o.n, stdout); return 0; }
   if (argc == 2 && !strcmp(argv[1], "json")) return json();
-  fprintf(stderr, "usage: keendashd serve <ip> <port> <www> [<https port>] | status | json\n");
+  fprintf(stderr, "usage: keendashd serve <ip> <port> <www> | status | json\n");
   return 2;
 }

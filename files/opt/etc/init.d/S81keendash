@@ -1,8 +1,8 @@
 #!/bin/sh
 # keendash: dashboard card for the Keenetic web UI. One service that
 #  1) runs keendashd: the web server for the widgets (status JSON, CGI, widget scripts) on the LAN address,
-#     which also runs the periodic jobs (bin/tick); with the router's KeenDNS certificate (read by keendashd) also HTTPS
-#     on HTTPS_PORT, opened in the firewall (/opt/etc/ndm/netfilter.d/80-keendash.sh), for the web UI via KeenDNS, and
+#     which also runs the periodic jobs (bin/tick) and keeps the status JSON in $PUB for the web UI over https
+#     (it reads $PUB through its own /storage/ path, see bin/patch), and
 #  2) bind-mounts the Keenetic index.html with the widget loader (bin/patch).
 # All settings: /opt/etc/keendash/keendash.conf
 #
@@ -15,10 +15,9 @@ NAME=keendashd
 ENVF=/opt/etc/keendash/keendash.conf
 PATCH=/opt/share/keendash/bin/patch
 WWW=/opt/share/keendash/www
-FW=/opt/etc/ndm/netfilter.d/80-keendash.sh
-TLS=/tmp/keendash/tls
+PUB=/tmp/mnt/.keendash
 
-LAN_IFACE="br0"; LAN_IP=""; PORT=8189; HTTPS_PORT=0
+LAN_IFACE="br0"; LAN_IP=""; PORT=8189
 [ -f "$ENVF" ] && . "$ENVF"
 
 pids() { pidof "$NAME" 2>/dev/null; }
@@ -53,19 +52,12 @@ start() {
         sleep 2
     done
 
-    # keendashd goes to the background once the ports are bound and prints its pid, with HTTPS also the KeenDNS name;
-    # a busy port fails here. HTTPS without the KeenDNS certificate or with a busy port: start again with HTTP only
-    tls=""; [ "${HTTPS_PORT:-0}" != 0 ] && tls=$HTTPS_PORT
-    # shellcheck disable=SC2086
-    if out=$("$BIN" serve "$ip" "$PORT" "$WWW" $tls) || { [ -n "$tls" ] && tls="" && "$BIN" serve "$ip" "$PORT" "$WWW" >/dev/null; }; then
-        # no addresses here: keendash's own ports serve only the card's data, users opened them and got lost
+    # the dot hides it from the /storage/ listing; widgets.json is the widget list (the CGI's last line)
+    mkdir -p "$PUB" && ln -sfn "$WWW/widgets" "$PUB/widgets" && "$WWW/cgi-bin/widgets.cgi" | tail -n 1 > "$PUB/widgets.json"
+    # keendashd goes to the background once the port is bound and prints its pid; a busy port fails here
+    if "$BIN" serve "$ip" "$PORT" "$WWW" >/dev/null; then
+        # no address here: keendash's own port serves only the card's data, users opened it and got lost
         echo "keendash started"
-        if [ -n "$tls" ]; then
-            mkdir -p "$TLS"; echo "$out" | sed -n 2p > "$TLS/fqdn"; echo "$HTTPS_PORT" > "$TLS/port"
-            type=iptables table=filter "$FW"
-        else
-            rm -rf "$TLS"
-        fi
         "$PATCH" stop >/dev/null 2>&1
         p=$("$PATCH" start); [ "$p" = "смонтировано" ] || echo "$p"
     else
@@ -76,13 +68,7 @@ start() {
 
 stop() {
     "$PATCH" stop >/dev/null 2>&1
-    # close the HTTPS port
-    p=$(cat "$TLS/port" 2>/dev/null)
-    if [ -n "$p" ]; then
-        while iptables -w -D INPUT -p tcp --dport "$p" -m comment --comment keendash -j ACCEPT 2>/dev/null; do :; done
-        while iptables -w -D INPUT -p tcp --dport "$p" -j ACCEPT 2>/dev/null; do :; done
-    fi
-    rm -rf "$TLS"
+    rm -rf "$PUB"
     if is_running; then
         killall "$NAME" 2>/dev/null
         n=0; while is_running && [ "$n" -lt 10 ]; do sleep 1; n=$((n + 1)); done
