@@ -3,12 +3,15 @@
  *                                     runs bin/tick 1 every minute and bin/tick 5 every 5 minutes, so no cron is needed,
  *                                     and keeps the status JSON in /tmp/mnt/.keendash for the web UI over https
  *                                     (reading its "update" file there upgrades keendash, as update.cgi does)
- *   keendashd status                  the /cgi-bin/status.cgi JSON, built from the output of bin/stats and bin/services
+ *   keendashd status                  the /cgi-bin/status.cgi JSON, built from the output of bin/stats, bin/services and
+ *                                     bin/settings list, and the services' data in /tmp/keendash/x
  *   keendashd json                    JSON on stdin -> "path<TAB>value" lines: records.0.series.title<TAB>Silo
+ *   keendashd kvjson                  a collector's "key value" / "table|a|b" lines on stdin -> a JSON object
  * Only libc: built static with musl for every Entware architecture (scripts/build-ipk.sh). */
 #define _GNU_SOURCE
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -138,8 +141,28 @@ static void kv(buf *b, lines *S, const char *spec) {
     first = 0;
   }
 }
-/* "tag|f2|f3..." lines as JSON arrays, one letter per field: s string, n number (0 if empty), N number or null;
- * a leading "=" prints the single field bare instead of an array */
+/* comma-separated numbers, broken ones skipped */
+static void nums(buf *b, const char *s, size_t n, char sep) {
+  int first = 1; char out[64];
+  for (size_t i = 0; i < n; ) {
+    size_t j = i;
+    while (j < n && s[j] != sep) j++;
+    if (num(s + i, j - i, out)) { if (!first) bs(b, ","); bs(b, out); first = 0; }
+    i = j + 1;
+  }
+}
+/* one field: s string, n number (0 if empty), N number or null, v number or string, a comma list of strings */
+static void fld(buf *b, const char *f, size_t n, char t) {
+  char out[64];
+  if (t == 's') jstr(b, f, n);
+  else if (t == 'v') { if (num(f, n, out)) bs(b, out); else jstr(b, f, n); }
+  else if (t == 'a') {
+    bs(b, "[");
+    for (size_t i = 0, j; i < n; i = j + 1) { j = i; while (j < n && f[j] != ',') j++; if (i) bs(b, ","); jstr(b, f + i, j - i); }
+    bs(b, "]");
+  } else jnum(b, f, n, t == 'N' ? "null" : "0");
+}
+/* "tag|f2|f3..." lines as JSON arrays, one fld() letter per field; a leading "=" prints the single field bare instead of an array */
 static void rows(buf *b, lines *L, const char *tag, const char *spec) {
   size_t tl = strlen(tag); int first = 1, one = *spec == '=';
   spec += one;
@@ -152,21 +175,60 @@ static void rows(buf *b, lines *L, const char *tag, const char *spec) {
     for (int j = 0; spec[j]; j++) {
       size_t n = strcspn(f, "|\r");
       if (j) bs(b, ",");
-      if (spec[j] == 's') jstr(b, f, n); else jnum(b, f, n, spec[j] == 'N' ? "null" : "0");
+      fld(b, f, n, spec[j]);
       f += n; if (*f == '|') f++;
     }
     if (!one) bs(b, "]");
   }
 }
-/* comma-separated numbers, broken ones skipped */
-static void nums(buf *b, const char *s, size_t n, char sep) {
-  int first = 1; char out[64];
-  for (size_t i = 0; i < n; ) {
-    size_t j = i;
-    while (j < n && s[j] != sep) j++;
-    if (num(s + i, j - i, out)) { if (!first) bs(b, ","); bs(b, out); first = 0; }
-    i = j + 1;
+/* the value of the first "tag|value" line as a string, null without one */
+static void one(buf *b, lines *L, const char *tag) {
+  size_t tl = strlen(tag);
+  for (int i = 0; i < L->n; i++)
+    if (!strncmp(L->l[i], tag, tl) && L->l[i][tl] == '|') { const char *v = L->l[i] + tl + 1; jstr(b, v, strcspn(v, "\r")); return; }
+  bs(b, "null");
+}
+/* length of a collector's key ([a-z0-9_]+) followed by " " or "|" (into *sep), 0 for any other line */
+static size_t kname(const char *s, char *sep) {
+  size_t n = 0;
+  while ((s[n] >= 'a' && s[n] <= 'z') || isdigit((unsigned char)s[n]) || s[n] == '_') n++;
+  *sep = s[n];
+  return n && (s[n] == ' ' || s[n] == '|') ? n : 0;
+}
+/* a collector's output as a JSON object: "key value" and "~key value" -> a number, a list of numbers ("1,2,3") or a string;
+ * "table|a|b" lines -> "table":[["a","b"],...]; other lines are skipped, the first line of a key wins */
+static void kvjson(buf *o, const char *text) {
+  char *t = strdup(text), sep, ps, out[64]; int first = 1;
+  if (!t) exit(1);
+  lines L = split(t);
+  bs(o, "{");
+  for (int i = 0; i < L.n; i++) {
+    const char *s = L.l[i] + (L.l[i][0] == '~'); size_t k = kname(s, &sep), m = strcspn(s, "\r");
+    if (!k) continue;
+    int seen = 0;
+    for (int j = 0; j < i && !seen; j++) { const char *p = L.l[j] + (L.l[j][0] == '~'); seen = kname(p, &ps) == k && !strncmp(p, s, k); }
+    if (seen) continue;
+    bs(o, first ? "\"" : ",\""); first = 0;
+    bput(o, s, k); bs(o, "\":");
+    if (sep == ' ') {
+      const char *v = s + k + 1; size_t vn = m - k - 1;
+      int list = memchr(v, ',', vn) != NULL;
+      for (size_t x = 0, y; list && x <= vn; x = y + 1) { y = x; while (y < vn && v[y] != ',') y++; list = num(v + x, y - x, out); }
+      if (list) { bs(o, "["); nums(o, v, vn, ','); bs(o, "]"); } else fld(o, v, vn, 'v');
+      continue;
+    }
+    for (int j = i; j < L.n; j++) {
+      const char *p = L.l[j] + (L.l[j][0] == '~');
+      if (kname(p, &ps) != k || ps != '|' || strncmp(p, s, k)) continue;
+      bs(o, j == i ? "[[" : ",[");
+      p += k + 1;
+      for (int c = 0;; c++) { size_t n = strcspn(p, "|\r"); if (c) bs(o, ","); fld(o, p, n, 'v'); p += n; if (*p != '|') break; p++; }
+      bs(o, "]");
+    }
+    bs(o, "]");
   }
+  bs(o, "}");
+  free(t); free(L.l);
 }
 /* graph history: the first word of each line of <tmp>/<key> */
 static void series(buf *b, const char *dir, const char *k) {
@@ -188,6 +250,26 @@ static size_t line1(const char *path, char *t, size_t sz) {
   if (fgets(t, sz, f)) n = strcspn(t, "\r\n");
   fclose(f);
   return n;
+}
+
+/* "inst|id|type|name|url|user|set,..." lines (bin/settings list) with the collector's data from <tmp>/x/<id>, null before its first run */
+static void insts(buf *o, lines *L, const char *tmp) {
+  int first = 1;
+  for (int i = 0; i < L->n; i++) {
+    const char *id = L->l[i] + 5, *f = id;
+    if (strncmp(L->l[i], "inst|", 5)) continue;
+    size_t idn = strcspn(id, "|\r"); int fd = -1; char p[512];
+    bs(o, first ? "[" : ",["); first = 0;
+    for (int j = 0; j < 6; j++) { size_t n = strcspn(f, "|\r"); if (j) bs(o, ","); fld(o, f, n, j == 5 ? 'a' : 's'); f += n; if (*f == '|') f++; }
+    /* ids are [a-z0-9-] (bin/settings apply); anything else is not a file name */
+    if (idn && idn < 64 && strspn(id, "abcdefghijklmnopqrstuvwxyz0123456789-") >= idn) {
+      snprintf(p, sizeof p, "%s/x/%.*s", tmp, (int)idn, id); fd = open(p, O_RDONLY | O_CLOEXEC);
+    }
+    if (fd < 0) { bs(o, ",null]"); continue; }
+    buf d = { 0 }; slurp(fd, &d, MAXOUT); close(fd);
+    bs(o, ","); kvjson(o, d.p); bs(o, "]");
+    free(d.p);
+  }
 }
 
 static void status(buf *o) {
@@ -248,6 +330,24 @@ static void status(buf *o) {
   static const char *ser[] = { "telemt_conn", "telemt_octets", "awg_bytes", "awg_up", "firc_domains", "ascn_ips", "ascn_honeypot",
                                "nfq_pkts", "nfq_auto", "hr_ips", "ts_bytes", "ts_online", "qb_dl", "qb_up", "sys_load", "sys_mem", "sys_temp" };
   for (size_t i = 0; i < sizeof ser / sizeof *ser; i++) { bf(o, "%s\"%s\":[", i ? "," : "", ser[i]); series(o, tmp, ser[i]); bs(o, "]"); }
+  /* s.<id>.<key>: graph history of the services' "~key" values (bin/ext) */
+  DIR *dd = opendir(tmp);
+  for (struct dirent *de; dd && (de = readdir(dd)); )
+    if (!strncmp(de->d_name, "s.", 2) && de->d_name[2]) { bs(o, ","); jstr(o, de->d_name + 2, strlen(de->d_name + 2)); bs(o, ":["); series(o, tmp, de->d_name); bs(o, "]"); }
+  if (dd) closedir(dd);
+
+  /* bin/settings list: the web UI's settings, the services' types and instances */
+  buf cb = { 0 }; lines C = cmd("KEENDASH_SETTINGS", SHARE "/bin/settings list", &cb);
+  bs(o, "},\"cfg\":{\"vol\":"); one(o, &C, "vol");
+  bs(o, ",\"rev\":"); one(o, &C, "rev");
+  bs(o, ",\"err\":"); one(o, &C, "err");
+  bs(o, ",\"hide\":{\"page\":["); rows(o, &C, "hide|page", "=s");
+  bs(o, "],\"main\":["); rows(o, &C, "hide|main", "=s");
+  bs(o, "]},\"cols\":["); rows(o, &C, "col", "=a");
+  bs(o, "]},\"types\":["); rows(o, &C, "type", "sssa");
+  bs(o, "],\"inst\":["); insts(o, &C, tmp);
+  bs(o, "]");
+  free(cb.p); free(C.l);
 
   /* update: installed version, a newer one from the feed (bin/update check), an upgrade in progress */
   char cur[128] = "", nw[128] = "", pid[32] = "", p[512]; size_t cn = 0, nn = 0, pn = 0;
@@ -266,7 +366,7 @@ static void status(buf *o) {
   snprintf(p, sizeof p, "%s/upd.busy", tmp); pn = line1(p, pid, sizeof pid);
   pid[pn] = 0;
   int busy = pn && atoi(pid) > 0 && kill(atoi(pid), 0) == 0;
-  bs(o, "},\"upd\":{\"cur\":"); jstr(o, cur, cn);
+  bs(o, ",\"upd\":{\"cur\":"); jstr(o, cur, cn);
   bs(o, ",\"new\":"); jstr(o, nw, nn);
   bf(o, ",\"busy\":%d}}\n", busy);
   free(sb.p); free(vb.p); free(S.l); free(V.l);
@@ -585,6 +685,9 @@ int main(int argc, char **argv) {
   if (argc == 5 && !strcmp(argv[1], "serve")) return serve(argv[2], argv[3], argv[4]);
   if (argc == 2 && !strcmp(argv[1], "status")) { buf o = { 0 }; status(&o); fwrite(o.p, 1, o.n, stdout); return 0; }
   if (argc == 2 && !strcmp(argv[1], "json")) return json();
-  fprintf(stderr, "usage: keendashd serve <ip> <port> <www> | status | json\n");
+  if (argc == 2 && !strcmp(argv[1], "kvjson")) {
+    buf i = { 0 }, o = { 0 }; slurp(0, &i, MAXOUT); kvjson(&o, i.p); bs(&o, "\n"); fwrite(o.p, 1, o.n, stdout); return 0;
+  }
+  fprintf(stderr, "usage: keendashd serve <ip> <port> <www> | status | json | kvjson\n");
   return 2;
 }

@@ -250,6 +250,12 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("keendashd json: paths, escapes", j === 'a.0.b\tx"y z\na.1\t2\nc.d\tnull\nc.e\t/p\\q\\n\nt\ttrue\nu\t\\u00e9\n', JSON.stringify(j));
     const jp = cp.execFileSync(kd, ["json"], { encoding: "utf8", input: '[\n  [1, -2.5e3],\n  {"k": [ {"z": "w"} ], "e": []}\n]\n' });
     ok("keendashd json: pretty-printed, nested arrays", jp === "0.0\t1\n0.1\t-2.5e3\n1.k.0.z\tw\n", JSON.stringify(jp));
+    // keendashd kvjson: collector lines -> JSON; first key wins, broken lines skipped
+    let kj = null;
+    try { kj = JSON.parse(cp.execFileSync(kd, ["kvjson"], { encoding: "utf8",
+      input: 'ok 1\n~dl 5242880\nname a "b"\\c\tz\nsq 1,2,3\nlist|x|420|S02E06\nlist|y||7\nwget: bad address\nok 0\n' })); } catch (e) { kj = e.message; }
+    ok("keendashd kvjson: numbers, strings, lists, tables, ~", JSON.stringify(kj) === JSON.stringify({ ok: 1, dl: 5242880, name: 'a "b"\\c\tz', sq: [1, 2, 3],
+      list: [["x", 420, "S02E06"], ["y", "", 7]] }), JSON.stringify(kj));
 
     // keendashd status: stats/services output -> the card's JSON; broken numbers become 0/null, strings are escaped
     const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));
@@ -259,7 +265,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
-    const env = Object.assign({}, process.env, { KEENDASH_STATS: "cat '" + sd + "/stats'", KEENDASH_SERVICES: "cat '" + sd + "/services'", KEENDASH_TMP: sd });
+    fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass\ninst|qb-2|qb|Торренты|http://q|admin|pass\n" +
+      "inst|pl|plex|Plex|http://p||token\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n");
+    fs.mkdirSync(path.join(sd, "x"));
+    fs.writeFileSync(path.join(sd, "x", "qb-2"), "ok 1\n~dl 5\nlist|a|1\n");
+    fs.writeFileSync(path.join(sd, "s.qb-2.dl"), "4\n5\n");
+    const env = Object.assign({}, process.env, { KEENDASH_STATS: "cat '" + sd + "/stats'", KEENDASH_SERVICES: "cat '" + sd + "/services'",
+      KEENDASH_SETTINGS: "cat '" + sd + "/settings'", KEENDASH_TMP: sd });
     let s = null;
     try { s = JSON.parse(cp.execFileSync(kd, ["status"], { env, encoding: "utf8" })); } catch (e) { ok("keendashd status: valid JSON", false, e.message); }
     if (s) {
@@ -275,6 +287,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: Tailscale", s.ts.run === 1 && s.ts.online === 1 && s.ts.total === 0 && eq(s.ts.self, [["Running", "router", "100.64.0.1", "waw", "", 0, "", ""]]) &&
         eq(s.ts.list, [["pc", "windows", 1, 1, 1, "", "0001-01-01T00:00:00Z", 10, 20, 0, 0, ""]]), JSON.stringify(s.ts));
       ok("keendashd status: newer version", s.upd.new === "9.9.9" && s.upd.busy === 0, JSON.stringify(s.upd));
+      ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]] }), JSON.stringify(s.cfg));
+      ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"]]]), JSON.stringify(s.types));
+      ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }],
+        ["pl", "plex", "Plex", "http://p", "", ["token"], null]]), JSON.stringify(s.inst));
+      ok("keendashd status: instance series", eq(s.series["qb-2.dl"], [4, 5]), JSON.stringify(s.series));
     }
 
     // keendashd serve: static files, CGI, the built-in status; the daemon prints its pid
