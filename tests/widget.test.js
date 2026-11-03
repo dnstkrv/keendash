@@ -401,5 +401,40 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     m.querySelector(".us-upd-go").dispatchEvent(new w.Event("click", { bubbles: true }));
     setTimeout(() => { ok("update: refused POST shows error, keeps button", /Не удалось обновить/.test(m.textContent) && !m.querySelector(".us-upd-go").disabled, m.textContent); r(); }, 100);
   }), w => u => Promise.resolve(/update\.cgi$/.test(u) ? { ok: false, status: 403 } : { ok: true, json: () => Promise.resolve(upd) }));
+  // the "Сервисы" page: a menu item under "Системный монитор" opens a card per tab with data over Angular's page
+  const layout = '<ndw-menu><ul id="menu.main"><li><a class="page-link__link page-link__link--active" href="/dashboard"><span class="page-link__label">Системный монитор</span></a></li>' +
+    '<li><a class="page-link__link" href="/other"><span class="page-link__label">Другое</span></a></li></ul></ndw-menu><div class="layout__content__main"><router-outlet></router-outlet><ng-component>dash</ng-component></div>';
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  await run(full, async w => {
+    const d = w.document, act = "page-link__link--active", click = e => e.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+    d.addEventListener("click", e => e.preventDefault());
+    d.title = "Keenetic – Системный монитор"; d.body.insertAdjacentHTML("beforeend", layout);
+    await wait(100);
+    const a = d.getElementById("kd-menu"), dash = d.querySelector('a[href="/dashboard"]'), n = w.history.length;
+    ok("page: menu item right after Системный монитор", a && a.parentNode.previousElementSibling === dash.parentNode && a.textContent.trim() === "Сервисы" && !a.classList.contains(act));
+    click(a);
+    const p = d.querySelector(".kd-page"), t = p && Array.from(p.querySelectorAll(".kd-ct")).map(x => x.textContent).join();
+    ok("page: opens at /keendash over the hidden dashboard, its item active", p && w.location.pathname === "/keendash" && w.history.length === n + 1 && d.querySelector("ng-component").hasAttribute("data-kd-hidden") &&
+      a.classList.contains(act) && !dash.classList.contains(act) && d.title === "Keenetic – Сервисы", d.title);
+    ok("page: a card per tab with data, media per service", t === "telemt,AWG,firc,nfqws,Hydra,AdGuard,qBittorrent,Plex,Sonarr,Radarr,Prowlarr,Overseerr,Immich,Antiscan,Система", t);
+    ok("page: no chips, tabs or update bar", p && !p.querySelector(".us-chip,.us-tab,.us-mt,.us-upd"));
+    ok("page: card links", p && p.querySelector(".kd-card a.us-open").href === "http://192.168.0.1:8083/" && p.querySelectorAll(".kd-card")[3].querySelectorAll("a.us-open").length === 2);
+    click(dash);
+    ok("page: the item of the page underneath goes back to it", !d.querySelector(".kd-page,[data-kd-hidden]") && w.location.pathname === "/dashboard" && dash.classList.contains(act) && !a.classList.contains(act) && d.title === "Keenetic – Системный монитор", w.location.pathname + " " + d.title);
+    click(a);
+    const main = d.querySelector(".layout__content__main");
+    main.removeChild(main.querySelector("ng-component")); main.insertAdjacentHTML("beforeend", "<ng-component>other</ng-component>");
+    await wait(100);
+    ok("page: another page of Angular's closes it", !d.querySelector(".kd-page") && !a.classList.contains(act) && d.querySelector("ng-component").textContent === "other");
+   }, null, "http://192.168.0.1/dashboard");
+  // a reload at /keendash: Angular redirects to the dashboard, the loader kept the address, the page opens again
+  await run(full, async w => {
+    const d = w.document, n = w.history.length;
+    d.title = "KeeneticOS Web Panel"; d.body.insertAdjacentHTML("beforeend", layout);
+    await wait(100);
+    ok("page: reopens after a reload, in place of the redirect", !!d.querySelector(".kd-page") && w.location.pathname === "/keendash" && w.history.length === n, w.location.pathname);
+    d.title = "Keenetic Hopper – Системный монитор";
+    ok("page: Angular's titles keep the page's own", d.title === "Keenetic Hopper – Сервисы", d.title);
+  }, w => { w.__keendash = { p: "/keendash" }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(full) }); }, "http://192.168.0.1/dashboard");
   console.log(res.join("\n")); process.exit(res.some(r => r.startsWith("FAIL")) ? 1 : 0);
 })();

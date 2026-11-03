@@ -20,11 +20,12 @@ mounted() { grep -q " $TARGET " /proc/mounts; }
 
 # The web UI over https can't load http (mixed content): then the web UI's own /storage/ path (files under /tmp/mnt,
 # given only to a logged-in user: 401 before the login, so the loader tries again every 5 s); the card then reads
-# status.json there and can't update (st). Over http keendash's LAN port as before.
+# status.json there (st). Over http keendash's LAN port as before. p: the address asked for, before Angular sends an
+# unknown one (keendash's page /keendash) to the dashboard.
 make_snippet() {
   mkdir -p "$DIR"
   cat > "$SNIPPETS" <<EOF
-<script id="ui-widgets-loader">(function(){try{var h=location.protocol=="https:",b=h?"/storage/.keendash/":"http://"+location.hostname+":$PORT/";window.__keendash={base:b,st:h};(function g(){fetch(b+(h?"widgets.json":"cgi-bin/widgets.cgi"),{cache:"no-store"}).then(function(r){if(r.status==401){setTimeout(g,5000);return []}return r.json()}).then(function(l){l.forEach(function(n){var s=document.createElement("script");s.src=b+"widgets/"+n+"?"+Date.now();document.head.appendChild(s)})}).catch(function(){})})()}catch(e){}})();</script>
+<script id="ui-widgets-loader">(function(){try{var h=location.protocol=="https:",b=h?"/storage/.keendash/":"http://"+location.hostname+":$PORT/";window.__keendash={base:b,st:h,p:location.pathname};(function g(){fetch(b+(h?"widgets.json":"cgi-bin/widgets.cgi"),{cache:"no-store"}).then(function(r){if(r.status==401){setTimeout(g,5000);return []}return r.json()}).then(function(l){l.forEach(function(n){var s=document.createElement("script");s.src=b+"widgets/"+n+"?"+Date.now();document.head.appendChild(s)})}).catch(function(){})})()}catch(e){}})();</script>
 EOF
 }
 

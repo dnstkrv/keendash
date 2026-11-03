@@ -260,7 +260,7 @@
   function fmtN(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
   function hhmm(t) { var x = new Date(t * 1000); return ("0" + x.getHours()).slice(-2) + ":" + ("0" + x.getMinutes()).slice(-2); }
   /* third-party services: ok is null until keendash's cron has asked their API once */
-  var WAIT = "Данные появятся в течение минуты";
+  var WAIT = "Данные появятся в течение минуты", NODATA = "нет данных (" + (ST ? "status.json" : "status.cgi") + " недоступен)";
   function apiErr(name, keys) { return '<span style="color:' + BAD + '">API ' + name + " недоступен</span> · проверьте " + keys + " в keendash.conf"; }
   /* a third-party service's own address, with the router's loopback made reachable from the browser */
   function extUrl(u) {
@@ -439,6 +439,18 @@
     clearTimeout(upTimer); upTimer = setTimeout(update, 3000);
   }
 
+  var TABF = { telemt: tabTelemt, awg: tabAwg, firc: tabFirc, nfqws: tabNfqws, hydra: tabHydra, tailscale: tabTs, agh: tabAgh, media: tabMedia, ascn: tabAscn, sys: tabSys };
+  /* "Открыть" links of a tab; third-party services may run anywhere: the address from keendash.conf (eu: a media service's) */
+  function openLinks(id, d, eu) {
+    if (id === "agh") eu = d.agh && d.agh.url;
+    return id === "agh" || id === "media" ? (eu ? [["", extUrl(eu)]] : []) : id === "tailscale" ? [["", "https://login.tailscale.com/admin/machines"]] : tabLinks(id, d.svc || [], d.web);
+  }
+  function openHtml(ls) {
+    return ls.map(function (x) {
+      return '<a class="us-open" href="' + esc(x[1]) + '" target="_blank" rel="noopener">' + (ls.length > 1 ? esc(x[0]) + " ↗" : "Открыть ↗") + "</a>";
+    }).join("");
+  }
+
   function render() {
     /* a re-render would drop the tab being dragged; dragend renders */
     if (!bodyEl || tabDrag) return;
@@ -475,16 +487,8 @@
     });
     h += '</div><div class="us-tabs"><div class="us-tl">';
     avail.forEach(function (t) { h += '<button type="button" draggable="true" class="us-tab' + (t[0] === tab ? " us-on" : "") + '" data-tab="' + t[0] + '">' + t[1] + "</button>"; });
-    h += "</div>";
-    /* third-party services may run anywhere: link to the address from keendash.conf */
-    var eu = tab === "agh" ? d.agh && d.agh.url : tab === "media" ? (mediaOn(d).filter(function (m) { return m[0] === mtab; })[0] || [])[3] : null;
-    var tls = tab === "agh" || tab === "media" ? (eu ? [["", extUrl(eu)]] : []) : tab === "tailscale" ? [["", "https://login.tailscale.com/admin/machines"]] : tabLinks(tab, svc, d.web);
-    tls.forEach(function (x) {
-      h += '<a class="us-open" href="' + esc(x[1]) + '" target="_blank" rel="noopener">' + (tls.length > 1 ? esc(x[0]) + " ↗" : "Открыть ↗") + "</a>";
-    });
-    h += "</div>";
-    var s = d.series || {};
-    h += (tab === "awg" ? tabAwg : tab === "firc" ? tabFirc : tab === "ascn" ? tabAscn : tab === "nfqws" ? tabNfqws : tab === "hydra" ? tabHydra : tab === "tailscale" ? tabTs : tab === "agh" ? tabAgh : tab === "media" ? tabMedia : tab === "sys" ? tabSys : tabTelemt)(d, s);
+    h += "</div>" + openHtml(openLinks(tab, d, tab === "media" ? (mediaOn(d).filter(function (m) { return m[0] === mtab; })[0] || [])[3] : null)) + "</div>";
+    h += (TABF[tab] || tabTelemt)(d, d.series || {});
     bodyEl.innerHTML = h;
     /* re-rendering resets the tab strip's scroll: keep the active tab visible */
     var tl = bodyEl.querySelector(".us-tl"), on = tl && tl.querySelector(".us-on");
@@ -495,14 +499,15 @@
     fetch(API, { cache: "no-store" })
       .then(function (r) { if (!r.ok) throw r.status; return r.json(); })
       .then(function (d) {
-        lastData = d; watchUpdate(d.upd); render();
+        lastData = d; watchUpdate(d.upd); render(); renderPage();
         /* status.json left from the last viewer: this read makes keendashd rebuild it within ~20 s */
         if (ST && d.now && Date.now() / 1000 - d.now > 60) { clearTimeout(upTimer); upTimer = setTimeout(update, 5000); }
       })
       .catch(function () {
         /* our web server restarts during an upgrade: keep the last view and retry */
         if (upRun) { clearTimeout(upTimer); upTimer = setTimeout(update, 3000); return; }
-        lastData = null; if (bodyEl) bodyEl.innerHTML = '<div class="us-note">нет данных (' + (ST ? "status.json" : "status.cgi") + " недоступен)</div>";
+        lastData = false; if (bodyEl) bodyEl.innerHTML = note(NODATA);
+        renderPage();
         /* keendash restarting: over https status.json is back ~6 s after the start, don't wait for the next 30 s poll */
         clearTimeout(upTimer); upTimer = setTimeout(update, 5000);
       });
@@ -545,7 +550,15 @@
       ".us-upd-go{min-width:92px;padding:9px 20px;border:1px solid #0097dc;border-radius:4px;background:#0097dc;color:#fff;font:inherit;font-size:14px;cursor:pointer;outline:none;white-space:nowrap}" +
       ".us-upd-go:hover{border-color:#1c6c9a;background:#1c6c9a}.us-upd-go:active{background:#aed6fa;color:#1c6c9a}" +
       ".us-upd-go:disabled{opacity:.6;cursor:default;background:#0097dc;border-color:#0097dc;color:#fff}" +
-      ".us-upd-skip{background:none;border:0;padding:0;color:inherit;opacity:.6;font:inherit;font-size:12px;cursor:pointer}.us-upd-skip:hover{opacity:1;text-decoration:underline}";
+      ".us-upd-skip{background:none;border:0;padding:0;color:inherit;opacity:.6;font:inherit;font-size:12px;cursor:pointer}.us-upd-skip:hover{opacity:1;text-decoration:underline}" +
+      /* the page, as the firmware's own pages (ndw-page-wrapper) and dashboard cards: their styles leave with them */
+      "[data-kd-hidden]{display:none!important}.kd-page{padding:0 32px 64px;box-sizing:border-box}.kd-ph{padding:32px 32px 0 0;margin:0 0 24px}" +
+      ".kd-ph h1{font-size:28px;font-weight:700;line-height:36px;margin:0}" +
+      ".kd-cols{display:flex;gap:24px;align-items:flex-start}.kd-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:24px}" +
+      ".kd-card{background:var(--dashboard-background);border:1px solid var(--dashboard-card-border);border-radius:8px;min-width:0}" +
+      ".kd-ch{display:flex;align-items:center;margin-top:24px;padding:0 24px;min-height:24px}" +
+      ".kd-ct{flex:1;min-width:0;font-size:16px;font-weight:700;line-height:24px;letter-spacing:1px;text-transform:uppercase}" +
+      "@media (max-width:599px){.kd-page{padding:0 16px 56px}.kd-ph{padding-right:0}.kd-ph h1{font-size:20px;line-height:28px}}";
     document.head.appendChild(st);
   }
 
@@ -729,9 +742,118 @@
   function schedule() {
     if (pending) return;
     pending = true;
-    requestAnimationFrame(function () { pending = false; try { ensure(); } catch (e) { } });
+    requestAnimationFrame(function () { pending = false; try { ensure(); } catch (e) { } try { ensurePage(); } catch (e) { } });
+  }
+  /* ---------- "Сервисы" page: an item of the side menu under "Системный монитор" opens a page of the web UI with
+   * a card for every tab that has data. Angular's router doesn't know it: the page covers what Angular shows, at
+   * /keendash, and Angular showing another page closes it. Angular sends an unknown path to the dashboard, so for a
+   * reload the loader keeps the address asked for (window.__keendash.p) and the page opens again over the dashboard. */
+  var PAGE = "/keendash", ACT = "page-link__link--active";
+  var page = null, pageFrom = "", pageState = null, pageTitle = "", stripped = [], pageWant = (window.__keendash || {}).p === PAGE;
+  /* [title, html, links] per card: the tabs with data, "Медиа" as a card per service */
+  function pageCards(d) {
+    var s = d.series || {}, have = d.tabs || ["sys"], out = [];
+    proxies(d);
+    ordered(TABS, ORDKEY).forEach(function (t) {
+      if (have.indexOf(t[0]) < 0) return;
+      if (t[0] !== "media") { out.push([t[1], TABF[t[0]](d, s), openLinks(t[0], d)]); return; }
+      mediaOn(d).forEach(function (m) {
+        var x = (d.media || {})[m[0]] || {};
+        out.push([m[1], x.ok == null ? note(WAIT) : !x.ok ? note(apiErr(m[1], m[2])) : MVIEW[m[0]](x, s, d), openLinks("media", d, m[3])]);
+      });
+    });
+    return out;
+  }
+  function renderPage() {
+    var main = page && page.parentNode, d = lastData;
+    if (!main) return;
+    var top = main.scrollTop, wrap = document.createElement("div"), cols = [];
+    page.innerHTML = '<div class="kd-ph"><h1>' + TITLE + "</h1></div>";
+    if (!d) { page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
+    /* columns as on the dashboard, each card into the shortest one */
+    wrap.className = "kd-cols"; page.appendChild(wrap);
+    for (var i = Math.max(1, Math.floor((wrap.clientWidth + 24) / 444)); i > 0; i--) cols.push(wrap.appendChild(document.createElement("div")));
+    cols.forEach(function (c) { c.className = "kd-col"; });
+    pageCards(d).forEach(function (c) {
+      var col = cols.reduce(function (a, b) { return b.offsetHeight < a.offsetHeight ? b : a; });
+      col.insertAdjacentHTML("beforeend", '<div class="kd-card"><div class="kd-ch"><span class="kd-ct">' + esc(c[0]) + "</span>" + openHtml(c[2]) +
+        '</div><div class="us-body">' + c[1] + "</div></div>");
+    });
+    main.scrollTop = top;
+  }
+  /* Angular sets the title over and over: while the page is open, ours stays and Angular's latest is kept for later */
+  var TD = Object.getOwnPropertyDescriptor(Document.prototype, "title");
+  function holdTitle(on) {
+    if (!on) { delete document.title; document.title = pageTitle; return; }
+    var set = function (v) { pageTitle = v; TD.set.call(document, v.replace(/\s[–-]\s.*$/, "") + " – " + TITLE); };
+    Object.defineProperty(document, "title", { configurable: true, get: TD.get, set: set });
+    set(document.title);
+  }
+  /* the side menu folds itself on Angular's navigation; here by a tap beside it (on a phone: on the menu button) */
+  function fold() {
+    var x = document.querySelector(".layout__overlay") || document.querySelector(".header__menu-toggle .toggle__toggle");
+    if (x && document.querySelector("ndw-menu .menu--expanded")) x.click();
+  }
+  function openPage(replace) {
+    var main = document.querySelector(".layout__content__main");
+    if (!main) return;
+    if (!page) {
+      pageFrom = location.pathname + location.search + location.hash; pageState = history.state; stripped = []; holdTitle(true);
+      Array.prototype.forEach.call(main.children, function (c) { if (c.tagName !== "ROUTER-OUTLET") c.setAttribute("data-kd-hidden", ""); });
+      addStyle();
+      page = main.appendChild(document.createElement("div")); page.className = "kd-page";
+    }
+    if (location.pathname !== PAGE) history[replace ? "replaceState" : "pushState"]({ keendash: 1 }, "", PAGE);
+    fold(); ensureMenu();
+    main.scrollTop = 0; renderPage();
+  }
+  /* back: to the page Angular still has underneath, its menu item active again; the title is Angular's latest anyway */
+  function closePage(back) {
+    if (!page) return;
+    page.parentNode.removeChild(page); page = null;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-kd-hidden]"), function (c) { c.removeAttribute("data-kd-hidden"); });
+    if (back) stripped.forEach(function (x) { x.classList.add(ACT); });
+    holdTitle(false);
+    ensureMenu();
+  }
+  function ensureMenu() {
+    var ul = document.getElementById("menu.main"), ref = ul && ul.querySelector('a[href="/dashboard"]');
+    if (!ref) return null;
+    var a = document.getElementById("kd-menu");
+    if (!a) {
+      var li = ref.parentNode.cloneNode(true);
+      a = li.querySelector("a"); a.id = "kd-menu"; a.setAttribute("href", PAGE);
+      (a.querySelector(".page-link__label") || a).textContent = " " + TITLE + " ";
+      a.addEventListener("click", function (e) { e.preventDefault(); openPage(); });
+      ref.parentNode.parentNode.insertBefore(li, ref.parentNode.nextSibling);
+    }
+    /* a copy has none of Angular's bindings: the classes of the item above (hidden while the group is folded) */
+    var c = ref.className.split(" ").filter(function (x) { return x !== ACT; }).concat(page ? [ACT] : []).join(" ");
+    if (a.className !== c) a.className = c;
+    if (page) Array.prototype.forEach.call(document.querySelectorAll("ndw-menu ." + ACT), function (x) { if (x !== a) { x.classList.remove(ACT); stripped.push(x); } });
+    return a;
+  }
+  function ensurePage() {
+    var main = document.querySelector(".layout__content__main");
+    var shown = main && Array.prototype.some.call(main.children, function (c) { return c.tagName === "NG-COMPONENT" && !c.hasAttribute("data-kd-hidden"); });
+    /* Angular has shown another page */
+    if (page && shown) closePage();
+    /* back on /keendash (a reload, the history): once Angular has redirected to the dashboard */
+    if (ensureMenu() && !page && pageWant && shown && location.pathname !== PAGE) { pageWant = false; openPage(true); }
   }
   try {
+    window.addEventListener("popstate", function () {
+      if (location.pathname === PAGE) { pageWant = true; schedule(); } else closePage(location.pathname + location.search + location.hash === pageFrom);
+    });
+    /* Angular ignores its menu item of the page it still shows underneath: back to that page here */
+    document.addEventListener("click", function (e) {
+      var l = page && e.target.closest ? e.target.closest('ndw-menu a[href^="/"]') : null;
+      if (!l || l.id === "kd-menu" || l.getAttribute("href") !== pageFrom) return;
+      history.replaceState(pageState, "", pageFrom);
+      closePage(true); fold();
+    }, true);
+    var rs = 0;
+    window.addEventListener("resize", function () { clearTimeout(rs); rs = setTimeout(renderPage, 150); });
     new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
     setInterval(update, 30000);
     update();
