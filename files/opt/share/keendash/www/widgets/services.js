@@ -55,7 +55,21 @@
 
   /* ---------- rendering helpers ---------- */
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
-  function url(port) { return "http://" + location.hostname + ":" + port + "/"; }
+  /* KeenDNS web apps (d.ndp: [fqdn, host, port, upstream is the router itself]): with the web UI opened by the router's
+   * domain name, a service published there is linked by its own name, http://<name>:<port> is usually closed from outside.
+   * Keys: "host:port", and "@port" for the router's own services */
+  var PROXY = {};
+  function proxies(d) {
+    var h = "." + location.hostname;
+    PROXY = {};
+    (d.ndp || []).forEach(function (p) {
+      if (p[0].slice(-h.length) !== h) return;
+      var u = "https://" + p[0] + "/";
+      PROXY[p[1] + ":" + p[2]] = PROXY[p[1] + ":" + p[2]] || u;
+      if (p[3]) PROXY["@" + p[2]] = PROXY["@" + p[2]] || u;
+    });
+  }
+  function url(port) { return PROXY["@" + port] || "http://" + location.hostname + ":" + port + "/"; }
   function fmtBytes(b) {
     if (b == null || isNaN(b)) return "—";
     var u = ["Б", "КБ", "МБ", "ГБ", "ТБ"], i = 0;
@@ -248,7 +262,14 @@
   var WAIT = "Данные появятся в течение минуты";
   function apiErr(name, keys) { return '<span style="color:' + BAD + '">API ' + name + " недоступен</span> · проверьте " + keys + " в keendash.conf"; }
   /* a third-party service's own address, with the router's loopback made reachable from the browser */
-  function extUrl(u) { return u ? u.replace(/\/\/(127\.0\.0\.1|localhost)(?=[:\/]|$)/, "//" + location.hostname).replace(/\/?$/, "/") : ""; }
+  function extUrl(u) {
+    var m = /^http:\/\/([^\/:]+)(?::(\d+))?\/?$/.exec(u || "");
+    if (m) {
+      var p = m[2] || "80", k = /^(127\.0\.0\.1|localhost)$/.test(m[1]) ? "@" + p : m[1] + ":" + p;
+      if (PROXY[k]) return PROXY[k];
+    }
+    return u ? u.replace(/\/\/(127\.0\.0\.1|localhost)(?=[:\/]|$)/, "//" + location.hostname).replace(/\/?$/, "/") : "";
+  }
   function tabAgh(d) {
     var a = d.agh || {}, sq = a.sq || [];
     if (a.ok == null) return note(WAIT);
@@ -422,6 +443,7 @@
     var d = lastData, h = "";
     if (!d) { bodyEl.innerHTML = '<div class="us-note">загрузка…</div>'; return; }
     var svc = d.svc || [], have = d.tabs || ["sys"];
+    proxies(d);
     var avail = ordered(TABS, ORDKEY).filter(function (t) { return have.indexOf(t[0]) >= 0; });
     if (!avail.some(function (t) { return t[0] === tab; })) tab = avail.length ? avail[0][0] : "sys";
     var STATE = { 1: [OK, "работает"], 0: [BAD, "не запущен"], 2: [OFF, "отключён"], 3: [OFF, "состояние неизвестно"] };

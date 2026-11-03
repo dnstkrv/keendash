@@ -211,6 +211,7 @@ static void status(buf *o) {
   bf(o, "{\"now\":%ld,\"tabs\":[", (long)time(NULL)); rows(o, &S, "tab", "=s");
   bs(o, "],\"svc\":["); rows(o, &V, "svc", "sns");
   bs(o, "],\"web\":["); rows(o, &V, "web", "sns");
+  bs(o, "],\"ndp\":["); rows(o, &V, "ndp", "ssnn");
   bs(o, "],\"telemt\":{"); kv(o, &S, "ok=telemt_ok conn=telemt_conn users=telemt_users cfg=telemt_cfg up=telemt_up bad=telemt_bad");
   bs(o, ",\"list\":["); rows(o, &S, "u", "snnn");
   bs(o, "]},\"awg\":{"); kv(o, &S, "up=awg_up total=awg_total");

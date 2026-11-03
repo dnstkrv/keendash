@@ -2,6 +2,7 @@
 # Auto-discovers Entware services (/opt/etc/init.d/S*), their state and web UIs.
 #   services             -> svc|name|state|link     (state: 1 up, 0 down, 2 disabled, 3 unknown; link = first web UI)
 #                             web|name|port|title     (every web UI found for the service)
+#                             ndp|fqdn|host|port|own  (KeenDNS web apps; own: the upstream is the router itself)
 #   services --discover  -> probe listening ports of running services, refresh the cache (cron)
 # Overrides: LINKS="..." in /opt/etc/keendash/keendash.conf  (name=8080 | name=http://host/path | name=- | name=hide)
 PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -126,4 +127,17 @@ scan | awk -F'|' -v cache="$CACHE" -v conf="$CONF" '
         print "web|" n "|" WP[n, best] "|" WT[n, best]
       }
     }
+  }'
+
+# KeenDNS web apps ("ip http proxy"): NDMS resolves an upstream given as a MAC address to one of the host's IPs,
+# the host may have more (keendash.conf may name another one): every IP of that MAC in the ARP table
+own=" $(ip -4 addr 2>/dev/null | awk '$1 == "inet" { sub(/\/.*/, "", $2); printf "%s ", $2 }')"
+ndmc -c 'show ip http proxy' 2>/dev/null | tr -d '\r' | awk -v own="$own" '
+  BEGIN { while ((getline l < "/proc/net/arp") > 0) { split(l, a, " "); if (a[4] ~ /:/ && a[4] != "00:00:00:00:00:00") { M[a[1]] = a[4]; I[a[4]] = I[a[4]] " " a[1] } } }
+  $1 == "fqdn:" { f = $2 }
+  $1 == "upstream:" && f != "" && $2 ~ /^[0-9.]+:[0-9]+$/ {
+    split($2, a, ":"); h = a[1]; ips = (h in M) ? I[M[h]] : " " h
+    n = split(ips, x, " ")
+    for (i = 1; i <= n; i++) print "ndp|" f "|" x[i] "|" a[2] "|" (x[i] ~ /^127\./ || index(own, " " x[i] " ") ? 1 : 0)
+    f = ""
   }'
