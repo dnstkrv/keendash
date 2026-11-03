@@ -125,6 +125,8 @@ if [ $HAS_FIRC = 1 ]; then
   echo "firc_enabled $(grep -c '^  enable: true' /opt/etc/firc/groups.yaml 2>/dev/null | d0)"
   # a group's interface is one name or a list of up to 4 (flow [a, b] or block "- a" lines), each shown by the name
   # people gave it (ifnames, from bin/tick 5) or else as is, joined with ", "
+  # a name is taken whole: a double-quoted one keeps its YAML escapes (firc writes emoji as \U0001F6D1) for the card
+  # to decode, other names get their backslashes doubled for it
   # busybox awk stops at a missing file: only the ones there
   IFN=/tmp/keendash/ifnames POOL=/tmp/firc/pool.state fl=""
   for f in $IFN $POOL; do [ -f "$f" ] && fl="$fl $f"; done
@@ -136,7 +138,10 @@ if [ $HAS_FIRC = 1 ]; then
     /^- id:/{ out(); id=$3; name=ifc=""; en=0; il=0; next }
     il && /^ *- /{ add($2); next }
     /^  [a-z]/{ il=0 }
-    /^  name:/{ name=$2; gsub(/["\47]/,"",name); next }
+    /^  name:/{ name=$0; sub(/^  name:[ \t]*/,"",name); q=substr(name,1,1); gsub(/[|]/," ",name)
+      if(q=="\"") name=substr(name,2,length(name)-2); else gsub(/\\/,"&&",name)
+      if(q=="\47"){ name=substr(name,2,length(name)-2); gsub(/\47\47/,"\47",name) }
+      next }
     /^  interface:/{ v=$0; sub(/^  interface:[ \t]*/,"",v); gsub(/[][]/,"",v); n=split(v,a,","); for(i=1;i<=n;i++) add(a[i]); il=(ifc==""); next }
     /^  enable:/{ en=($2=="true"); next }
     END{ out() }' $fl /opt/etc/firc/groups.yaml 2>/dev/null

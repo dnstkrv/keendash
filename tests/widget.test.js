@@ -11,7 +11,8 @@ const full = Object.assign({}, base, {
     prowlarr:{ok:1,all:3,on:2,bad:1,q:50,g:4,fail:5,list:["Tracker Two"]},
     overseerr:{ok:1,pending:2,processing:3,available:6,total:12},
     immich:{ok:1,photos:18230,videos:1204,usage:442381631488,list:[["Alice",15000,1000,400000000000],["Bob",3230,204,42381631488]]}},
-  svc: [["cron",1,""],["dropbear",1,""],["nfqws2",1,""],["lighttpd",1,"90"],["portal",1,"81"],["ascn",1,""],["awg-manager",1,"2222"],["firc",1,"666"],["haproxy",0,""],["telemt",2,""],["telemt-panel",1,"8083"],["foo",3,"http://example.org:99/x"],["hrweb",1,"2000"]]
+  svc: [["cron",1,""],["dropbear",1,""],["nfqws2",1,""],["lighttpd",1,"90"],["portal",1,"81"],["ascn",1,""],["awg-manager",1,"2222"],["firc",1,"666"],["haproxy",0,""],["telemt",2,""],["telemt-panel",1,"8083"],["foo",3,"http://example.org:99/x"],["hrweb",1,"2000"]],
+  firc: Object.assign({}, base.firc, { list: base.firc.list.concat([["\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" C:\\\\x \\u00e9", "nwg0", 1, 99]]) })
 });
 const mini = { tabs: ["sys"], svc: [["dropbear", 1, ""]], sys: { load: 10, mem: 30, memtotal: 256, temp: null, disk: 10, free: 100, up: 3600 }, series: {} };
 function run(data, tests, fetchFn, pageUrl) {
@@ -45,6 +46,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("wdtt: kind only, clients 0", /^WDTT/.test(px[1]) && /клиентов 0 · :56002/.test(px[1]), px[1]);
     ok("stopped sharing dimmed", /остановлен/.test(px[2]) && Array.from(m.querySelectorAll(".us-row.us-dim")).some(r => /other/.test(r.textContent)));
     click("firc"); ok("firc tab link 666", m.querySelector("a.us-open").href.endsWith(":666/"));
+    const fn = m.querySelector(".us-row .us-nm").textContent;
+    ok("firc group name: YAML escapes decoded", fn.startsWith("\u{1F6D1}\u26a0\ufe0f Block \"REST\" C:\\x \u00e9"), fn);
     click("ascn"); ok("ascn no link", !m.querySelector("a.us-open"));
 
     click("nfqws");
@@ -194,10 +197,14 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(tmp, "names"), "opkgtun10|test_warp_1\nnwg1|Wireguard VPN\n");
     fs.writeFileSync(path.join(tmp, "groups"), "groups:\n- id: a1\n  name: one\n  interface: eth2.4\n  enable: true\n  rules:\n  - id: r1\n    rule: a.com\n" +
       "- id: b2\n  name: chat_gpt\n  interface:\n  - opkgtun10\n  - \"opkgtun11\"\n  enable: true\n  rules:\n  - id: r2\n    rule: b.com\n" +
-      "- id: c3\n  name: flow\n  interface: [nwg0, 'nwg1']\n  enable: false\n");
+      "- id: c3\n  name: flow\n  interface: [nwg0, 'nwg1']\n  enable: false\n" +
+      "- id: d4\n  name: \"\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" \"\n  interface: nwg0\n  enable: true\n" +
+      "- id: e5\n  name: 'it''s a | b'\n  interface: nwg0\n  enable: true\n- id: f6\n  name: C:\\x y\n  interface: nwg0\n  enable: true\n");
     const f = n => path.join(tmp, n);
     const g = cp.spawnSync("awk", ["-v", "nf=" + f("names"), "-v", "pf=" + f("pool"), prog, f("names"), f("pool"), f("groups")], { encoding: "utf8" }).stdout;
-    ok("bin/stats firc: interface lists, names", g === "g|one|eth2.4|1|1\ng|chat_gpt|test_warp_1, opkgtun11|1|2\ng|flow|nwg0, Wireguard VPN|0|0\n", JSON.stringify(g));
+    ok("bin/stats firc: interface lists, names", g.startsWith("g|one|eth2.4|1|1\ng|chat_gpt|test_warp_1, opkgtun11|1|2\ng|flow|nwg0, Wireguard VPN|0|0\n"), JSON.stringify(g));
+    ok("bin/stats firc: whole group names, escapes kept for the card", g.endsWith("g|\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" |nwg0|1|0\n" +
+      "g|it's a   b|nwg0|1|0\ng|C:\\\\x y|nwg0|1|0\n"), JSON.stringify(g));
     // no ifnames file yet (before the first bin/tick 5): kernel names
     const g2 = cp.spawnSync("awk", ["-v", "nf=" + f("nope"), "-v", "pf=" + f("pool"), prog, f("pool"), f("groups")], { encoding: "utf8" }).stdout;
     ok("bin/stats firc: no names yet", g2.split("\n")[1] === "g|chat_gpt|opkgtun10, opkgtun11|1|2", JSON.stringify(g2));
