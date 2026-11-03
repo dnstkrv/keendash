@@ -493,7 +493,7 @@
 
   function update() {
     fetch(API, { cache: "no-store" })
-      .then(function (r) { return r.json(); })
+      .then(function (r) { if (!r.ok) throw r.status; return r.json(); })
       .then(function (d) {
         lastData = d; watchUpdate(d.upd); render();
         /* status.json left from the last viewer: this read makes keendashd rebuild it within ~20 s */
@@ -502,7 +502,10 @@
       .catch(function () {
         /* our web server restarts during an upgrade: keep the last view and retry */
         if (upRun) { clearTimeout(upTimer); upTimer = setTimeout(update, 3000); return; }
-        lastData = null; if (bodyEl) bodyEl.innerHTML = '<div class="us-note">нет данных (' + (ST ? "status.json" : "status.cgi") + " недоступен)</div>"; });
+        lastData = null; if (bodyEl) bodyEl.innerHTML = '<div class="us-note">нет данных (' + (ST ? "status.json" : "status.cgi") + " недоступен)</div>";
+        /* keendash restarting: over https status.json is back ~6 s after the start, don't wait for the next 30 s poll */
+        clearTimeout(upTimer); upTimer = setTimeout(update, 5000);
+      });
   }
 
   function addStyle() {

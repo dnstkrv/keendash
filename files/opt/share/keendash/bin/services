@@ -62,7 +62,8 @@ discover() {
       i = substr($0, RSTART + 8, RLENGTH - 9)
       if ((i in S) && !(i in seen)) { seen[i] = 1; c = ""; f = "/proc/" pid "/comm"; getline c < f; close(f); print c "|" S[i] }
     }' | sort -u)
-  rm -f "$D"/probe.*
+  # a run of its own: two at once (a restart during bin/tick 5) would delete each other's probes and leave links out
+  P=$D/probe.$$; rm -rf "$P"; mkdir -p "$P"
   scan | while IFS='|' read -r name st procs; do
     [ -n "$procs" ] || continue
     for pr in $(printf '%s' "$procs" | tr ',' ' '); do
@@ -74,27 +75,27 @@ discover() {
         *:*) continue;;
         *) a=$h;;
       esac
-      out="$D/probe.$name.$p"
+      out="$P/$name.$p"
       wget -S -O "$out.body" "http://$a:$p/" > "$out" 2>&1 &
       wp=$!
       ( sleep 5; kill $wp 2>/dev/null ) >/dev/null 2>&1 &
     done
   done
   sleep 6
-  : > "$CACHE.tmp"
-  for f in "$D"/probe.*; do
+  : > "$P/cache"
+  for f in "$P"/*; do
     [ -f "$f" ] || continue
-    case "$f" in *.body) continue;; esac
-    b=${f#$D/probe.}; name=${b%.*}; port=${b##*.}
+    case "$f" in *.body|*/cache) continue;; esac
+    b=${f#$P/}; name=${b%.*}; port=${b##*.}
     code=$(grep -oE 'HTTP/1\.[01] [0-9]+' "$f" | tail -1 | awk '{print $2}')
     case "$code" in
       200|301|302|307|308|401)
         title=$(head -c 8192 "$f.body" 2>/dev/null | tr '\r\n' '  ' | sed -n 's/.*<[Tt][Ii][Tt][Ll][Ee][^>]*>\([^<]*\)<\/[Tt][Ii][Tt][Ll][Ee]>.*/\1/p' | tr -d '|"\\' | cut -c1-40)
-        echo "$name|$port|$title" >> "$CACHE.tmp";;
+        echo "$name|$port|$title" >> "$P/cache";;
     esac
-    rm -f "$f" "$f.body"
   done
-  sort "$CACHE.tmp" > "$CACHE"; rm -f "$CACHE.tmp"
+  # rename: bin/services never reads a half-written cache
+  sort "$P/cache" > "$CACHE.$$" && mv "$CACHE.$$" "$CACHE"; rm -rf "$P"
 }
 
 if [ "$1" = "--discover" ]; then discover; exit 0; fi

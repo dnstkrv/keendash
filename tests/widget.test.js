@@ -333,6 +333,15 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("mini: stored tab fallback", /Нагрузка/.test(m.textContent));
   });
   const upd = Object.assign({}, mini, { upd: { cur: "1.0.7", new: "1.0.8", busy: 0 } });
+  // keendash restarting: status.json not there yet (404) -> asked again in 5 s, not at the next 30 s poll
+  {
+    let n = 0;
+    await run(null, (w, m) => new Promise(r => setTimeout(() => {
+      ok("status 404 -> asked again in 5 s", n === 2 && /Нагрузка/.test(m.textContent), n + " " + m.textContent.slice(0, 80));
+      r();
+    }, 5500)), () => () => ++n === 1 ? Promise.resolve({ ok: false, status: 404, json: () => Promise.reject(new Error("html")) }) :
+      Promise.resolve({ ok: true, json: () => Promise.resolve(mini) }));
+  }
   // over https (the loader sets st): status.json from /storage/, a stale one is asked again; the update button reads
   // the "update" file, and a status.json that doesn't show the upgrade yet is no failure
   {
