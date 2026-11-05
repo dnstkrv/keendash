@@ -25,6 +25,7 @@ case "$u" in
 esac
 case "$u" in
   *//custom.test/html) echo "<html>not json</html>"; exit 0 ;;
+  *//custom.test/page) echo "<style>a{b:1}</style>"; exit 0 ;;
   *//custom.test/*) f=media/custom ;;
   */control/stats) f=agh/stats ;;
   */control/clients) f=agh/clients ;;

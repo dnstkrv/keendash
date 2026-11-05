@@ -105,6 +105,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Медиа");
     ok("tiles: seconds, escaped text, empty dash, zero", vals(m) === "1ч 1м|<b>x</b>|—|0" && !m.querySelector(".us-val b"), vals(m));
   });
+  await run(zz({ ok: 1, t: [["X", "<b>x</b>", "n"], ["Y", "<b>y</b>", "p"], ["Z", "<b>z</b>", "bs"]] }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("tiles: markup in n and p is text, a non-number in bs is a dash", vals(m) === "<b>x</b>|<b>y</b>%|—" && !m.querySelector(".us-val b"), vals(m));
+  });
   await run(zz({ ok: 1 }), (w, m) => {
     gclick(w, m, "Медиа");
     ok("tiles: no rows, no blocks", !m.querySelector(".us-blk"));
@@ -530,6 +534,12 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       // up to 4 pairs; the others fail the collector's own check: shell syntax in the path, "|" label, 2 colons, no "=", empty path; the label with " and \ is data
       [l] = run("MAP='T=txt; X=$(touch " + unix(sd) + "/pwn); Q\"\\x=speed; Y=queue.total:zz; |=speed; Z=speed:n:n; W=a b; V=; U=queue.total; T5=speed; T6=speed'");
       ok("ext.d/custom: bad pairs skipped, values and labels are data, nothing executed", l.join("\n") === "ok 1\nt|T|x$(id)`y|\nt|Q\"\\x|2048|\nt|U|7|\nt|T5|2048|" && !fs.existsSync(path.join(sd, "pwn")), l.join(" / "));
+      [l, lg] = run(M + "PASS=p");
+      ok("ext.d/custom: pass without user -> no auth header", !/Authorization/.test(lg), lg);
+      [l] = run("MAP='Y=a`touch " + unix(sd) + "/pwn`; T=txt'");
+      ok("ext.d/custom: backticks in a path -> pair skipped, nothing executed", l.join("\n") === "ok 1\nt|T|x$(id)`y|" && !fs.existsSync(path.join(sd, "pwn")), l.join(" / "));
+      [l] = run(M, "page");
+      ok("ext.d/custom: an HTML page with CSS -> ok 0", l.join("\n") === "ok 0", l.join(" / "));
       [l] = run(M, "html");
       ok("ext.d/custom: an answer that is not JSON -> ok 0", l.join("\n") === "ok 0", l.join(" / "));
       fs.rmSync(sd, { recursive: true, force: true });

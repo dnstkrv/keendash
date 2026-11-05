@@ -374,11 +374,11 @@
     var h = "";
     (x.t || []).slice(0, 4).forEach(function (r) {
       var v = r[1], f = r[2], s;
-      if (v == null || v === "") s = "—";
-      else if (f === "n") s = fmtN(v);
+      if (v == null || v === "" || (/^(b|bs|s)$/.test(f) && isNaN(+v))) s = "—";
+      else if (f === "n") s = esc(fmtN(v));
       else if (f === "b") s = fmtBytes(+v);
       else if (f === "bs") s = fmtBytes(+v) + "/с";
-      else if (f === "p") s = v + "%";
+      else if (f === "p") s = esc(v + "%");
       else if (f === "s") s = fmtDur(+v);
       else s = esc(v);
       h += blk(esc(r[0]), s, null);
