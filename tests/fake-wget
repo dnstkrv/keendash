@@ -19,6 +19,14 @@ case "$u" in
   */api/v2/*) need "Cookie: SID=test123" ;;
   # any JSON API of the custom type: no auth required, the request line goes to $LOG
   *//custom.test/*) echo "custom$a" >> "${LOG:-/dev/null}" ;;
+  # 409 with a session id until the client repeats it; the /stuck/ path never stops. Requests go to $LOG
+  *//transmission.test/stuck/*) printf '  HTTP/1.1 409 Conflict\n  X-Transmission-Session-Id: sess1\n' >&2; exit 8 ;;
+  *//transmission.test/*) echo "transmission$a" >> "${LOG:-/dev/null}"
+    case "$a" in *" X-Transmission-Session-Id: sess1 "*) ;; *) printf '  HTTP/1.1 409 Conflict\n  X-Transmission-Session-Id: sess1\n' >&2; exit 8 ;; esac ;;
+  # login only for the password p"a\ss, JSON-escaped in the body, then the cookie
+  *//deluge.test/json) case "$a" in
+    *auth.login*) need '--post-data {"method":"auth.login","params":["p\"a\\ss"],"id":1}'; echo "  Set-Cookie: _session_id=abc; Path=/; HttpOnly" >&2 ;;
+    *) need "Cookie: _session_id=abc" ;; esac ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
   *//immich.test/*) need "x-api-key: testkey" ;;
   *//jellyfin.test/*) need "X-Emby-Token: testkey" ;;
@@ -40,6 +48,8 @@ case "$u" in
   */control/querylog*) f=agh/querylog ;;
   */api/v2/transfer/info) f=media/qb_transfer ;;
   */api/v2/torrents/info*) f=media/qb_torrents ;;
+  *//transmission.test/*) f=media/transmission_stats ;;
+  *//deluge.test/json) case "$a" in *auth.login*) f=media/deluge_login ;; *) f=media/deluge_ui ;; esac ;;
   */status/sessions) f=media/plex_sessions ;;
   */library/sections) f=media/plex_sections ;;
   */library/sections/*/all*) k=${u#*/library/sections/}; f=media/plex_count_${k%%/*} ;;

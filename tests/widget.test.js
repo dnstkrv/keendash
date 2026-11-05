@@ -504,7 +504,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       radarr: "URL=http://radarr.test KEY=testkey ", prowlarr: "URL=http://prowlarr.test KEY=testkey ", overseerr: "URL=http://overseerr.test KEY=testkey ", immich: "URL=http://immich.test KEY=testkey ",
       jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ",
       lidarr: "URL=http://lidarr.test KEY=testkey ", bazarr: "URL=http://bazarr.test KEY=testkey ", tautulli: "URL=http://tautulli.test KEY=testkey ",
-      sabnzbd: "URL=http://sabnzbd.test KEY=testkey ", nzbget: "URL=http://nzbget.test USER=u PASS=p "
+      sabnzbd: "URL=http://sabnzbd.test KEY=testkey ", nzbget: "URL=http://nzbget.test USER=u PASS=p ",
+      transmission: "URL=http://transmission.test USER= PASS= ", deluge: "URL=http://deluge.test PASS='p\"a\\ss' "
     };
     const want = {
       qb: ["ok 1", "~dl 5242880", "~up 524288", "list|Example.Show.S01E01.1080p.mkv|420|4194304|600", 'list|Big   Pipe "Quoted" Movie 2160p|900|1048576|3600', "list|Stalled.Thing|100|0|8640000", "n 3"],
@@ -520,6 +521,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       tautulli: ["ok 1", "t|Потоков|2|n", "t|Перекодируется|1|n", "t|Трафик|500000|bs"],
       sabnzbd: ["ok 1", "t|Скорость|1264189|bs", "t|Осталось|537395200|b", "t|Осталось времени|450|s", "t|В очереди|3|n"],
       nzbget: ["ok 1", "t|Скорость|2097152|bs", "t|Осталось|104857600|b"],
+      transmission: ["ok 1", "t|Загрузка|1048576|bs", "t|Отдача|65536|bs", "t|Активных|2|n", "t|Всего|3|n"],
+      deluge: ["ok 1", "t|Загрузка|2097152|bs", "t|Отдача|131072|bs", "t|Торрентов|3|n"],
       immich: ["ok 1", "photos 18230", "videos 1204", "usage 442381631488", "list|Alice|15000|1000|400000000000", "list|Bob|3230|204|42381631488"]
     };
     Object.keys(want).forEach(s => {
@@ -536,6 +539,17 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/nzbget: no user -> no Authorization", o.startsWith("ok 1") && !/Authorization/.test(lg()), lg());
       collect("ext.d/nzbget", "", "", { state: sd, env: "URL=http://nzbget.test USER=u PASS=p " });
       ok("ext.d/nzbget: user -> Basic", / Authorization: Basic dTpw /.test(lg()), lg());
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
+    ok("ext.d/deluge: wrong password -> ok 0", collect("ext.d/deluge", "", "", { env: "URL=http://deluge.test PASS=x " }).trim() === "ok 0");
+    ok("ext.d/deluge: password not printed", !/a\\+ss/.test(collect("ext.d/deluge", "", "", { env: env.deluge })));
+    ok("ext.d/transmission: 409 that never stops -> ok 0", collect("ext.d/transmission", "", "", { env: "URL=http://transmission.test/stuck USER= PASS= " }).trim() === "ok 0");
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-t-")), lg = () => fs.readFileSync(path.join(sd, "log"), "utf8");
+      collect("ext.d/transmission", "", "", { state: sd, env: env.transmission });
+      ok("ext.d/transmission: no user -> no Authorization, session id repeated", !/Authorization/.test(lg()) && / X-Transmission-Session-Id: sess1 /.test(lg()), lg());
+      collect("ext.d/transmission", "", "", { state: sd, env: "URL=http://transmission.test USER=u PASS=p " });
+      ok("ext.d/transmission: user -> Basic", / Authorization: Basic dTpw /.test(lg()), lg());
       fs.rmSync(sd, { recursive: true, force: true });
     }
     ok("ext.d/sonarr: wrong key -> ok 0", collect("ext.d/sonarr", "", "", { env: "URL=http://sonarr.test KEY=bad " }).trim() === "ok 0");

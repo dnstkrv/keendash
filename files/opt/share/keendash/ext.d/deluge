@@ -1,0 +1,16 @@
+#!/bin/sh
+# name: Deluge
+# group: Медиа
+# fields: url pass
+# hint: Пароль веб-интерфейса Deluge
+# Deluge web JSON-RPC: the password goes into the login body (JSON-escaped), the _session_id cookie into the stats request
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}/json; H='Content-Type: application/json'
+pw=$(printf '%s' "${PASS:-}" | sed 's/\\/\\\\/g; s/"/\\"/g')
+sid=$(dl -S -O /dev/null --header "$H" --post-data "{\"method\":\"auth.login\",\"params\":[\"$pw\"],\"id\":1}" "$B" 2>&1 |
+  sed -n 's/.*[Ss]et-[Cc]ookie: *\(_session_id=[^;]*\).*/\1/p' | head -n 1)
+J --header "$H" --header "Cookie: $sid" --post-data '{"method":"web.update_ui","params":[["state"],{}],"id":2}' "$B" | awk "$LOAD"'END {
+  if (!("result.stats.download_rate" in V)) { print "ok 0"; exit }
+  for (k in V) if (match(k, /^result\.torrents\.[^.]+/)) T[substr(k, 1, RLENGTH)] = 1
+  for (k in T) n++
+  print "ok 1"; printf "t|Загрузка|%.0f|bs\nt|Отдача|%.0f|bs\nt|Торрентов|%d|n\n", V["result.stats.download_rate"], V["result.stats.upload_rate"], n }'
