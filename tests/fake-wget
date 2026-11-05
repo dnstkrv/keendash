@@ -64,15 +64,17 @@ case "$u" in
     need "--no-check-certificate"; need '--post-data {"user":"admin","password":"p\"a\\ss"}'; echo "  Set-Cookie: frigate_token=abc; Path=/; HttpOnly" >&2 ;;
   *//frigate.test:8971/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "--no-check-certificate"; need "Cookie: frigate_token=abc" ;;
   # Pi-hole v6: login only for the password p"a\ss (JSON-escaped in the body), it answers sid S1D-test; data routes need it in X-FTL-SID
-  # (/open/ has no password, /h500/ fails its history); DELETE /api/auth ends the session. Requests go to $LOG
+  # (/open/ has no password, /nopw/ too but still answers a login with sid null, /h500/ fails its history, /s500/ its summary, /h145/ has 145 history slots); DELETE /api/auth ends the session. Requests go to $LOG
   *//pihole.test/*) printf 'pihole%s\n' "$a" >> "${LOG:-/dev/null}"
     case "$u" in
+      */nopw/api/auth) echo '{"session":{"valid":true,"sid":null}}'; exit 0 ;;
       */api/auth) case "$a" in
         *" --method=DELETE "*) exit 0 ;;
         *'--post-data {"password":"p\"a\\ss"}'*) ;;
         *) echo '{"session":{"valid":false,"sid":null}}'; exit 8 ;; esac ;;
       */h500/api/history) exit 8 ;;
-      */open/*) ;;
+      */s500/api/stats/summary) exit 8 ;;
+      */open/* | */nopw/*) ;;
       *) need "X-FTL-SID: S1D-test" ;;
     esac ;;
   # Home Assistant: Bearer token only; every request goes to $LOG, an entity without a fixture is a 404
@@ -151,6 +153,7 @@ case "$u" in
   */api/server/statistics) f=media/immich_stats ;;
   *//pihole.test/*api/auth) f=net/pihole_auth ;;
   *//pihole.test/*api/stats/summary) f=net/pihole_summary ;;
+  *//pihole.test/h145/api/history) f=net/pihole_history145 ;;
   *//pihole.test/*api/history) f=net/pihole_history ;;
   *//pihole.test/*api/stats/top_domains*) f=net/pihole_top_domains ;;
   *//pihole.test/*api/stats/top_clients*) f=net/pihole_top_clients ;;

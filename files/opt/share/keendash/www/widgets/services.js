@@ -298,7 +298,7 @@
     var sq = [].concat(x.sq || []), sb = [].concat(x.sb || []);
     /* the stats period: 24 hourly points by default, 168 for a 7-day interval, daily points for longer ones */
     var per = x.days ? sq.length + " дн" : sq.length > 24 && sq.length % 24 === 0 ? sq.length / 24 + " дн" : sq.length + " ч";
-    var h = '<div class="us-grid">' + blk("Запросов за " + per, fmtN(x.q), sq, ACC) +
+    var h = '<div class="us-grid">' + blk(sq.length ? "Запросов за " + per : "Запросов", fmtN(x.q), sq, ACC) +
       blk("Заблокировано", fmtN(x.b) + (x.q ? " · " + (x.b / x.q * 100).toFixed(1) + "%" : ""), sb, BAD) + "</div>" + note(nt);
     if ((x.top || []).length) {
       h += sec("Заблокировано чаще всего");

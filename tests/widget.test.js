@@ -211,6 +211,14 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("pihole: a domain with markup is text", !m.querySelector(".us-row b") && m.querySelector(".us-row .us-nm").textContent === "<b>x</b>.example.org", m.innerHTML);
     ok("pihole: top domains, clients with IP tag, no recent blocks", rows.join(" / ") === "<b>x</b>.example.org812 / ads.example.com455 / laptop 192.168.1.205 321 / 192.168.1.9910" && !/Последние блокировки/.test(m.textContent), rows.join(" / "));
   });
+  await run(ph({ ok: 1, q: 0, b: 0, act: 1, rules: 5, sq: [], sb: [] }), (w, m) => {
+    gclick(w, m, "Сеть");
+    ok("pihole: no graph points -> label «Запросов» without a period", m.querySelector(".us-blk .us-lbl").textContent === "Запросов", m.querySelector(".us-grid").textContent);
+  });
+  await run(one("agh", "AdGuard Home", "AdGuard", "http://10.0.0.5:3000", { ok: 1, q: 0, b: 0, ms: 1, fon: 0, fall: 0, rules: 0, sq: [], sb: [] }), (w, m) => {
+    gclick(w, m, "AdGuard");
+    ok("agh: no graph points -> label «Запросов» without a period", m.querySelector(".us-blk .us-lbl").textContent === "Запросов", m.querySelector(".us-grid").textContent);
+  });
   // ha: a row per entity "label — state unit"; on/off in words, unavailable/unknown grey, nothing -> a dash; no rows -> a note
   const ha = (x) => one("ha", "Home Assistant", "Дом", "http://10.0.0.5:8123", x);
   await run(ha({ ok: 1, e: [["Температура", 23.5, "°C"], ["Свет", "on", ""], ["Розетка", "off", ""], ["Датчик", "unavailable", ""], ["Дверь", "unknown", ""], ["Нет", "", ""], ["<img src=x onerror=alert(1)>", "<b>x</b>", "<i>"]] }), (w, m) => {
@@ -785,6 +793,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/pihole: history fails -> no graphs, the rest stays, DELETE still sent once", h5 === want.pihole.filter(l => !/^s[qb] /.test(l)).join("\n") && dels().length === 1, lg());
       ok("ext.d/pihole: wrong password -> ok 0, no data requests, no DELETE", run("URL=http://pihole.test PASS=x ") === "ok 0" && ll().length === 1 && !dels().length, lg());
       ok("ext.d/pihole: no answer -> ok 0", run("URL=http://nohost.test PASS= ") === "ok 0");
+      const pw = "PASS='p\"a\\ss' ", all = want.pihole.join("\n");
+      ok("ext.d/pihole: 145 history slots -> the last 144, 24 points", run("URL=http://pihole.test/h145 " + pw) === all && dels().length === 1, lg());
+      ok("ext.d/pihole: summary fails after the login -> ok 0 and one DELETE", run("URL=http://pihole.test/s500 " + pw) === "ok 0" && dels().length === 1 && ll().length === 3, lg());
+      ok("ext.d/pihole: password for a Pi-hole without one (sid null) -> normal output, no header, no DELETE", run("URL=http://pihole.test/nopw " + pw) === all && ll().length === 5 && !/X-FTL-SID|DELETE/.test(lg()), lg());
+      ok("ext.d/pihole: URL with /admin or /admin/ -> the API paths without it", ["/admin", "/admin/"].every(a => run("URL=http://pihole.test" + a + " " + pw) === all && ll().length === 6 && !/\/admin/.test(lg())), lg());
       fs.rmSync(sd, { recursive: true, force: true });
     }
     // proxmox: token header and --no-check-certificate (only here); omv: JSON-escaped login body, then the session cookie

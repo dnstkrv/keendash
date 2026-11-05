@@ -5,26 +5,29 @@
 # hint: Pi-hole v6. Пароль веб-интерфейса или пароль приложения (Settings → Web interface / API → App password); без пароля, если он в Pi-hole не задан
 # Pi-hole v6 stats from its REST API. With PASS a session: the sid from a JSON login body goes in X-FTL-SID on every request and is deleted at the end (seats are limited: 16 sessions, then 429 for everyone)
 BIN=${0%/*}/../bin; . "$BIN/extlib"
-B=${URL%/}; sid=
+B=${URL%/}; B=${B%/admin}; sid=
 esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 # a function, not exits: the logout below runs after every path
 pi() {
   set --
   if [ -n "${PASS:-}" ]; then
-    # a refused login answers sid null (the flattener prints it as the word null)
-    sid=$(J --header 'Content-Type: application/json' --post-data "{\"password\":\"$(esc "$PASS")\"}" "$B/api/auth" |
-      awk -F'\t' '$1 == "session.valid" { v = $2 } $1 == "session.sid" { s = $2 } END { if (v == "true" && s != "null") print s }')
-    [ -n "$sid" ] || { echo "ok 0"; return; }
-    set -- --header "X-FTL-SID: $sid"
+    # Y + sid when the login is valid; sid is null (the flattener prints the word) for a Pi-hole without a password: go on without a session
+    r=$(J --header 'Content-Type: application/json' --post-data "{\"password\":\"$(esc "$PASS")\"}" "$B/api/auth" |
+      awk -F'\t' '$1 == "session.valid" { v = $2 } $1 == "session.sid" { s = $2 } END { if (v == "true") print "Y" (s == "null" ? "" : s) }')
+    [ -n "$r" ] || { echo "ok 0"; return; }
+    sid=${r#Y}
+    [ -z "$sid" ] || set -- --header "X-FTL-SID: $sid"
   fi
   sm=$(J "$@" "$B/api/stats/summary" | awk "$LOAD"'END { if (V["queries.total"] == "") exit 1
     print "q " V["queries.total"] + 0; print "b " V["queries.blocked"] + 0; print "act " V["clients.active"] + 0
     print "rules " V["gravity.domains_being_blocked"] + 0; print "upd " V["gravity.last_update"] + 0 }') || { echo "ok 0"; return; }
   echo "ok 1"; echo "$sm"
-  # 10-minute slots -> hourly sums (6 slots; fewer at the end)
+  # 10-minute slots -> hourly sums of the last 144 (6 slots; fewer at the end); FTL may send one slot more than 24 h
   J "$@" "$B/api/history" | awk "$LOAD"'END {
-    for (i = 0; V["history." i ".total"] != ""; i++) { h = int(i / 6); q[h] += V["history." i ".total"]; b[h] += V["history." i ".blocked"] }
-    if (!i) exit
+    for (n = 0; V["history." n ".total"] != ""; n++) { }
+    if (!n) exit
+    s0 = n > 144 ? n - 144 : 0
+    for (i = s0; i < n; i++) { h = int((i - s0) / 6); q[h] += V["history." i ".total"]; b[h] += V["history." i ".blocked"] }
     for (k = 0; k <= h; k++) { sq = sq (k ? "," : "") q[k] + 0; sb = sb (k ? "," : "") b[k] + 0 }
     print "sq " sq; print "sb " sb }'
   J "$@" "$B/api/stats/top_domains?blocked=true&count=5" | awk "$LOAD"'END {
