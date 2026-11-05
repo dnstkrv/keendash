@@ -59,6 +59,18 @@
 | | SABnzbd, NZBGet | скорость загрузки, сколько осталось |
 | | Transmission, Deluge | скорость загрузки и отдачи, число торрентов |
 | | Свой API | любой адрес с JSON: плитки по вашему списку |
+| Дом | Home Assistant | состояния выбранных сущностей (поле «Что показывать»: `Подпись=sensor.id`) |
+| | Frigate | версия, детектор, занятое место, камеры: FPS, детекции, упавшие |
+| | Moonraker | состояние печати, прогресс, сколько осталось, температуры сопла и стола |
+| | Spoolman | катушек, остаток в граммах, сколько почти кончилось |
+| Серверы | Uptime Kuma | сколько мониторов работает и упало, список с временем ответа |
+| | Grafana | версия, дашборды, сработавшие алерты |
+| | Glances | CPU, память, swap, нагрузка |
+| | Proxmox | узлы в сети, работающие ВМ и LXC, CPU |
+| | Portainer | контейнеры: запущено, остановлено, всего |
+| | TrueNAS | пулы, предупреждения, нагрузка, время работы |
+| | OpenMediaVault | время работы, нагрузка, память |
+| Доступность | Доступность сайтов | отвечают ли ваши домены и адреса: код и время ответа, доступность за 24 часа |
 
 Если на вкладке «Медиа» больше одного сервиса, у каждого своя подвкладка.
 
@@ -98,12 +110,18 @@ telemt=hide
 
 Сервисы AdGuard Home, qBittorrent, Plex, Sonarr, Radarr, Prowlarr, Overseerr и Immich (а также новые типы из таблицы выше) больше не настраиваются в `keendash.conf`. Их добавляют, правят и удаляют в окне «Настройки» на странице «Сервисы». Тип можно добавить несколько раз (например, два qBittorrent). При обновлении старые ключи `ADGUARD_*`, `QBIT_*` и т. д. сами переезжают в `/opt/etc/keendash/services/<id>.conf`.
 
-Поля окна: «Адрес» (веб-интерфейс сервиса), «Логин» и «Пароль» (AdGuard Home, qBittorrent, Transmission, NZBGet; Deluge только пароль; логин и пароль можно не задавать там, где сервис пускает адрес роутера без них: белые списки qBittorrent и NZBGet; в Transmission логин не нужен, если выключен вход, `rpc-authentication-required`), «API-ключ» (Sonarr, Radarr, Prowlarr, Overseerr, Immich, Jellyfin, Jellyseerr, Lidarr, Bazarr, Tautulli, SABnzbd), «Токен» (Plex). Где взять ключи:
+Поля окна: «Адрес» (веб-интерфейс сервиса), «Логин» и «Пароль» (AdGuard Home, qBittorrent, Transmission, NZBGet, Frigate (порт 8971), Glances, OpenMediaVault; Deluge только пароль; у Proxmox в «Логине» ID токена; логин и пароль можно не задавать там, где сервис пускает адрес роутера без них: белые списки qBittorrent и NZBGet; в Transmission логин не нужен, если выключен вход, `rpc-authentication-required`), «API-ключ» (Sonarr, Radarr, Prowlarr, Overseerr, Immich, Jellyfin, Jellyseerr, Lidarr, Bazarr, Tautulli, SABnzbd, Uptime Kuma, Proxmox, Portainer, TrueNAS), «Токен» (Plex, Home Assistant, Grafana), «Что показывать» (Home Assistant и «Свой API»; до 8 пар), «Адреса» и «Интервал» («Доступность сайтов»). Где взять ключи:
 
 - Sonarr, Radarr, Prowlarr, Overseerr: Settings → General → API Key, в поле «API-ключ»;
 - Jellyfin: Панель управления → API-ключи → +; Jellyseerr, Lidarr, Bazarr: Settings → General (Bazarr: Security) → API Key; Tautulli: Settings → Web Interface → API Key; SABnzbd: Config → General → API Key;
 - Immich: Настройки аккаунта → API-ключи, ключ администратора с правом `server.statistics`, в поле «API-ключ»;
-- Plex: токен виден в адресе страницы «View XML» у любого фильма ([инструкция Plex](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)), в поле «Токен».
+- Plex: токен виден в адресе страницы «View XML» у любого фильма ([инструкция Plex](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)), в поле «Токен»;
+- Uptime Kuma: Settings → API Keys; Portainer: My account → Access tokens; TrueNAS: Credentials → API Keys (TrueNAS до 25.10); Grafana: Administration → Service accounts, роль Viewer, в поле «Токен»; Home Assistant: Профиль → Безопасность → Долгосрочные токены, в поле «Токен»;
+- Proxmox: Datacenter → Permissions → API Tokens, роль PVEAuditor; в «Логин» ID токена (`root@pam!keendash`), в «API-ключ» его секрет. **Сертификат Proxmox не проверяется** (обычно он самоподписанный); остальные типы проверяют сертификат, для самоподписанного используйте http-адрес.
+
+#### Доступность сайтов
+
+Карточка проверяет список «Адреса»: до 20 доменов (`example.com`, `example.com:8443`) или адресов `http(s)://…` через пробел. Домен с нелатинскими буквами пишите латиницей (punycode, `xn--…`). Доступным считается любой HTTP-ответ, даже 404 и 5xx показываются отдельным цветом; нет ответа за 4 секунды значит «недоступен». «Интервал»: 1, 5, 15, 30 минут или 1 час (по умолчанию 5). Карточек можно создать сколько угодно, например отдельную для каждого набора адресов. История за 24 часа (процент доступности и полоска последних 30 проверок) хранится в памяти роутера и сбрасывается при перезагрузке.
 
 #### Свой API и плитки
 
