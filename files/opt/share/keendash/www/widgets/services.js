@@ -611,7 +611,7 @@
       ".kd-dlg{width:656px;max-width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;background:var(--dashboard-background);border-radius:8px}" +
       ".kd-dlg-top{display:flex;align-items:center;justify-content:space-between;padding:24px 24px 0}.kd-dlg-top h1{font-size:28px;font-weight:700;line-height:36px;margin:0}" +
       ".kd-dlg-x{background:none;border:0;color:inherit;opacity:.7;font-size:28px;line-height:1;cursor:pointer}.kd-dlg-x:hover{opacity:1}" +
-      ".kd-dlg input[type=text],.kd-dlg input[type=password],.kd-dlg select{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid rgba(128,128,128,.4);border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:14px}" + +
+      ".kd-dlg input[type=text],.kd-dlg input[type=password],.kd-dlg select{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid rgba(128,128,128,.4);border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:14px}" +
       ".kd-dlg select option{background:var(--dashboard-background);color:inherit}" +
       ".kd-dlg-sess{margin:12px 24px 0;color:" + BAD + ";font-size:13px}.kd-dlg-sess:empty{display:none}.kd-dlg-q{margin:16px 24px 0;width:calc(100% - 48px)!important}.kd-dlg-body{flex:1;min-height:0;overflow-y:auto;padding:0 24px 24px}" +
       ".kd-dlg-h{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.55;margin:20px 0 4px}" +

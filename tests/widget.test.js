@@ -424,7 +424,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       r.rm();
     });
     ok("bin/settings apply: hosts accepted (domain, port, address, comma, 20 elements)", !hfail.length, hfail.join("; "));
-    const hbad = [["-x", "-x"], ["a.test -x", "-x"], ["a b'c", "b'c"], ["$(id)", "$(id)"], ["a.test http://a|b", "http://a|b"], ["a`b", "a`b"], ["http://a\\b", "http://a\\b"], ["http://a\"b", "http://a\"b"],
+    const hbad = [["-x", "-x"], ["a.test -x", "-x"], ["a b'c", "b'c"], ["$(id)", "$(id)"], ["a.test http://a|b", "http://a|b"], ["a`b", "a`b"], ["http://a\\b", "http://a\\b"], ["http://a\"b", "http://a\"b"], ["http://a>b", "http://a>b"],
       ["http://", "http://"], ["ftp://a.test", "ftp://a.test"], ["a.test:123456", "a.test:123456"], ["a.test:", "a.test:"], ["a:b", "a:b"], ["a.test/x", "a.test/x"], ["http://a<b", "http://a<b"],
       [Array.from({ length: 21 }, (_, i) => "h" + i + ".test").join(" "), "h20.test"], [" , ", ""]];
     hbad.forEach(([v, el]) => {
@@ -655,18 +655,24 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     collect("ext", "", "", { state: d, files: { "ext.d/boom": "#!/bin/sh\nexit 1\n", "etc/services/boom.conf": "TYPE='boom'\n" } });
     ok("bin/ext: collector exit status 1 -> x/<id> not deleted", rd(d, "x/boom") !== null, ls(d));
     fs.rmSync(d, { recursive: true, force: true });
-    // EVERY: an instance with a cache runs only in a minute that is a multiple of it (KEENDASH_NOW is epoch seconds); HOSTS and EVERY are unset per instance
+    // EVERY: an instance with a cache runs when its conf is newer than the cache or the cache is EVERY*60-30 s old (KEENDASH_NOW is epoch seconds);
+    // HOSTS and EVERY are unset per instance. The cache mtime of t5 is in the future, so the conf written by collect() is never newer than it
     const e = fs.mkdtempSync(path.join(os.tmpdir(), "kd-e-")), cf = (x, ev) => "TYPE='envt'\n" + (x ? "HOSTS='" + x + "'\n" : "") + (ev ? "EVERY='" + ev + "'\n" : "");
     fs.mkdirSync(path.join(e, "x"));
-    ["t5", "t7", "t8"].forEach(n => fs.writeFileSync(path.join(e, "x", n), "old\n"));
-    const min = n => "KEENDASH_NOW=" + (n * 60 + 7) + " ";
-    const every = n => collect("ext", "", "", { state: e, env: min(n) + "HOSTS=leak EVERY=5 ", files: { "ext.d/envt": "#!/bin/sh\necho ok 1\necho \"h=$HOSTS e=$EVERY\"\n",
-      "etc/services/t5.conf": cf("a.test b.test", "5"), "etc/services/t6.conf": cf("", "5"), "etc/services/t7.conf": cf("", ""), "etc/services/t8.conf": cf("", "x$(y)") } });
-    every(12347);
-    ok("bin/ext: EVERY=5 skips a minute that is not its own; no cache or no EVERY (or a bad one) runs; env of the caller is dropped",
+    const stamp = (n, t) => { fs.writeFileSync(path.join(e, "x", n), "old\n"); fs.utimesSync(path.join(e, "x", n), t, t); };
+    const nowS = Math.floor(Date.now() / 1000), bt = nowS + 100000, envt = "#!/bin/sh\necho ok 1\necho \"h=$HOSTS e=$EVERY\"\n";
+    ["t5", "t7", "t8"].forEach(n => stamp(n, bt));
+    const every = (now, files) => collect("ext", "", "", { state: e, env: "KEENDASH_NOW=" + now + " HOSTS=leak EVERY=5 ", files: Object.assign({ "ext.d/envt": envt }, files) });
+    const set5 = { "etc/services/t5.conf": cf("a.test b.test", "5"), "etc/services/t6.conf": cf("", "5"), "etc/services/t7.conf": cf("", ""), "etc/services/t8.conf": cf("", "x$(y)") };
+    every(bt + 269, set5);
+    ok("bin/ext: EVERY=5 with a cache 269 s old is skipped; no cache or no EVERY (or a bad one) runs; env of the caller is dropped",
       rd(e, "x/t5") === "old\n" && rd(e, "x/t6") === "ok 1\nh= e=5\n" && rd(e, "x/t7") === "ok 1\nh= e=\n" && rd(e, "x/t8") === "ok 1\nh= e=x$(y)\n", JSON.stringify(["t5", "t6", "t7", "t8"].map(n => rd(e, "x/" + n))));
-    every(12350);
-    ok("bin/ext: EVERY=5 runs at minute % 5 == 0, HOSTS and EVERY exported", rd(e, "x/t5") === "ok 1\nh=a.test b.test e=5\n", JSON.stringify(rd(e, "x/t5")));
+    every(bt + 270, set5);
+    ok("bin/ext: EVERY=5 runs once the cache is 270 s old (EVERY*60-30), HOSTS and EVERY exported", rd(e, "x/t5") === "ok 1\nh=a.test b.test e=5\n", JSON.stringify(rd(e, "x/t5")));
+    // a conf newer than the cache (just saved) runs at once; an older conf with a fresh cache does not
+    stamp("t9", nowS - 1000); stamp("t10", bt);
+    every(nowS - 990, { "etc/services/t9.conf": cf("", "5"), "etc/services/t10.conf": cf("", "5") });
+    ok("bin/ext: EVERY=5 runs when the conf is newer than the cache", rd(e, "x/t9") === "ok 1\nh= e=5\n" && rd(e, "x/t10") === "old\n", JSON.stringify([rd(e, "x/t9"), rd(e, "x/t10")]));
     fs.rmSync(e, { recursive: true, force: true });
     const one = collect("ext", "sonarr-1", "", { files: { "etc/services/sonarr-1.conf": "TYPE='sonarr'\nURL='http://sonarr.test'\nKEY='bad'\n" } });
     ok("bin/ext: wrong key -> ok 0", one === "ok 0\n", one);
@@ -1182,13 +1188,15 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   await run(chk, async w => {
     const dlg = await openDlg(w), q = s => dlg.querySelector(s), hp = () => q('input[data-f="hosts"]'), ev = () => q('select[data-f="every"]'), hh = () => hp().parentNode.querySelector(".kd-dlg-hint").textContent;
     q('.kd-dlg-i[data-id="ck"] .kd-dlg-hd').click();
+    const css = w.document.getElementById("us-style").textContent;
+    ok("dialog: style text has no NaN and keeps the select option rule", !/NaN/.test(css) && css.includes(".kd-dlg select option{") && css.includes(".kd-dlg-sess{"), css.slice(css.indexOf("NaN") - 40, css.indexOf("NaN") + 40));
     ok("dialog: every is a select 1/5/15/30/60", !!ev() && Array.from(ev().options).map(o => o.value).join() === "1,5,15,30,60" && Array.from(ev().options).map(o => o.textContent).join() === "1 мин,5 мин,15 мин,30 мин,1 ч" && ev().value === "5",
       ev() && Array.from(ev().options).map(o => o.value + ":" + o.textContent).join() + " " + ev().value);
     ok("dialog: hosts and every labels, nothing to save", hp().value === "a.test" && hp().parentNode.querySelector("span").textContent === "Адреса" && ev().parentNode.querySelector("span").textContent === "Интервал" && !q(".kd-dlg-save"));
     const wrong = v => { typeIn(w, hp(), v); return hh() === HOSTERR; };
     ok("dialog: hosts rule accepts", ["a.test", " a.test  b-c.test:8443,http://d.test/x?y=1 ", "https://x", "1.2.3.4:80", Array.from({ length: 20 }, (_, i) => "h" + i).join(" ")].every(v => !wrong(v)));
     ok("dialog: hosts rule refuses", ["-x", "a b'c", "$(id)", "http://a|b", "a`b", "http://a\\b", 'http://a"b', "http://", "ftp://a", "a.test:123456", "a.test:", "a:b", "a/b", "http://a<b", "http://a>b",
-      Array.from({ length: 21 }, (_, i) => "h" + i).join(" "), "a b"].every(wrong));
+      Array.from({ length: 21 }, (_, i) => "h" + i).join(" "), "a\u00a0b"].every(wrong));
     typeIn(w, hp(), "a.test"); typeIn(w, ev(), "15");
     ok("dialog: hosts error is gone, the select is a change", hh() === "" && !!q(".kd-dlg-save"));
     q(".kd-dlg-save").click(); await wait(100);
@@ -1211,6 +1219,14 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     dlg.querySelector(".kd-dlg-save").click(); await wait(50);
     ok("settings: body locked while saving", /Сохранение…/.test(dlg.textContent) && Array.from(dlg.querySelectorAll(".kd-dlg-body input")).every(x => x.disabled) && dlg.querySelector(".kd-dlg-q").disabled, dlg.textContent);
   }, w => u => /\/rci\/put$/.test(u) ? new Promise(() => {}) : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(full) }), URL0);
+  await run(chk, async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('.kd-dlg-i[data-id="ck"] .kd-dlg-hd').click();
+    typeIn(w, dlg.querySelector('select[data-f="every"]'), "30");
+    dlg.querySelector(".kd-dlg-save").click(); await wait(50);
+    const sel = Array.from(dlg.querySelectorAll(".kd-dlg-body select"));
+    ok("dialog: the select is locked while saving", sel.length === 1 && sel.every(x => x.disabled));
+  }, w => u => /\/rci\/put$/.test(u) ? new Promise(() => {}) : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(chk) }), URL0);
   await run(full, async w => {
     const d = w.document; d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
     d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));

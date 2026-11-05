@@ -22,13 +22,15 @@ inst() {
   sh "$EXTD/$TYPE" 2>/dev/null || :
 }
 
-# an instance with EVERY (minutes) is due in a minute of the epoch that is a multiple of it, or while it has no cache;
-# KEENDASH_NOW (epoch seconds) is for the tests. Run in a subshell (it sources the conf); a bad EVERY counts as none
+# an instance with EVERY (minutes) is due when it has no cache, its conf is newer than the cache (just saved), or the cache
+# is EVERY*60-30 s old (the tick is not aligned to the minute). KEENDASH_NOW (epoch seconds) is for the tests.
+# Run in a subshell (it sources the conf); a bad EVERY counts as none
 due() {
   unset EVERY
   . "$ETC/services/$1.conf"
   case "${EVERY:-}" in ""|*[!0-9]*|0*) return 0 ;; esac
-  [ ! -f "$TMP/x/$1" ] || [ $(( ${KEENDASH_NOW:-$(date +%s)} / 60 % EVERY )) = 0 ]
+  [ ! -f "$TMP/x/$1" ] || [ "$ETC/services/$1.conf" -nt "$TMP/x/$1" ] ||
+    [ $(( ${KEENDASH_NOW:-$(date +%s)} - $(date -r "$TMP/x/$1" +%s) )) -ge $(( EVERY * 60 - 30 )) ]
 }
 
 # refresh one instance: x/<id> atomically, "~key value" lines into the history files (the last 180)
