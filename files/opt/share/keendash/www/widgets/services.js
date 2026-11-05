@@ -650,7 +650,7 @@
       ".kd-cols{display:flex;gap:24px;align-items:flex-start}.kd-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:24px}" +
       ".kd-card{background:var(--dashboard-background);border:1px solid var(--dashboard-card-border);border-radius:8px;min-width:0}" +
       ".kd-ch{display:flex;align-items:center;margin-top:24px;padding:0 24px;min-height:24px}" +
-      ".kd-drag{margin-left:12px;cursor:grab;opacity:.5;user-select:none;letter-spacing:-4px}.kd-ct{flex:1;min-width:0;font-size:16px;font-weight:700;line-height:24px;letter-spacing:1px;text-transform:uppercase}" +
+      ".kd-drag{flex:none;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;margin:-4px -8px -4px 4px;padding-right:4px;box-sizing:border-box;border-radius:6px;cursor:grab;opacity:.5;user-select:none;letter-spacing:-4px}.kd-drag:hover{opacity:.9;background:rgba(128,128,128,.18)}.kd-ct{flex:1;min-width:0;font-size:16px;font-weight:700;line-height:24px;letter-spacing:1px;text-transform:uppercase}" +
       "@media (max-width:599px){.kd-page{padding:0 16px 56px}.kd-ph{padding-right:0}.kd-ph h1{font-size:20px;line-height:28px}}" +
       /* settings dialog: backdrop, 656 px panel the full height, scrolling body, bar with Save / Cancel at the bottom */
       ".kd-btn{min-width:92px;padding:9px 20px;border:1px solid #0097dc;border-radius:4px;background:transparent;color:#0097dc;font:inherit;font-size:14px;cursor:pointer;outline:none;white-space:nowrap}" +
