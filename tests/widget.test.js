@@ -200,6 +200,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("ha: no state -> a dash", tx[5] === "Нет—", tx[5]);
     ok("ha: markup in label, state and unit is text", !m.querySelector(".us-row img, .us-row b, .us-row .us-nm *, .us-row .us-r *") && tx[6] === "<img src=x onerror=alert(1)><b>x</b> <i>", tx[6]);
   });
+  await run(ha({ ok: 1, e: [["A", 25.4066666666667, "°C"], ["B", "-3.96", "°C"], ["C", "0.052345", "kWh"], ["D", "1013", "hPa"], ["E", "25.3", "°C"], ["F", "1.2e5", ""]] }), (w, m) => {
+    gclick(w, m, "Дом");
+    const tx = Array.from(m.querySelectorAll(".us-row")).map(r => r.textContent).join("|");
+    ok("ha: decimals rounded, integers and exponents as is", tx === "A25.4 °C|B-4 °C|C0.052 kWh|D1013 hPa|E25.3 °C|F1.2e5", tx);
+  });
   await run(ha({ ok: 1 }), (w, m) => {
     gclick(w, m, "Дом");
     ok("ha: no entities -> the note", !m.querySelector(".us-row") && m.querySelector(".us-note").textContent === "Добавьте сущности в поле «Что показывать»", m.innerHTML);

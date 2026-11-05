@@ -401,6 +401,8 @@
     var h = "";
     (x.e || []).forEach(function (e) {
       var s = String(e[1]);
+      /* sensors send 25.4066666666667: one decimal from 1 up, two significant digits below */
+      if (/^-?\d+\.\d+$/.test(s)) s = String(Math.abs(+s) >= 1 ? Math.round(s * 10) / 10 : +(+s).toPrecision(2));
       if (s === "unavailable" || s === "unknown") h += line(OFF, esc(e[0]), "недоступно", true);
       else h += line(s === "off" ? OFF : OK, esc(e[0]), s === "on" ? "Включено" : s === "off" ? "Выключено" : s === "" ? "—" : esc(s) + (e[2] ? " " + esc(e[2]) : ""));
     });
