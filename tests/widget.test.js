@@ -977,6 +977,57 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const msg = "keendash 1 " + rev + "\nadd qb-2 qb\nset qb-2 name Торренты 2\nset qb-2 url http://h:1\nend\n";
     ok("settings: Cyrillic name, size in UTF-8 bytes", body.size === new w.Blob([msg]).size && body.size === Buffer.byteLength(msg) && body.size > msg.length && post(fcalls, /\/fui$/)[0][1].body.get("Filedata").size === body.size, body.size + " " + msg.length);
   }, fm(fcalls, {}), URL0);
+  // the type's hint (text, never markup) and the map field: checked like the router does, sent only when changed
+  const MAPERR = "Формат: Подпись=путь[:формат]; до 4 пар";
+  const cust = hint => Object.assign({}, full, { types: [["custom", "Свой API", "Другое", ["url", "map"], hint], ["plain", "Простой", "Другое", ["url"], ""]],
+    inst: [["cu", "custom", "Свой", "http://h:1", "", [], null, "A=x"]] });
+  // /rci/put and /fui answer, everything else is the status with the custom type
+  const cf = (calls, st) => w => (u, init) => {
+    calls.push([u, init || {}]);
+    const r = body => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    return /\/rci\/put$/.test(u) ? r({ port: { port: "7" } }) : /\/fui$/.test(u) ? r({}) : r(st);
+  };
+  fcalls = [];
+  await run(cust("Подсказка <i>x</i>"), async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s), mp = () => q('[data-id="cu"] input[data-f="map"]'), mh = () => mp().parentNode.querySelector(".kd-dlg-hint").textContent;
+    q('.kd-dlg-i[data-id="cu"] .kd-dlg-hd').click();
+    ok("dialog: hint is shown as text", !!q(".kd-dlg-tip") && q(".kd-dlg-tip").textContent === "Подсказка <i>x</i>" && !q(".kd-dlg-tip i"), q(".kd-dlg-tip") && q(".kd-dlg-tip").innerHTML);
+    ok("dialog: map shows its value and the label", mp().value === "A=x" && mp().parentNode.querySelector("span").textContent === "Что показывать" && !q(".kd-dlg-save"));
+    typeIn(w, mp(), "a|b=x");
+    ok("dialog: map error", mh() === MAPERR, mh());
+    q(".kd-dlg-save").click(); await wait(100);
+    ok("dialog: bad map is not sent", !post(fcalls, /\/rci\/put$/).length);
+    typeIn(w, mp(), "A=x; B=y:bs");
+    ok("dialog: good map clears the error", mh() === "", mh());
+    q('.kd-dlg-add[data-type="custom"]').click();
+    ok("dialog: the add form shows the hint too", !!q('[data-id="custom"] .kd-dlg-tip'));
+    q('.kd-dlg-add[data-type="plain"]').click();
+    ok("dialog: a type without a hint has no tip", !q(".kd-dlg-tip"));
+  }, cf(fcalls, cust("Подсказка <i>x</i>")), URL0);
+  fcalls = [];
+  await run(cust(""), async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s), mp = () => q('[data-id="cu"] input[data-f="map"]'), mh = () => mp().parentNode.querySelector(".kd-dlg-hint").textContent;
+    q('.kd-dlg-i[data-id="cu"] .kd-dlg-hd').click();
+    ok("dialog: empty hint, no tip; unchanged map, no save bar", !q(".kd-dlg-tip") && !q(".kd-dlg-save"));
+    const wrong = v => { typeIn(w, mp(), v); return mh() === MAPERR; };
+    ok("dialog: map rule accepts", [" A=x ; B=y:s ", "A=x;B=y;C=z;D=p:p", "Ж=a.b-c_d:n", "A=x:"," A=x","00a0A=x", "\u{1F600}".repeat(32) + "=x", "a=" + "x".repeat(128)].every(v => !wrong(v)));
+    ok("dialog: map rule refuses", ["A", "=x", "A=", "A=x:q", "A=x:n:n", "A=b=c", "A;B=c", "A=x;B=y;C=z;D=p;E=q","A=x\u00a0", "A\u00a0=x\u00a0", "A=x ; B", "A;=x", ";",
+      "\u{1F600}".repeat(33) + "=x", "a=" + "x".repeat(129), "A=x:bs ;", "A b=x y"].every(wrong));
+    typeIn(w, mp(), "A=x; B=y:bs");
+    q(".kd-dlg-save").click(); await wait(100);
+    const put = post(fcalls, /\/rci\/put$/)[0], rev = put && JSON.parse(put[1].body).filename.split("/").pop().replace(".txt", "");
+    ok("dialog: map sent as typed", !!put && post(fcalls, /\/fui$/)[0][1].body.get("Filedata").size === ("keendash 1 " + rev + "\nset cu map A=x; B=y:bs\nend\n").length, rev);
+  }, cf(fcalls, cust("")), URL0);
+  fcalls = [];
+  await run(cust(""), async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s), mp = () => q('[data-id="cu"] input[data-f="map"]');
+    q('.kd-dlg-i[data-id="cu"] .kd-dlg-hd').click();
+    typeIn(w, mp(), "");
+    ok("dialog: empty map is valid", mp().parentNode.querySelector(".kd-dlg-hint").textContent === "" && !!q(".kd-dlg-save"));
+    q(".kd-dlg-save").click(); await wait(100);
+    const put = post(fcalls, /\/rci\/put$/)[0], rev = put && JSON.parse(put[1].body).filename.split("/").pop().replace(".txt", "");
+    ok("dialog: cleared map sends an empty value", !!put && JSON.parse(put[1].body).size === ("keendash 1 " + rev + "\nset cu map \nend\n").length, rev);
+  }, cf(fcalls, cust("")), URL0);
   await run(full, async w => {
     const dlg = await openDlg(w);
     dlg.querySelector('input[data-w="main"][data-n="cron"]').click();

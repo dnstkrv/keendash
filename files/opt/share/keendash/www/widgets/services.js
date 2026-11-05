@@ -361,11 +361,11 @@
     }
   };
   function instOf(d) {
-    return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6] }; });
+    return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "" }; });
   }
   function typeOf(d, type) {
     var t = (d.types || []).filter(function (e) { return e[0] === type; })[0] || [];
-    return { name: t[1] || type, group: t[2] || "Медиа", fields: t[3] || [] };
+    return { name: t[1] || type, group: t[2] || "Медиа", fields: t[3] || [], hint: t[4] || "" };
   }
   /* hidden in the settings: where is "page" or "main", name a tab, chip's service or instance id */
   function hidden(d, where, name) { return (((d.cfg || {}).hide || {})[where] || []).indexOf(name) >= 0; }
@@ -626,7 +626,7 @@
       "@supports (-moz-appearance:none){.kd-dlg-body{scrollbar-width:thin;scrollbar-color:var(--scrollbar-thumb) var(--scrollbar-background)}}" +
       ".kd-dlg-form{display:flex;flex-direction:column;gap:12px;padding:8px 0 16px;border-bottom:1px solid rgba(128,128,128,.2)}" +
       ".kd-dlg-f{display:flex;flex-direction:column;gap:4px;font-size:12px}.kd-dlg-f > span:first-child{opacity:.7}" +
-      ".kd-dlg-hint,.kd-dlg-err{color:" + BAD + ";font-size:12px}.kd-dlg-hint:empty{display:none}.kd-dlg-err{font-size:13px;flex:1 1 100%;margin-top:12px}" +
+      ".kd-dlg-hint,.kd-dlg-err{color:" + BAD + ";font-size:12px}.kd-dlg-hint:empty{display:none}.kd-dlg-tip{font-size:12px;opacity:.6}.kd-dlg-err{font-size:13px;flex:1 1 100%;margin-top:12px}" +
       ".kd-dlg-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:16px 24px;border-top:1px solid rgba(128,128,128,.28)}.kd-dlg-bar:empty{display:none}.kd-dlg-bar .kd-dlg-err{margin:0}" +
       "@media (max-width:599px){.kd-dlg{width:100%;border-radius:0}.kd-dlg-top h1{font-size:20px;line-height:28px}}";
     document.head.appendChild(st);
@@ -946,8 +946,8 @@
   }
   /* ---------- settings dialog: edits pile up in a draft; "Сохранить" sends them as one message (bin/settings reads it) through
    * the firmware file manager: /rci/put names the file in keendash's inbox, /fui takes its content; status.json confirms ---------- */
-  var FLD = { name: "Имя", url: "Адрес", user: "Логин", pass: "Пароль", token: "Токен", key: "API-ключ" };
-  var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user)$/, NOSAVE = "Не удалось сохранить";
+  var FLD = { name: "Имя", url: "Адрес", user: "Логин", pass: "Пароль", token: "Токен", key: "API-ключ", map: "Что показывать" };
+  var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user|map)$/, NOSAVE = "Не удалось сохранить";
   var TRASH = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 9h12l-1 12H7L6 9z"/></svg>';
   /* dd: the status the dialog works from (taken when it opens, again after a save), so a failed poll changes nothing;
    * lost: the last poll got 401; down: where the mouse button went down. dlg: the backdrop; draft: {inst: [{id, type, name, url, user, vals}], del: [id], hide: {page, main}}; dopen: the instance
@@ -960,19 +960,30 @@
     while (taken[id]) id = type + "-" + (++n);
     return id;
   }
+  /* bin/settings okmap: "label=path[:fmt]" pairs split by ";", ASCII spaces around a pair trimmed, the label counts characters */
+  function okmap(v) {
+    var a = v.split(";");
+    return a.length <= 4 && a.every(function (p) {
+      var e, l, b;
+      p = p.replace(/^ +| +$/g, ""); e = p.indexOf("="); l = p.slice(0, e); b = p.slice(e + 1).split(":");
+      return e > 0 && l.replace(/[\ud800-\udbff][\udc00-\udfff]/g, "x").length <= 32 && l.indexOf("|") < 0 && b.length <= 2 &&
+        /^[A-Za-z0-9_.-]{1,128}$/.test(b[0]) && /^(n|b|bs|p|s)?$/.test(b[1] || "");
+    });
+  }
   /* what the router would reject, said before sending: "" if the value is fine; req: empty is an error too */
   function bad(f, v, req) {
     if (!v) return req ? "Заполните поле" : "";
     if (/[\x00-\x1f\x7f]/.test(v)) return "Недопустимый символ в значении";
     if (unescape(encodeURIComponent(v)).length > 512) return "Не длиннее 512 байт";
     if (f === "name" && v.replace(/[\ud800-\udbff][\udc00-\udfff]/g, "x").length > 64) return "Не длиннее 64 символов";
+    if (f === "map") return okmap(v) ? "" : "Формат: Подпись=путь[:формат]; до 4 пар";
     if (PLAIN.test(f) && v.indexOf("|") >= 0) return "Символ | недопустим";
     if (f === "url" && !/^https?:\/\//.test(v)) return "Адрес должен начинаться с http:// или https://";
     return "";
   }
   function fresh(d) {
     var h = (d.cfg || {}).hide || {};
-    return { inst: instOf(d).map(function (i) { return { id: i.id, type: i.type, name: i.name, url: i.url || "", user: i.user || "", vals: {} }; }),
+    return { inst: instOf(d).map(function (i) { return { id: i.id, type: i.type, name: i.name, url: i.url || "", user: i.user || "", map: i.map, vals: {} }; }),
       del: [], hide: { page: (h.page || []).slice(), main: (h.main || []).slice() } };
   }
   function fv(e, f) { return PLAIN.test(f) ? e[f] : e.vals[f] || ""; }
@@ -1071,7 +1082,7 @@
       if (draft.del.indexOf(e.id) >= 0 || !match(e.name + " " + t.name + " " + e.type)) return;
       h += '<div class="kd-dlg-i" data-id="' + esc(e.id) + '"><div class="kd-dlg-r kd-dlg-hd"><span class="kd-dlg-n">' + esc(e.name) + '</span><span class="kd-dlg-t">' +
         esc(t.name) + (e.url ? " · " + esc(e.url) : "") + '</span><button type="button" class="kd-dlg-del" aria-label="Удалить" title="Удалить">' + TRASH + "</button></div>";
-      if (dopen === e.id) h += '<div class="kd-dlg-form">' + ["name"].concat(t.fields).map(function (f) { return fld(e, f, ((was[e.id] || {}).set || []).indexOf(f) >= 0); }).join("") + "</div>";
+      if (dopen === e.id) h += '<div class="kd-dlg-form">' + ["name"].concat(t.fields).map(function (f) { return fld(e, f, ((was[e.id] || {}).set || []).indexOf(f) >= 0); }).join("") + (t.hint ? '<div class="kd-dlg-tip">' + esc(t.hint) + "</div>" : "") + "</div>";
       h += "</div>";
     });
     h += '<h2 class="kd-dlg-h">Найденные автоматически</h2>';
@@ -1100,7 +1111,7 @@
     var d = dd, taken = {}, id, n;
     instOf(d).concat(draft.inst).forEach(function (i) { taken[i.id] = 1; });
     id = newId(type, taken); n = id.slice(type.length + 1);
-    draft.inst.push({ id: id, type: type, name: typeOf(d, type).name + (n ? " " + n : ""), url: "", user: "", vals: {} });
+    draft.inst.push({ id: id, type: type, name: typeOf(d, type).name + (n ? " " + n : ""), url: "", user: "", map: "", vals: {} });
     dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; dopen = id; renderList(); renderStrip();
     /* the form opens above the catalog the click was in */
     var el = dlg.querySelector('.kd-dlg-i[data-id="' + id + '"]');
