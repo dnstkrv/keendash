@@ -360,6 +360,7 @@
       return h;
     }
   };
+  VIEW.jellyfin = VIEW.plex; VIEW.jellyseerr = VIEW.overseerr;
   function instOf(d) {
     return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "" }; });
   }

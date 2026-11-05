@@ -1,0 +1,1 @@
+[{"Id":"s1","UserName":"alice","NowPlayingItem":{"Name":"Pilot","SeriesName":"Example Show","RunTimeTicks":36000000000},"PlayState":{"PositionTicks":18000000000,"IsPaused":true}},{"Id":"s2","UserName":"carol"},{"Id":"s3","UserName":"bob","NowPlayingItem":{"Name":"Example Movie","RunTimeTicks":72000000000},"PlayState":{"PositionTicks":7200000000,"IsPaused":false}}]

@@ -222,6 +222,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     m.querySelector('[data-m="plex"]').dispatchEvent(new w.Event("click", { bubbles: true }));
     ok("instance: API down", /API Plex недоступен · проверьте настройки/.test(m.textContent), m.textContent);
   });
+  await run(Object.assign({}, full, { inst: [["jf", "jellyfin", "Jellyfin", "http://j", "", ["key"], { ok: 1, streams: 1, list: [["alice", "A <b>", 50, "playing"]], libs: [] }]] }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("jellyfin instance: plex view", /Сейчас смотрят/.test(m.textContent) && !m.querySelector("b"), m.textContent);
+  });
   const os = require("os"), cp = require("child_process");
   // C:\x -> /c/x for Git Bash: a drive colon would split PATH
   const unix = p => p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase());
@@ -497,7 +501,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   if (haveCc) {
     const env = {
       qb: "URL=http://qb.test:8080 USER=admin PASS='p&s=s' ", plex: "URL=http://plex.test:32400/ TOKEN=testkey ", sonarr: "URL=http://sonarr.test KEY=testkey ",
-      radarr: "URL=http://radarr.test KEY=testkey ", prowlarr: "URL=http://prowlarr.test KEY=testkey ", overseerr: "URL=http://overseerr.test KEY=testkey ", immich: "URL=http://immich.test KEY=testkey "
+      radarr: "URL=http://radarr.test KEY=testkey ", prowlarr: "URL=http://prowlarr.test KEY=testkey ", overseerr: "URL=http://overseerr.test KEY=testkey ", immich: "URL=http://immich.test KEY=testkey ",
+      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey "
     };
     const want = {
       qb: ["ok 1", "~dl 5242880", "~up 524288", "list|Example.Show.S01E01.1080p.mkv|420|4194304|600", 'list|Big   Pipe "Quoted" Movie 2160p|900|1048576|3600', "list|Stalled.Thing|100|0|8640000", "n 3"],
@@ -506,6 +511,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       radarr: ["ok 1", "queue 1", "list|Example Movie|75|7200", "missing 3"],
       prowlarr: ["ok 1", "list|Tracker Two", "all 3", "on 2", "bad 1", "q 50", "g 4", "fail 5"],
       overseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
+      jellyfin: ["ok 1", "list|alice|Example Show · Pilot|50|paused", "list|bob|Example Movie|10|playing", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23", "libs|Эпизоды|episode|500"],
+      jellyseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
       immich: ["ok 1", "photos 18230", "videos 1204", "usage 442381631488", "list|Alice|15000|1000|400000000000", "list|Bob|3230|204|42381631488"]
     };
     Object.keys(want).forEach(s => {
@@ -513,6 +520,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const extra = s === "radarr" ? /^cal\|\d+\|Soon Movie\|d$/.test(lines[lines.length - 1]) && lines.length === 5 : lines.length === want[s].length;
       ok("ext.d/" + s, !miss.length && extra, miss.join(" / ") + " || " + lines.join(" / "));
     });
+    ok("ext.d/jellyfin: wrong key -> ok 0", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test KEY=bad " }).trim() === "ok 0");
     ok("ext.d/sonarr: wrong key -> ok 0", collect("ext.d/sonarr", "", "", { env: "URL=http://sonarr.test KEY=bad " }).trim() === "ok 0");
     ok("ext.d/qb: wrong password -> ok 0", collect("ext.d/qb", "", "", { env: "URL=http://qb.test USER=admin PASS=x " }).trim() === "ok 0");
     // ext.d/custom: MAP from the browser is data (read from the environment in awk), bad pairs are skipped; fake-wget logs the request to $LOG

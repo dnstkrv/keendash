@@ -1,0 +1,20 @@
+#!/bin/sh
+# name: Jellyfin
+# group: Медиа
+# fields: url key
+# hint: Ключ: Панель управления → API-ключи → +
+# Jellyfin: sessions and library sizes (Plex's output shape)
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "X-Emby-Token: ${KEY:-}"
+c=$(J "$@" "$B/Items/Counts")
+case "$c" in *MovieCount*) echo "ok 1" ;; *) echo "ok 0"; exit ;; esac
+J "$@" "$B/Sessions?activeWithinSeconds=600" | awk "$LOAD"'END {
+  for (i = 0; (i ".Id") in V; i++) {
+    p = i ".NowPlayingItem."; if (!((p "Name") in V)) continue
+    t = V[p "SeriesName"] != "" ? V[p "SeriesName"] " · " V[p "Name"] : V[p "Name"]
+    r = V[p "RunTimeTicks"] + 0
+    print "list|" V[i ".UserName"] "|" t "|" (r > 0 ? int(V[i ".PlayState.PositionTicks"] * 100 / r) : 0) "|" (V[i ".PlayState.IsPaused"] == "true" ? "paused" : "playing"); n++ }
+  print "streams " n + 0 }'
+printf '%s\n' "$c" | awk "$LOAD"'END {
+  split("MovieCount|Фильмы|movie SeriesCount|Сериалы|show EpisodeCount|Эпизоды|episode", a, " ")
+  for (i = 1; i <= 3; i++) { split(a[i], f, "|"); if (V[f[1]] + 0 > 0) print "libs|" f[2] "|" f[3] "|" V[f[1]] } }'

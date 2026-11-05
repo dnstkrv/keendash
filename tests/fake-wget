@@ -21,6 +21,8 @@ case "$u" in
   *//custom.test/*) echo "custom$a" >> "${LOG:-/dev/null}" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
   *//immich.test/*) need "x-api-key: testkey" ;;
+  *//jellyfin.test/*) need "X-Emby-Token: testkey" ;;
+  *//jellyseerr.test/*) need "X-Api-Key: testkey" ;;
   *//sonarr.test/* | *//radarr.test/* | *//prowlarr.test/* | *//overseerr.test/*) need "X-Api-Key: testkey" ;;
 esac
 case "$u" in
@@ -46,6 +48,8 @@ case "$u" in
   */api/v1/indexerstatus) f=media/prowlarr_status ;;
   */api/v1/indexerstats*) f=media/prowlarr_stats ;;
   */api/v1/request/count) f=media/overseerr_count ;;
+  *//jellyfin.test/Sessions*) f=media/jellyfin_sessions ;;
+  *//jellyfin.test/Items/Counts) f=media/jellyfin_counts ;;
   */api/server/statistics) f=media/immich_stats ;;
   */rci/show/interface) f=rci/interface ;;
   */rci/show/ip/http/proxy) f=rci/proxy ;;

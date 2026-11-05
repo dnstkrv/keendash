@@ -1,0 +1,7 @@
+#!/bin/sh
+# name: Jellyseerr
+# group: Медиа
+# fields: url key
+# hint: Ключ: Settings → General → API Key
+# Jellyseerr: same API as Overseerr
+. "${0%/*}/overseerr"
