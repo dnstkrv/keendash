@@ -46,6 +46,11 @@ case "$u" in
   *//deluge.test/json) case "$a" in
     *auth.login*) need '--post-data {"method":"auth.login","params":["p\"a\\ss"],"id":1}'; echo "  Set-Cookie: _session_id=abc; Path=/; HttpOnly" >&2 ;;
     *) need "Cookie: _session_id=abc" ;; esac ;;
+  # port 5000 needs no login; 8971 only after the login for admin / p"a\ss (JSON-escaped in the body), then the cookie. Requests go to $LOG
+  *//frigate.test:5000/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}" ;;
+  *//frigate.test:8971/api/login) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"
+    need '--post-data {"user":"admin","password":"p\"a\\ss"}'; echo "  Set-Cookie: frigate_token=abc; Path=/; HttpOnly" >&2 ;;
+  *//frigate.test:8971/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "Cookie: frigate_token=abc" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
   *//immich.test/*) need "x-api-key: testkey" ;;
   *//jellyfin.test/*) need "X-Emby-Token: testkey" ;;
@@ -104,6 +109,8 @@ case "$u" in
   *//kuma.test/metrics) f=home/kuma_metrics.txt ;;
   *//moonraker.test/idle/printer/*) f=media/moonraker_idle ;;
   *//moonraker.test/printer/*) f=media/moonraker_printing ;;
+  *//frigate.test:*/api/login) f=home/frigate_login ;;
+  *//frigate.test:*/api/stats) f=home/frigate_stats ;;
   *//jellyfin.test/Sessions*) f=media/jellyfin_sessions ;;
   *//jellyfin.test/evil/Items/Counts) f=media/jellyfin_counts_evil ;;
   *//jellyfin.test/Items/Counts) f=media/jellyfin_counts ;;

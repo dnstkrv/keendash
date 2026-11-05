@@ -176,6 +176,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Серверы");
     ok("kuma: a name with markup is text, no note for a short list", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>" && !m.querySelector(".us-note"), m.innerHTML);
   });
+  // frigate: tiles Версия / Детектор / Занято, a row per camera "FPS n · детекций d/с", a camera with fps 0 is red "нет потока"
+  const fg = (x) => one("frigate", "Frigate", "Дом", "http://10.0.0.5:5000", x);
+  await run(fg({ ok: 1, ver: "0.14.1-test", inf: 22.9, det: "openvino", cam: [["front door", 5, 0.4, 0], ["garage", 0, 0, 1]], used: 128849018880, total: 1099511627776 }), (w, m) => {
+    gclick(w, m, "Дом");
+    const rows = Array.from(m.querySelectorAll(".us-row"));
+    ok("frigate: tiles Версия, Детектор, Занято", vals(m) === "0.14.1-test|openvino · 22.9 мс|120 ГБ из 1.0 ТБ", vals(m));
+    ok("frigate: camera row FPS · detections", rows[0].textContent === "front doorFPS 5 · детекций 0.4/с" && !rows[0].innerHTML.includes("#ff6b6b"), rows[0].textContent);
+    ok("frigate: fps 0 -> red dot, нет потока", rows[1].textContent === "garageнет потока" && rows[1].innerHTML.includes("#ff6b6b"), rows[1].innerHTML);
+  });
+  await run(fg({ ok: 1, ver: "1", cam: [["<img src=x onerror=alert(1)>", 5, 0, 0]] }), (w, m) => {
+    gclick(w, m, "Дом");
+    ok("frigate: a camera name with markup is text, no detector and storage -> dashes", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>" && vals(m) === "1|—|—", vals(m));
+  });
   // media tab: one sub-tab per configured service
   await run(full, (w, m) => {
     const click = (sel) => m.querySelector(sel).dispatchEvent(new w.Event("click", { bubbles: true }));
@@ -611,7 +624,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const env = {
       qb: "URL=http://qb.test:8080 USER=admin PASS='p&s=s' ", plex: "URL=http://plex.test:32400/ TOKEN=testkey ", sonarr: "URL=http://sonarr.test KEY=testkey ",
       radarr: "URL=http://radarr.test KEY=testkey ", prowlarr: "URL=http://prowlarr.test KEY=testkey ", overseerr: "URL=http://overseerr.test KEY=testkey ", immich: "URL=http://immich.test KEY=testkey ",
-      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ", moonraker: "URL=http://moonraker.test ", kuma: "URL=http://kuma.test KEY=testkey ",
+      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ", moonraker: "URL=http://moonraker.test ", frigate: "URL=http://frigate.test:5000 USER= PASS= ", kuma: "URL=http://kuma.test KEY=testkey ",
       lidarr: "URL=http://lidarr.test KEY=testkey ", bazarr: "URL=http://bazarr.test KEY=testkey ", tautulli: "URL=http://tautulli.test KEY=testkey ",
       sabnzbd: "URL=http://sabnzbd.test KEY=testkey ", nzbget: "URL=http://nzbget.test USER=u PASS=p ",
       spoolman: "URL=http://spoolman.test ", grafana: "URL=http://grafana.test TOKEN=testkey ", glances: "URL=http://glances.test USER= PASS= ",
@@ -626,6 +639,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       prowlarr: ["ok 1", "list|Tracker Two", "all 3", "on 2", "bad 1", "q 50", "g 4", "fail 5"],
       overseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
       moonraker: ["ok 1", "state printing", "file benchy.gcode", "pct 40", "el 1200", "left 1800", "~ext 209", "ext_t 215", "~bed 59", "bed_t 60"],
+      frigate: ["ok 1", "ver 0.14.1-test", "inf 22.9", "det openvino", "cam|front door|5|0.4|0", "cam|garage|0|0|1", "used 128849018880", "total 1099511627776"],
       jellyfin: ["ok 1", "list|alice|Example Show · Pilot|50|paused", "list|bob|Example Movie|10|playing", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23", "libs|Эпизоды|episode|500", "libs|Музыка|music|12"],
       jellyseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
       lidarr: ["ok 1", "t|В очереди|3|n", "t|Не скачано альбомов|14|n"],
@@ -676,6 +690,16 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     }
     ok("ext.d/deluge: wrong password -> ok 0", collect("ext.d/deluge", "", "", { env: "URL=http://deluge.test PASS=x " }).trim() === "ok 0");
     ok("ext.d/deluge: password not printed", !/a\\+ss/.test(collect("ext.d/deluge", "", "", { env: env.deluge })));
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-f-")), lg = () => fs.readFileSync(path.join(sd, "log"), "utf8"), fr = (e) => collect("ext.d/frigate", "", "", { state: sd, env: e }).trim();
+      ok("ext.d/frigate: no user -> no login request, no cookie, one stats request", fr(env.frigate) === want.frigate.join("\n") && lg() === "frigate -qO- http://frigate.test:5000/api/stats \n", lg());
+      fs.rmSync(path.join(sd, "log"));
+      const lo = fr("URL=http://frigate.test:8971 USER=admin PASS='p\"a\\ss' "), ll = lg().split("\n").filter(Boolean);
+      ok("ext.d/frigate: user -> JSON-escaped login, then stats with the cookie", lo === want.frigate.join("\n") && ll.length === 2 && ll[0].endsWith(' --post-data {"user":"admin","password":"p\\"a\\\\ss"} http://frigate.test:8971/api/login ') && / Cookie: frigate_token=abc /.test(ll[1]) && ll[1].endsWith(" http://frigate.test:8971/api/stats "), lg());
+      ok("ext.d/frigate: password not printed", !/a\\+ss/.test(lo));
+      ok("ext.d/frigate: wrong password and no answer -> ok 0", fr("URL=http://frigate.test:8971 USER=admin PASS=x ") === "ok 0" && fr("URL=http://nohost.test USER= PASS= ") === "ok 0");
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
     ok("ext.d/transmission: 409 that never stops -> ok 0", collect("ext.d/transmission", "", "", { env: "URL=http://transmission.test/stuck USER= PASS= " }).trim() === "ok 0");
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-t-")), lg = () => fs.readFileSync(path.join(sd, "log"), "utf8");

@@ -1,0 +1,32 @@
+#!/bin/sh
+# name: Frigate
+# group: Дом
+# fields: url user pass
+# hint: Порт 5000 работает без входа; для 8971 — логин и пароль Frigate
+# Frigate NVR: version, detector speed, cameras (fps 0 = no stream), storage; the login (only with USER) goes in a JSON body, its cookie into the stats request
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}
+if [ -n "${USER:-}" ]; then
+  esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+  sid=$(dl -S -O /dev/null --header 'Content-Type: application/json' --post-data "{\"user\":\"$(esc "$USER")\",\"password\":\"$(esc "${PASS:-}")\"}" "$B/api/login" 2>&1 |
+    sed -n 's/.*[Ss]et-[Cc]ookie: *\(frigate_token=[^;[:space:]]*\).*/\1/p' | head -n 1)
+  set -- --header "Cookie: $sid"
+fi
+J "$@" "$B/api/stats" | awk "$LOAD"'END {
+  for (k in V) {
+    if (match(k, /^cameras\..+\.camera_fps$/)) C[substr(k, 9, RLENGTH - 19)] = 1
+    else if (match(k, /^detectors\..+\.inference_speed$/)) { d = substr(k, 11, RLENGTH - 26); if (dn == "" || d < dn) dn = d }
+    else if (k ~ /^service\.storage\..+\.used$/) { u += V[k]; su = 1 }
+    else if (k ~ /^service\.storage\..+\.total$/) t += V[k]
+  }
+  for (c in C) { n++; N[n] = c }
+  if (!n) { print "ok 0"; exit }
+  print "ok 1"
+  if (V["service.version"] != "") print "ver " V["service.version"]
+  if (dn != "") { printf "inf %.1f\n", V["detectors." dn ".inference_speed"]; print "det " dn }
+  for (i = 2; i <= n; i++) { x = N[i]; for (j = i - 1; j > 0 && N[j] > x; j--) N[j + 1] = N[j]; N[j + 1] = x }
+  for (i = 1; i <= n; i++) {
+    c = N[i]; f = V["cameras." c ".camera_fps"] + 0; s = c; gsub(/[[:cntrl:]|]/, " ", s)
+    print "cam|" s "|" f "|" V["cameras." c ".detection_fps"] + 0 "|" (f == 0 ? 1 : 0)
+  }
+  if (su) printf "used %.0f\ntotal %.0f\n", u * 1048576, t * 1048576 }'

@@ -389,6 +389,13 @@
     list.forEach(function (m) { var t = S[m[1]]; h += line(t ? t[0] : OK, esc(m[0]), t ? t[1] : (+m[2] || 0) + " мс"); });
     return x.n > list.length ? h + note("и ещё " + (x.n - list.length)) : h;
   };
+  /* x.ver, x.det + x.inf (detector, ms), x.used/x.total (bytes); x.cam = [[name, fps, detections/s, 1 when fps is 0]] */
+  VIEW.frigate = function (x) {
+    var h = '<div class="us-grid">' + blk("Версия", x.ver ? esc(x.ver) : "—", null) + blk("Детектор", x.det ? esc(x.det) + " · " + (+x.inf || 0) + " мс" : "—", null) +
+      blk("Занято", x.total > 0 ? fmtBytes(x.used) + " из " + fmtBytes(x.total) : "—", null) + "</div>";
+    (x.cam || []).forEach(function (c) { h += c[3] ? line(BAD, esc(c[0]), "нет потока") : line(OK, esc(c[0]), "FPS " + (+c[1] || 0) + " · детекций " + (+c[2] || 0) + "/с"); });
+    return h;
+  };
   VIEW.jellyfin = VIEW.plex; VIEW.jellyseerr = VIEW.overseerr;
   function instOf(d) {
     return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "", hosts: a[8] || "", every: a[9] || "" }; });
