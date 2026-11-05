@@ -600,7 +600,14 @@
       ".kd-dlg-r{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;width:100%;box-sizing:border-box;padding:10px 0;border:0;border-bottom:1px solid rgba(128,128,128,.2);background:none;color:inherit;font:inherit;font-size:14px;text-align:left}" +
       ".kd-dlg-hd,.kd-dlg-add{cursor:pointer}.kd-dlg-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.kd-dlg-t{max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;opacity:.6}" +
       ".kd-dlg-del{background:none;border:0;padding:2px;color:inherit;opacity:.6;cursor:pointer;line-height:0}.kd-dlg-del:hover{opacity:1;color:" + BAD + "}" +
-      ".kd-dlg-c{display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;cursor:pointer}" +
+      /* the firmware's checkbox (ndw-checkbox) and scrollbar, from its own theme variables */
+      ".kd-dlg-cs{display:flex;gap:4px 20px;margin-left:auto}.kd-dlg-c{display:flex;align-items:center;gap:12px;font-size:14px;line-height:22px;white-space:nowrap;cursor:pointer}" +
+      ".kd-dlg-c input{-webkit-appearance:none;appearance:none;flex:none;width:16px;height:16px;margin:0;box-sizing:border-box;border:1px solid var(--checkbox-default-stroke);border-radius:4px;background:var(--background) center no-repeat;cursor:pointer;transition:background-color .05s ease-in-out}" +
+      ".kd-dlg-c:hover input{border-color:var(--checkbox-hover-stroke)}.kd-dlg-c input:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}" +
+      ".kd-dlg-c input:checked{border-color:var(--primary-color);background-color:var(--primary-color);background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='8'%3E%3Cpath d='M1 4l3 3 5-6' fill='none' stroke='%23fff' stroke-width='1.8'/%3E%3C/svg%3E\")}" +
+      ".kd-dlg-c:hover input:checked{border-color:var(--checkbox-active-hover-stroke);background-color:var(--checkbox-active-hover-background)}" +
+      ".kd-dlg-body::-webkit-scrollbar{width:8px;height:8px;background:var(--scrollbar-background)}.kd-dlg-body::-webkit-scrollbar-thumb{border-radius:4px;background:var(--scrollbar-thumb)}" +
+      "@supports (-moz-appearance:none){.kd-dlg-body{scrollbar-width:thin;scrollbar-color:var(--scrollbar-thumb) var(--scrollbar-background)}}" +
       ".kd-dlg-form{display:flex;flex-direction:column;gap:12px;padding:8px 0 16px;border-bottom:1px solid rgba(128,128,128,.2)}" +
       ".kd-dlg-f{display:flex;flex-direction:column;gap:4px;font-size:12px}.kd-dlg-f > span:first-child{opacity:.7}" +
       ".kd-dlg-hint,.kd-dlg-err{color:" + BAD + ";font-size:12px}.kd-dlg-hint:empty{display:none}.kd-dlg-err{font-size:13px;flex:1 1 100%;margin-top:12px}" +
@@ -1053,7 +1060,7 @@
     });
     h += '<h2 class="kd-dlg-h">Найденные автоматически</h2>';
     found(d).forEach(function (x) {
-      if (match(x[1] + " " + x[0])) h += '<div class="kd-dlg-r kd-dlg-fr"><span class="kd-dlg-n">' + esc(x[1]) + "</span>" + (x[2] ? chkbox("page", x[0]) : "") + chkbox("main", x[0]) + "</div>";
+      if (match(x[1] + " " + x[0])) h += '<div class="kd-dlg-r kd-dlg-fr"><span class="kd-dlg-n">' + esc(x[1]) + "</span><span class=\"kd-dlg-cs\">" + (x[2] ? chkbox("page", x[0]) : "") + chkbox("main", x[0]) + "</span></div>";
     });
     h += '<h2 class="kd-dlg-h">Добавить сервис</h2>';
     (d.types || []).forEach(function (t) {
