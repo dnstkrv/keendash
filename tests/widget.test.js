@@ -95,6 +95,20 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "AdGuard");
     ok("agh before the first cron run: wait note, link already there", /появятся в течение минуты/.test(m.textContent) && !/недоступен/.test(m.textContent) && m.querySelector("a.us-open").href === "http://10.0.0.5:3000/", m.textContent);
   });
+  const zz = (x) => one("zz", "ZZ", "Медиа", "http://z.test", x);
+  const vals = (m) => Array.from(m.querySelectorAll(".us-blk .us-val")).map(e => e.textContent).join("|");
+  await run(zz({ ok: 1, t: [["Число", 1234567, "n"], ["Объём", 1536, "b"], ["Скорость", 2048, "bs"], ["Доля", 42, "p"]] }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("tiles: generic view, all formats", vals(m) === "1 234 567|1.5 КБ|2.0 КБ/с|42%", vals(m));
+  });
+  await run(zz({ ok: 1, t: [["Время", 3700, "s"], ["Текст", "<b>x</b>", ""], ["Пусто", "", "n"], ["Ноль", 0, "n"]] }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("tiles: seconds, escaped text, empty dash, zero", vals(m) === "1ч 1м|<b>x</b>|—|0" && !m.querySelector(".us-val b"), vals(m));
+  });
+  await run(zz({ ok: 1 }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("tiles: no rows, no blocks", !m.querySelector(".us-blk"));
+  });
   // media tab: one sub-tab per configured service
   await run(full, (w, m) => {
     const click = (sel) => m.querySelector(sel).dispatchEvent(new w.Event("click", { bubbles: true }));

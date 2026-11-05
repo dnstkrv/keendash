@@ -369,10 +369,26 @@
   }
   /* hidden in the settings: where is "page" or "main", name a tab, chip's service or instance id */
   function hidden(d, where, name) { return (((d.cfg || {}).hide || {})[where] || []).indexOf(name) >= 0; }
+  /* generic view: up to 4 tiles from x.t = [[label, value, format n|b|bs|p|s|text]] */
+  function tiles(x) {
+    var h = "";
+    (x.t || []).slice(0, 4).forEach(function (r) {
+      var v = r[1], f = r[2], s;
+      if (v == null || v === "") s = "—";
+      else if (f === "n") s = fmtN(v);
+      else if (f === "b") s = fmtBytes(+v);
+      else if (f === "bs") s = fmtBytes(+v) + "/с";
+      else if (f === "p") s = v + "%";
+      else if (f === "s") s = fmtDur(+v);
+      else s = esc(v);
+      h += blk(esc(r[0]), s, null);
+    });
+    return h && '<div class="us-grid">' + h + "</div>";
+  }
   function instBody(i, d) {
     if (!i.x) return note(WAIT);
     if (!i.x.ok) return note('<span style="color:' + BAD + '">API ' + esc(i.name) + " недоступен</span> · проверьте настройки");
-    return (VIEW[i.type] || function () { return ""; })(i.x, function (k) { return (d.series || {})[i.id + "." + k] || []; }, d);
+    return (VIEW[i.type] || tiles)(i.x, function (k) { return (d.series || {})[i.id + "." + k] || []; }, d);
   }
   /* the group tabs go before GRPAT, or last */
   function mix(found, extra) {
