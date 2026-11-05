@@ -1,0 +1,20 @@
+#!/bin/sh
+# name: Speedtest Tracker
+# group: Сеть
+# fields: url token
+# hint: Токен: Settings → API Tokens, право results:read
+# Speedtest Tracker: the latest result. *_bits is bit/s; without it download/upload are bytes/s. created_at is ISO 8601: Z or no offset = UTC
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+U=${URL:-}; U=${U%/}
+J --header "Authorization: Bearer ${TOKEN:-}" "$U/api/v1/results/latest" | awk -v now="${KEENDASH_NOW:-$(date +%s)}" "$LOAD"'
+function bits(k, b) { if (V["data." k "_bits"] != "") return V["data." k "_bits"] * 1; return V["data." k] != "" ? V["data." k] * 8 : "" }
+END {
+  if (!("data.created_at" in V) && !("data.ping" in V) && !("data.download" in V) && !("data.download_bits" in V)) { print "ok 0"; exit }
+  s = V["data.created_at"]; r = substr(s, 20); sub(/^\.[0-9]+/, "", r); o = 0
+  if (r ~ /^[+-][0-9][0-9]:?[0-9][0-9]$/) { o = substr(r, 2, 2) * 3600 + substr(r, length(r) - 1) * 60; if (r ~ /^-/) o = -o }
+  d = bits("download"); u = bits("upload"); a = s == "" ? "" : now - (ep(s) - o); if (a != "" && a < 0) a = 0
+  print "ok 1"
+  printf "t|Загрузка|%s|bit\n", d == "" ? "" : sprintf("%.0f", d)
+  printf "t|Отдача|%s|bit\n", u == "" ? "" : sprintf("%.0f", u)
+  printf "t|Пинг|%s|\n", V["data.ping"] == "" ? "" : sprintf("%.0f", V["data.ping"]) " мс"
+  print "t|С последнего замера|" a "|s" }'

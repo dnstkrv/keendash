@@ -109,6 +109,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Медиа");
     ok("tiles: markup in n and p is text, a non-number in bs is a dash", vals(m) === "<b>x</b>|<b>y</b>%|—" && !m.querySelector(".us-val b"), vals(m));
   });
+  await run(zz({ ok: 1, t: [["A", 850, "bit"], ["B", 12500, "bit"], ["C", 245000000, "bit"], ["D", 1200000000, "bit"], ["E", "x", "bit"], ["F", 0, "bit"]] }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("tiles: bit format, 1000 steps and a dash for a non-number", vals(m) === "850 бит/с|12.5 Кбит/с|245 Мбит/с|1.2 Гбит/с|—|0 бит/с", vals(m));
+  });
   await run(zz({ ok: 1, t: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ["T" + n, n, "n"]) }), (w, m) => {
     gclick(w, m, "Медиа");
     ok("tiles: up to 8", vals(m) === "1|2|3|4|5|6|7|8", vals(m));
@@ -799,6 +803,18 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/pihole: summary fails after the login -> ok 0 and one DELETE", run("URL=http://pihole.test/s500 " + pw) === "ok 0" && dels().length === 1 && ll().length === 3, lg());
       ok("ext.d/pihole: password for a Pi-hole without one (sid null) -> normal output, no header, no DELETE", run("URL=http://pihole.test/nopw " + pw) === all && ll().length === 5 && !/X-FTL-SID|DELETE/.test(lg()), lg());
       ok("ext.d/pihole: URL with /admin or /admin/ -> the API paths without it", ["/admin", "/admin/"].every(a => run("URL=http://pihole.test" + a + " " + pw) === all && ll().length === 6 && !/\/admin/.test(lg())), lg());
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
+    // speedtest: *_bits or bytes x 8; created_at with Z, +03:00, -05:00 or no offset is 300 s before KEENDASH_NOW
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-s-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";
+      const run = (u, at, tk) => collect("ext.d/speedtest", "", "", { state: sd, env: "KEENDASH_NOW=1793873100 AT=" + at + " URL=http://speedtest.test" + u + " TOKEN=" + (tk || "testkey") + " " }).trim().split("\n");
+      const want = at => ["ok 1", "t|Загрузка|245000000|bit", "t|Отдача|48000000|bit", "t|Пинг|12 мс|", "t|С последнего замера|" + at + "|s"];
+      ok("ext.d/speedtest: *_bits", JSON.stringify(run("", "2026-11-05T10:00:00Z")) === JSON.stringify(want(300)), run("", "2026-11-05T10:00:00Z").join(" / "));
+      ok("ext.d/speedtest: without *_bits, bytes x 8", JSON.stringify(run("/nobits/", "2026-11-05T10:00:00Z")) === JSON.stringify(want(300)), run("/nobits/", "2026-11-05T10:00:00Z").join(" / "));
+      ok("ext.d/speedtest: created_at +03:00, -05:00, fraction, no offset", ["2026-11-05T13:00:00+03:00", "2026-11-05T05:00:00-05:00", "2026-11-05T10:00:00.000000Z", "2026-11-05T10:00:00"].every(a => run("", a)[4] === "t|С последнего замера|300|s"), run("", "2026-11-05T13:00:00+03:00").join(" / "));
+      ok("ext.d/speedtest: no data or a wrong token -> ok 0, token not printed", run("/none/", "x").join() === "ok 0" && run("", "x", "bad").join() === "ok 0" && !/testkey/.test(run("", "x").join()));
+      ok("ext.d/speedtest: token in the Bearer header, path /api/v1/results/latest", / --header Authorization: Bearer testkey http:\/\/speedtest\.test\/api\/v1\/results\/latest \n/.test(lg()), lg());
       fs.rmSync(sd, { recursive: true, force: true });
     }
     // nextdns: the profile ID is a path segment, so anything but [A-Za-z0-9]{1,32} is refused before the request

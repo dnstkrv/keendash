@@ -75,6 +75,13 @@
     while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
     return (b >= 100 || i === 0 ? Math.round(b) : b.toFixed(1)) + " " + u[i];
   }
+  /* bit/s in steps of 1000: 850 бит/с, 12.5 Кбит/с, 245 Мбит/с */
+  function fmtBits(b) {
+    if (b == null || b === "" || isNaN(b)) return "—";
+    var u = ["бит/с", "Кбит/с", "Мбит/с", "Гбит/с", "Тбит/с"], i = 0;
+    while (b >= 1000 && i < u.length - 1) { b /= 1000; i++; }
+    return (b >= 100 || i === 0 ? Math.round(b) : b.toFixed(1)) + " " + u[i];
+  }
   function fmtDur(s) {
     s = Math.floor(s || 0);
     var d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
@@ -430,15 +437,16 @@
   }
   /* hidden in the settings: where is "page" or "main", name a tab, chip's service or instance id */
   function hidden(d, where, name) { return (((d.cfg || {}).hide || {})[where] || []).indexOf(name) >= 0; }
-  /* generic view: up to 8 tiles from x.t = [[label, value, format n|b|bs|p|s|text]] */
+  /* generic view: up to 8 tiles from x.t = [[label, value, format n|b|bs|bit|p|s|text]] */
   function tiles(x) {
     var h = "";
     (x.t || []).slice(0, 8).forEach(function (r) {
       var v = r[1], f = r[2], s;
-      if (v == null || v === "" || (/^(b|bs|s)$/.test(f) && isNaN(+v))) s = "—";
+      if (v == null || v === "" || (/^(b|bs|bit|s)$/.test(f) && isNaN(+v))) s = "—";
       else if (f === "n") s = esc(fmtN(v));
       else if (f === "b") s = fmtBytes(+v);
       else if (f === "bs") s = fmtBytes(+v) + "/с";
+      else if (f === "bit") s = fmtBits(+v);
       else if (f === "p") s = esc(v + "%");
       else if (f === "s") s = fmtDur(+v);
       else s = esc(v);

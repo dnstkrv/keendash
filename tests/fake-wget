@@ -79,6 +79,8 @@ case "$u" in
     esac ;;
   # NextDNS: X-Api-Key testkey; requests go to $LOG
   *//nextdns.test/*) echo "nextdns$a" >> "${LOG:-/dev/null}"; need "X-Api-Key: testkey" ;;
+  # Speedtest Tracker: Bearer testkey; created_at comes from $AT; /nobits has no *_bits, /none no data
+  *//speedtest.test/*) echo "speedtest$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   # Home Assistant: Bearer token only; every request goes to $LOG, an entity without a fixture is a 404
   *//ha.test/*) echo "ha$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
@@ -160,6 +162,9 @@ case "$u" in
   *//pihole.test/*api/stats/top_domains*) f=net/pihole_top_domains ;;
   *//pihole.test/*api/stats/top_clients*) f=net/pihole_top_clients ;;
   *//nextdns.test/*) f=net/nextdns_status ;;
+  *//speedtest.test/none/*) f=net/speedtest_none ;;
+  *//speedtest.test/nobits/*) f=net/speedtest_latest_nobits ;;
+  *//speedtest.test/*) f=net/speedtest_latest ;;
   */rci/show/interface) f=rci/interface ;;
   */rci/show/ip/http/proxy) f=rci/proxy ;;
   */rci/) f=rci/system_name ;;
@@ -169,4 +174,4 @@ case "$u" in
 esac
 # release dates relative to now, so the "next 7 days" filters have something to keep
 case $f in *.txt) cat "$F/$f"; exit ;; esac
-sed "s/@SOON@/$(date -u -d "@$(( $(date +%s) + 172800 ))" +%Y-%m-%dT%H:%M:%SZ)/" "$F/$f.json"
+sed -e "s/@SOON@/$(date -u -d "@$(( $(date +%s) + 172800 ))" +%Y-%m-%dT%H:%M:%SZ)/" -e "s/@AT@/${AT:-2026-11-05T10:00:00Z}/" "$F/$f.json"
