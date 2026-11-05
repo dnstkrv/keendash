@@ -1,0 +1,15 @@
+#!/bin/sh
+# name: Glances
+# group: Серверы
+# fields: url user pass
+# hint: Логин не нужен, если Glances запущен без пароля
+# Glances: CPU, memory, swap, load (API v4, v3 when v4 does not answer; Basic auth only when a login is set)
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+[ -z "${USER:-}" ] || set -- --header "Authorization: Basic $(printf '%s:%s' "$USER" "${PASS:-}" | base64 | tr -d '\n')"
+B=${URL%/}; v=4
+q=$(J "$@" "$B/api/4/quicklook"); case "$q" in *cpu*) ;; *) v=3; q=$(J "$@" "$B/api/3/quicklook") ;; esac
+l=$(J "$@" "$B/api/$v/load")
+printf '%s\n%s\n' "$q" "$l" | awk "$LOAD"'END {
+  if (!("cpu" in V)) { print "ok 0"; exit }
+  print "ok 1"; print "t|CPU|" int(V["cpu"]) "|p"; print "t|Память|" int(V["mem"]) "|p"; print "t|Swap|" int(V["swap"]) "|p"
+  printf "t|Нагрузка|%.2f|t\n", V["min1"] }'

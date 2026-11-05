@@ -1,0 +1,14 @@
+#!/bin/sh
+# name: TrueNAS
+# group: Серверы
+# fields: url key
+# hint: Ключ: Credentials → API Keys; TrueNAS до 25.10
+# TrueNAS: pools, alerts, load, uptime
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "Authorization: Bearer ${KEY:-}"
+i=$(J "$@" "$B/api/v2.0/system/info" | awk "$LOAD"'END { if ("uptime_seconds" in V) printf "%.2f %d\n", V["loadavg.0"], V["uptime_seconds"] }')
+p=$(JN "$@" "$B/api/v2.0/pool") && a=$(JN "$@" "$B/api/v2.0/alert/list") || i=
+[ -n "$i" ] || { echo "ok 0"; exit; }
+p=$(printf '%s\n' "$p" | awk -F'\t' '$1 ~ /^[0-9]+[.]healthy$/ { n++; if ($2 == "true") h++ } END { print h + 0 " из " n + 0 }')
+a=$(printf '%s\n' "$a" | awk -F'\t' '$1 ~ /^[0-9]+[.]dismissed$/ && $2 != "true" { n++ } END { print n + 0 }')
+echo "ok 1"; echo "t|Пулы|$p|t"; echo "t|Предупреждений|$a|n"; echo "t|Нагрузка|${i% *}|t"; echo "t|Работает|${i#* }|s"

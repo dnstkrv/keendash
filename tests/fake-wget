@@ -23,6 +23,14 @@ case "$u" in
       *//bad.test*) printf '  HTTP/1.1 503 Service Unavailable\n' >&2; exit 8 ;;
       *) echo "wget: unable to resolve host address" >&2; exit 4 ;;
     esac ;;
+  # glances: v4 is absent under /old (v3 only); accepts both logins, requests go to $LOG
+  *//glances.test/old/api/4/*) exit 8 ;;
+  *//glances.test/*) echo "glances$a" >> "${LOG:-/dev/null}" ;;
+  *//spoolman.test/*) ;;
+  *//grafana.test/api/health) ;;
+  *//grafana.test/*) need "Authorization: Bearer testkey" ;;
+  *//portainer.test/*) need "X-API-Key: testkey" ;;
+  *//truenas.test/*) need "Authorization: Bearer testkey" ;;
   # cookie only for admin / p&s=s, percent-encoded
   */api/v2/auth/login) need "username=%61%64%6d%69%6e&password=%70%26%73%3d%73"; echo "  Set-Cookie: SID=test123; HttpOnly; path=/" >&2; exit 0 ;;
   */api/v2/*) need "Cookie: SID=test123" ;;
@@ -79,6 +87,17 @@ case "$u" in
   */api/v1/indexerstatus) f=media/prowlarr_status ;;
   */api/v1/indexerstats*) f=media/prowlarr_stats ;;
   */api/v1/request/count) f=media/overseerr_count ;;
+  *//spoolman.test/api/v1/spool*) f=home/spoolman_spool ;;
+  *//grafana.test/api/health) f=home/grafana_health ;;
+  *//grafana.test/api/search*) f=home/grafana_search ;;
+  *//grafana.test/api/alertmanager/*) f=home/grafana_alerts ;;
+  *//glances.test/*quicklook) f=home/glances_quicklook ;;
+  *//glances.test/*/load) f=home/glances_load ;;
+  *//portainer.test/api/endpoints) f=home/portainer_endpoints ;;
+  *//portainer.test/api/endpoints/3/docker/containers/json*) f=home/portainer_containers ;;
+  *//truenas.test/api/v2.0/system/info) f=home/truenas_info ;;
+  *//truenas.test/api/v2.0/pool) f=home/truenas_pool ;;
+  *//truenas.test/api/v2.0/alert/list) f=home/truenas_alerts ;;
   *//moonraker.test/idle/printer/*) f=media/moonraker_idle ;;
   *//moonraker.test/printer/*) f=media/moonraker_printing ;;
   *//jellyfin.test/Sessions*) f=media/jellyfin_sessions ;;

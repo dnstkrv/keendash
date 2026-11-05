@@ -21,3 +21,5 @@ function ep(s,  y, m, dd) { if (s == "") return 0; y = substr(s, 1, 4) + 0; m = 
 enc() { printf '%s' "$1" | od -b | awk '{ for (i = 2; i <= NF; i++) { n = 0; for (j = 1; j <= 3; j++) n = n * 8 + substr($i, j, 1); printf "%%%02x", n } }'; }
 # ISO time N days from now
 day() { date -u -d "@$(( $(date +%s) + $1 * 86400 ))" +%Y-%m-%dT%H:%M:%SZ; }
+# like J, but fails when the request fails or the body is empty (an empty JSON list is not a failure)
+JN() { r=$(dl -qO- "$@" 2>/dev/null) && [ -n "$r" ] || return 1; printf '%s' "$r" | "$BIN/keendashd" json; }

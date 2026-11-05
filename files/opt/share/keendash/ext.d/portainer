@@ -1,0 +1,13 @@
+#!/bin/sh
+# name: Portainer
+# group: Серверы
+# fields: url key
+# hint: Ключ: My account → Access tokens
+# Portainer: containers of the first environment
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "X-API-Key: ${KEY:-}"
+id=$(J "$@" "$B/api/endpoints" | awk -F'\t' '$1 == "0.Id" && $2 ~ /^[0-9]+$/ { print $2 }')
+[ -n "$id" ] || { echo "ok 0"; exit; }
+o=$(JN "$@" "$B/api/endpoints/$id/docker/containers/json?all=1") || { echo "ok 0"; exit; }
+printf '%s\n' "$o" | awk -F'\t' '$1 ~ /^[0-9]+[.]State$/ { n++; if ($2 == "running") r++ }
+  END { print "ok 1"; print "t|Запущено|" r + 0 "|n"; print "t|Остановлено|" n - r "|n"; print "t|Всего|" n + 0 "|n" }'

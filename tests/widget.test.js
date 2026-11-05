@@ -599,6 +599,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ", moonraker: "URL=http://moonraker.test ",
       lidarr: "URL=http://lidarr.test KEY=testkey ", bazarr: "URL=http://bazarr.test KEY=testkey ", tautulli: "URL=http://tautulli.test KEY=testkey ",
       sabnzbd: "URL=http://sabnzbd.test KEY=testkey ", nzbget: "URL=http://nzbget.test USER=u PASS=p ",
+      spoolman: "URL=http://spoolman.test ", grafana: "URL=http://grafana.test TOKEN=testkey ", glances: "URL=http://glances.test USER= PASS= ",
+      portainer: "URL=http://portainer.test KEY=testkey ", truenas: "URL=http://truenas.test KEY=testkey ",
       transmission: "URL=http://transmission.test USER= PASS= ", deluge: "URL=http://deluge.test PASS='p\"a\\ss' "
     };
     const want = {
@@ -618,6 +620,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       nzbget: ["ok 1", "t|Скорость|2097152|bs", "t|Осталось|104857600|b"],
       transmission: ["ok 1", "t|Загрузка|1048576|bs", "t|Отдача|65536|bs", "t|Активных|2|n", "t|Всего|3|n"],
       deluge: ["ok 1", "t|Загрузка|2097152|bs", "t|Отдача|131072|bs", "t|Торрентов|3|n"],
+      spoolman: ["ok 1", "t|Катушек|4|n", "t|Остаток, г|989|n", "t|Меньше 100 г|2|n"],
+      grafana: ["ok 1", "t|Версия|10.4.2|t", "t|Дашбордов|3|n", "t|Алертов срабатывает|2|n"],
+      glances: ["ok 1", "t|CPU|12|p", "t|Память|45|p", "t|Swap|3|p", "t|Нагрузка|0.52|t"],
+      portainer: ["ok 1", "t|Запущено|3|n", "t|Остановлено|1|n", "t|Всего|4|n"],
+      truenas: ["ok 1", "t|Пулы|1 из 2|t", "t|Предупреждений|2|n", "t|Нагрузка|0.25|t", "t|Работает|93784|s"],
       immich: ["ok 1", "photos 18230", "videos 1204", "usage 442381631488", "list|Alice|15000|1000|400000000000", "list|Bob|3230|204|42381631488"]
     };
     Object.keys(want).forEach(s => {
@@ -630,6 +637,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("ext.d/jellyfin: string counts become numbers, zero counts skipped", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test/evil KEY=testkey " }).trim() === ["ok 1", "streams 0", "libs|Фильмы|movie|1"].join("\n"));
     ok("ext.d/sabnzbd: D:HH:MM:SS", /^t\|Осталось времени\|93784\|s$/m.test(collect("ext.d/sabnzbd", "", "", { env: "URL=http://sabnzbd.test/days KEY=testkey " })));
     ok("ext.d/jellyfin: wrong key -> ok 0", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test KEY=bad " }).trim() === "ok 0");
+    ok("ext.d/glances: v4 missing -> v3", collect("ext.d/glances", "", "", { env: "URL=http://glances.test/old USER= PASS= " }).trim() === want.glances.join(String.fromCharCode(10)));
+    ok("ext.d/grafana: token refused -> version and dashes", collect("ext.d/grafana", "", "", { env: "URL=http://grafana.test TOKEN=bad " }).trim() === ["ok 1", "t|Версия|10.4.2|t", "t|Дашбордов|—|n", "t|Алертов срабатывает|—|n"].join(String.fromCharCode(10)));
+    ok("ext.d/portainer, truenas: wrong key -> ok 0", ["portainer", "truenas"].every(s => collect("ext.d/" + s, "", "", { env: "URL=http://" + s + ".test KEY=bad " }).trim() === "ok 0"));
+    ok("ext.d/glances, spoolman: no answer -> ok 0", ["glances", "spoolman"].every(s => collect("ext.d/" + s, "", "", { env: "URL=http://nohost.test USER= " }).trim() === "ok 0"));
     ok("ext.d/lidarr: wrong key -> ok 0", collect("ext.d/lidarr", "", "", { env: "URL=http://lidarr.test KEY=bad " }).trim() === "ok 0");
     ok("ext.d/tautulli: key not printed", !/testkey/.test(collect("ext.d/tautulli", "", "", { env: env.tautulli })));
     {

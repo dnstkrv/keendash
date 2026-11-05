@@ -1,0 +1,15 @@
+#!/bin/sh
+# name: Grafana
+# group: Серверы
+# fields: url token
+# hint: Токен: Administration → Service accounts, роль Viewer
+# Grafana: version, dashboards, firing alerts ("—" when the token is refused)
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "Authorization: Bearer ${TOKEN:-}"
+# count the flattened JSON lines whose path matches $re (— when the request fails)
+cnt() { o=$(JN "$@") || { echo "—"; return; }; printf '%s\n' "$o" | awk -F'\t' -v re="$re" '$1 ~ re { n++ } END { print n + 0 }'; }
+v=$(J "$B/api/health" | awk "$LOAD"'END { print V["version"] }')
+[ -n "$v" ] || { echo "ok 0"; exit; }
+re='^[0-9]+[.]uid$'; d=$(cnt "$@" "$B/api/search?type=dash-db&limit=5000")
+re='^[0-9]+[.]fingerprint$'; a=$(cnt "$@" "$B/api/alertmanager/grafana/api/v2/alerts?active=true&silenced=false&inhibited=false")
+echo "ok 1"; echo "t|Версия|$v|t"; echo "t|Дашбордов|$d|n"; echo "t|Алертов срабатывает|$a|n"
