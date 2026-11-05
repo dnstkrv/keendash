@@ -1,0 +1,29 @@
+#!/bin/sh
+# name: Home Assistant
+# group: Дом
+# fields: url token map
+# hint: Токен: Профиль → Безопасность → Долгосрочные токены. «Что показывать»: Подпись=sensor.id; …
+# Home Assistant: MAP "Label=entity_id; ..." (up to 8) -> e|label|state|unit; MAP comes from the browser, so awk reads it from ENVIRON and only ids matching ^[a-z0-9_]+\.[a-z0-9_]+$ reach the URL
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+# a URL that is not http(s) could be taken by wget as an option
+case "${URL:-}" in http://*|https://*) ;; *) echo "ok 0"; exit ;; esac
+B=${URL%/}
+set -- --header "Authorization: Bearer ${TOKEN:-}"
+pairs=$(awk 'BEGIN {
+  m = ENVIRON["MAP"]; gsub(/[[:cntrl:]]/, " ", m)
+  n = split(m, P, ";")
+  for (i = 1; i <= n && c < 8; i++) {
+    e = index(P[i], "="); if (!e) continue
+    l = substr(P[i], 1, e - 1); r = substr(P[i], e + 1); gsub(/^ +| +$/, "", l); gsub(/^ +| +$/, "", r)
+    if (l == "" || index(l, "|") || r !~ /^[a-z0-9_]+\.[a-z0-9_]+$/ || length(r) > 128) continue
+    c++; print l "|" r } }')
+rows= got=0
+while IFS='|' read -r l id; do
+  [ -n "$id" ] || continue
+  if r=$(JN "$@" "$B/api/states/$id"); then got=1; else r=; fi
+  rows="$rows$(printf '%s\n' "$r" | L=$l awk "$LOAD"'END { s = V["state"]; u = V["attributes.unit_of_measurement"]; gsub(/[[:cntrl:]|]/, " ", s); gsub(/[[:cntrl:]|]/, " ", u); print "e|" ENVIRON["L"] "|" s "|" u }')
+"
+done <<EOF2
+$pairs
+EOF2
+if [ $got = 1 ] || JN "$@" "$B/api/" >/dev/null; then echo "ok 1"; printf '%s' "$rows"; else echo "ok 0"; fi

@@ -396,7 +396,17 @@
     (x.cam || []).forEach(function (c) { h += c[3] ? line(BAD, esc(c[0]), "нет потока") : line(OK, esc(c[0]), "FPS " + (+c[1] || 0) + " · детекций " + (+c[2] || 0) + "/с"); });
     return h;
   };
-  VIEW.jellyfin = VIEW.plex; VIEW.jellyseerr = VIEW.overseerr;
+  /* x.e = [[label, state, unit]] */
+  VIEW.ha = function (x) {
+    var h = "";
+    (x.e || []).forEach(function (e) {
+      var s = String(e[1]);
+      if (s === "unavailable" || s === "unknown") h += line(OFF, esc(e[0]), "недоступно", true);
+      else h += line(s === "on" ? OK : OFF, esc(e[0]), s === "on" ? "Включено" : s === "off" ? "Выключено" : s === "" ? "—" : esc(s) + (e[2] ? " " + esc(e[2]) : ""));
+    });
+    return h || note("Добавьте сущности в поле «Что показывать»");
+  };
+  VIEW.jellyfin = VIEW.plex;VIEW.jellyseerr = VIEW.overseerr;
   function instOf(d) {
     return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "", hosts: a[8] || "", every: a[9] || "" }; });
   }

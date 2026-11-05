@@ -189,6 +189,20 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Дом");
     ok("frigate: a camera name with markup is text, no detector and storage -> dashes", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>" && vals(m) === "1|—|—", vals(m));
   });
+  // ha: a row per entity "label — state unit"; on/off in words, unavailable/unknown grey, nothing -> a dash; no rows -> a note
+  const ha = (x) => one("ha", "Home Assistant", "Дом", "http://10.0.0.5:8123", x);
+  await run(ha({ ok: 1, e: [["Температура", 23.5, "°C"], ["Свет", "on", ""], ["Розетка", "off", ""], ["Датчик", "unavailable", ""], ["Дверь", "unknown", ""], ["Нет", "", ""], ["<img src=x onerror=alert(1)>", "<b>x</b>", "<i>"]] }), (w, m) => {
+    gclick(w, m, "Дом");
+    const rows = Array.from(m.querySelectorAll(".us-row")), tx = rows.map(r => r.textContent);
+    ok("ha: state and unit, on/off in words", tx[0] === "Температура23.5 °C" && tx[1] === "СветВключено" && tx[2] === "РозеткаВыключено", tx.join(" / "));
+    ok("ha: unavailable and unknown -> недоступно, grey", tx[3] === "Датчикнедоступно" && tx[4] === "Дверьнедоступно" && rows[3].innerHTML.includes("#7b8798") && rows[3].className.includes("us-dim") && rows[4].className.includes("us-dim") && !rows[1].className.includes("us-dim"), m.innerHTML);
+    ok("ha: no state -> a dash", tx[5] === "Нет—", tx[5]);
+    ok("ha: markup in label, state and unit is text", !m.querySelector(".us-row img, .us-row b, .us-row .us-nm *, .us-row .us-r *") && tx[6] === "<img src=x onerror=alert(1)><b>x</b> <i>", tx[6]);
+  });
+  await run(ha({ ok: 1 }), (w, m) => {
+    gclick(w, m, "Дом");
+    ok("ha: no entities -> the note", !m.querySelector(".us-row") && m.querySelector(".us-note").textContent === "Добавьте сущности в поле «Что показывать»", m.innerHTML);
+  });
   // media tab: one sub-tab per configured service
   await run(full, (w, m) => {
     const click = (sel) => m.querySelector(sel).dispatchEvent(new w.Event("click", { bubbles: true }));
@@ -624,7 +638,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const env = {
       qb: "URL=http://qb.test:8080 USER=admin PASS='p&s=s' ", plex: "URL=http://plex.test:32400/ TOKEN=testkey ", sonarr: "URL=http://sonarr.test KEY=testkey ",
       radarr: "URL=http://radarr.test KEY=testkey ", prowlarr: "URL=http://prowlarr.test KEY=testkey ", overseerr: "URL=http://overseerr.test KEY=testkey ", immich: "URL=http://immich.test KEY=testkey ",
-      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ", moonraker: "URL=http://moonraker.test ", frigate: "URL=http://frigate.test:5000 USER= PASS= ", kuma: "URL=http://kuma.test KEY=testkey ",
+      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ", moonraker: "URL=http://moonraker.test ", frigate: "URL=http://frigate.test:5000 USER= PASS= ", ha: "URL=http://ha.test/ TOKEN=testkey MAP='Temp=sensor.temp; Hall=light.hall; Gone=sensor.gone; Odd=sensor.odd' ", kuma: "URL=http://kuma.test KEY=testkey ",
       lidarr: "URL=http://lidarr.test KEY=testkey ", bazarr: "URL=http://bazarr.test KEY=testkey ", tautulli: "URL=http://tautulli.test KEY=testkey ",
       sabnzbd: "URL=http://sabnzbd.test KEY=testkey ", nzbget: "URL=http://nzbget.test USER=u PASS=p ",
       spoolman: "URL=http://spoolman.test ", grafana: "URL=http://grafana.test TOKEN=testkey ", glances: "URL=http://glances.test USER= PASS= ",
@@ -640,6 +654,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       overseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
       moonraker: ["ok 1", "state printing", "file benchy.gcode", "pct 40", "el 1200", "left 1800", "~ext 209", "ext_t 215", "~bed 59", "bed_t 60"],
       frigate: ["ok 1", "ver 0.14.1-test", "inf 22.9", "det openvino", "cam|front door|5|0.4|0", "cam|garage|0|0|1", "used 128849018880", "total 1099511627776"],
+      ha: ["ok 1", "e|Temp|23.5|°C", "e|Hall|on|", "e|Gone||", "e|Odd|a b c| %"],
       jellyfin: ["ok 1", "list|alice|Example Show · Pilot|50|paused", "list|bob|Example Movie|10|playing", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23", "libs|Эпизоды|episode|500", "libs|Музыка|music|12"],
       jellyseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
       lidarr: ["ok 1", "t|В очереди|3|n", "t|Не скачано альбомов|14|n"],
@@ -698,6 +713,29 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/frigate: user -> JSON-escaped login, then stats with the cookie", lo === want.frigate.join("\n") && ll.length === 2 && ll[0].endsWith(' --post-data {"user":"admin","password":"p\\"a\\\\ss"} http://frigate.test:8971/api/login ') && / Cookie: frigate_token=abc /.test(ll[1]) && ll[1].endsWith(" http://frigate.test:8971/api/stats "), lg());
       ok("ext.d/frigate: password not printed", !/a\\+ss/.test(lo));
       ok("ext.d/frigate: wrong password and no answer -> ok 0", fr("URL=http://frigate.test:8971 USER=admin PASS=x ") === "ok 0" && fr("URL=http://nohost.test USER= PASS= ") === "ok 0");
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
+    // ext.d/ha: each map path is an entity_id that goes into the URL; anything else is skipped, not requested, not executed
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-h-")), run = (env) => {
+        fs.rmSync(path.join(sd, "log"), { force: true });
+        const out = collect("ext.d/ha", "", "", { state: sd, env: "URL=http://ha.test TOKEN=testkey " + env + " " });
+        return [out.trim(), fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8").split("\n").filter(Boolean) : []];
+      };
+      const pw = unix(sd) + "/pwn";
+      let [o, lg] = run("MAP='A=Sensor.temp; B=sensor.temp x; C=$(touch " + pw + "); D=sensor.$(touch " + pw + "); E=a`touch " + pw + "`.b; F=../api.x; G=-x.y; H=sensor; I=sensor.temp.x; |=sensor.temp; J=sensor.temp; K=; =sensor.temp'");
+      ok("ha: invalid entity ids are skipped and never requested, nothing executed", o === "ok 1\ne|J|23.5|°C" && lg.length === 1 && lg[0].endsWith(" Authorization: Bearer testkey http://ha.test/api/states/sensor.temp ") && !fs.existsSync(path.join(sd, "pwn")), o + " || " + lg.join(" / "));
+      [o, lg] = run("MAP='" + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "P" + n + "=sensor.temp").join("; ") + "'");
+      ok("ha: 9 pairs -> 8 requests", o.split("\n").length === 9 && lg.length === 8, o);
+      [o, lg] = run("MAP=''");
+      ok("ha: empty map -> one /api/ probe, ok 1 without rows", o === "ok 1" && lg.length === 1 && lg[0].endsWith(" http://ha.test/api/ "), o + " || " + lg.join(" / "));
+      [o] = run("MAP='X=sensor.gone'");
+      ok("ha: no entity answered, API up -> ok 1 and an empty row", o === "ok 1\ne|X||", o);
+      [o] = run("MAP='Temp=sensor.temp' TOKEN=bad");
+      ok("ha: bad token -> ok 0", o === "ok 0", o);
+      [o] = run("MAP='' TOKEN=bad");
+      ok("ha: bad token, empty map -> ok 0", o === "ok 0", o);
+      ok("ha: a URL that is not http(s) -> ok 0", collect("ext.d/ha", "", "", { state: sd, env: "URL=-x TOKEN=testkey MAP='T=sensor.temp' " }).trim() === "ok 0");
       fs.rmSync(sd, { recursive: true, force: true });
     }
     ok("ext.d/transmission: 409 that never stops -> ok 0", collect("ext.d/transmission", "", "", { env: "URL=http://transmission.test/stuck USER= PASS= " }).trim() === "ok 0");

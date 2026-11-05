@@ -51,6 +51,8 @@ case "$u" in
   *//frigate.test:8971/api/login) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"
     need '--post-data {"user":"admin","password":"p\"a\\ss"}'; echo "  Set-Cookie: frigate_token=abc; Path=/; HttpOnly" >&2 ;;
   *//frigate.test:8971/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "Cookie: frigate_token=abc" ;;
+  # Home Assistant: Bearer token only; every request goes to $LOG, an entity without a fixture is a 404
+  *//ha.test/*) echo "ha$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
   *//immich.test/*) need "x-api-key: testkey" ;;
   *//jellyfin.test/*) need "X-Emby-Token: testkey" ;;
@@ -111,6 +113,10 @@ case "$u" in
   *//moonraker.test/printer/*) f=media/moonraker_printing ;;
   *//frigate.test:*/api/login) f=home/frigate_login ;;
   *//frigate.test:*/api/stats) f=home/frigate_stats ;;
+  *//ha.test/api/) f=home/ha_api ;;
+  *//ha.test/api/states/sensor.temp) f=home/ha_sensor_temp ;;
+  *//ha.test/api/states/light.hall) f=home/ha_light_hall ;;
+  *//ha.test/api/states/sensor.odd) f=home/ha_sensor_odd ;;
   *//jellyfin.test/Sessions*) f=media/jellyfin_sessions ;;
   *//jellyfin.test/evil/Items/Counts) f=media/jellyfin_counts_evil ;;
   *//jellyfin.test/Items/Counts) f=media/jellyfin_counts ;;
