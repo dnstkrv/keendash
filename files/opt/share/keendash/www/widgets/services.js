@@ -585,7 +585,7 @@
       ".kd-cols{display:flex;gap:24px;align-items:flex-start}.kd-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:24px}" +
       ".kd-card{background:var(--dashboard-background);border:1px solid var(--dashboard-card-border);border-radius:8px;min-width:0}" +
       ".kd-ch{display:flex;align-items:center;margin-top:24px;padding:0 24px;min-height:24px}" +
-      ".kd-ct{flex:1;min-width:0;font-size:16px;font-weight:700;line-height:24px;letter-spacing:1px;text-transform:uppercase}" +
+      ".kd-drag{margin-left:12px;cursor:grab;opacity:.5;user-select:none;letter-spacing:-4px}.kd-ct{flex:1;min-width:0;font-size:16px;font-weight:700;line-height:24px;letter-spacing:1px;text-transform:uppercase}" +
       "@media (max-width:599px){.kd-page{padding:0 16px 56px}.kd-ph{padding-right:0}.kd-ph h1{font-size:20px;line-height:28px}}" +
       /* settings dialog: backdrop, 656 px panel the full height, scrolling body, bar with Save / Cancel at the bottom */
       ".kd-btn{min-width:92px;padding:9px 20px;border:1px solid #0097dc;border-radius:4px;background:transparent;color:#0097dc;font:inherit;font-size:14px;cursor:pointer;outline:none;white-space:nowrap}" +
@@ -808,22 +808,104 @@
     });
     return out;
   }
+  /* the saved layout on n columns: the ones from the n-th on are appended to the last visible one */
+  function fitCols(saved, n) {
+    n = Math.min(saved.length, n);
+    var out = saved.slice(0, n).map(function (c) { return c.slice(); });
+    saved.slice(n).forEach(function (c) { out[n - 1] = out[n - 1].concat(c); });
+    return out;
+  }
+  /* id after prevId or before nextId, in the saved column of that neighbour; with none, at the end of column col */
+  function moveCard(cols, id, prevId, nextId, col) {
+    var out = cols.map(function (c) { return c.filter(function (x) { return x !== id; }); }), at = -1;
+    out.forEach(function (c, i) {
+      var p = c.indexOf(prevId), n = c.indexOf(nextId);
+      if (at >= 0) return;
+      if (p >= 0) { c.splice(p + 1, 0, id); at = i; } else if (n >= 0) { c.splice(n, 0, id); at = i; }
+    });
+    if (at < 0) out[col].push(id);
+    return out;
+  }
+  /* pendingCols: the layout just dropped, shown until status.json carries its rev; pageNote: why saving it failed */
+  var pendingCols = null, pendingRev = "", pageNote = "";
   function renderPage() {
     var main = page && page.parentNode, d = lastData;
-    if (!main) return;
+    if (!main || dragging) return;
     var top = main.scrollTop, wrap = document.createElement("div"), cols = [];
     page.innerHTML = '<div class="kd-ph"><h1>' + TITLE + '</h1><button type="button" class="kd-btn kd-set"' + (d ? "" : " disabled") + '>Настройки</button></div>';
     if (!d) { page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
-    /* columns as on the dashboard, each card into the shortest one */
+    if (pendingCols && (d.cfg || {}).rev === pendingRev) pendingCols = null;
+    if (pageNote) page.insertAdjacentHTML("beforeend", note(esc(pageNote)));
+    /* columns as on the dashboard: the saved layout (as many as fit), else each card into the shortest one */
+    var saved = pendingCols || (d.cfg || {}).cols || [], seen = {}, cards = {}, fit;
     wrap.className = "kd-cols"; page.appendChild(wrap);
-    for (var i = Math.max(1, Math.floor((wrap.clientWidth + 24) / 444)); i > 0; i--) cols.push(wrap.appendChild(document.createElement("div")));
+    var n = Math.max(1, Math.floor((wrap.clientWidth + 24) / 444));
+    fit = saved.length ? fitCols(saved, n) : [];
+    for (var i = fit.length || n; i > 0; i--) cols.push(wrap.appendChild(document.createElement("div")));
     cols.forEach(function (c) { c.className = "kd-col"; });
-    pageCards(d).forEach(function (c) {
-      var col = cols.reduce(function (a, b) { return b.offsetHeight < a.offsetHeight ? b : a; });
+    function put(col, c) {
       col.insertAdjacentHTML("beforeend", '<div class="kd-card" data-id="' + esc(c[3]) + '"><div class="kd-ch"><span class="kd-ct">' + esc(c[0]) + "</span>" + openHtml(c[2]) +
-        '</div><div class="us-body">' + c[1] + "</div></div>");
+        '<span class="kd-drag" title="Перетащить">&#8942;&#8942;</span></div><div class="us-body">' + c[1] + "</div></div>");
+    }
+    var all = pageCards(d);
+    all.forEach(function (c) { cards[c[3]] = c; });
+    fit.forEach(function (ids, k) { ids.forEach(function (id) { if (cards[id] && !seen[id]) { seen[id] = 1; put(cols[k], cards[id]); } }); });
+    all.forEach(function (c) {
+      if (!seen[c[3]]) put(cols.reduce(function (a, b) { return b.offsetHeight < a.offsetHeight ? b : a; }), c);
     });
+    Array.prototype.forEach.call(page.querySelectorAll(".kd-drag"), function (h) { attachPageDrag(h.parentNode.parentNode, h); });
     main.scrollTop = top;
+  }
+  /* the card's drag handle: a dashed placeholder follows the pointer over the columns; the drop saves the layout */
+  function attachPageDrag(r, handle) {
+    handle.style.touchAction = "none"; handle.style.cursor = "grab";
+    handle.addEventListener("pointerdown", function (ev) {
+      if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      ev.preventDefault();
+      var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, ph;
+      try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
+      function cols() { return Array.prototype.slice.call(page.querySelectorAll(".kd-col")); }
+      function kids(c) { return Array.prototype.filter.call(c.children, function (k) { return k !== r && k !== ph; }); }
+      function move(e) {
+        if (!started) {
+          if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 5) return;
+          started = true; dragging = true;
+          ph = document.createElement("div");
+          ph.style.cssText = "height:" + rect.height + "px;border:2px dashed rgba(128,128,128,.55);border-radius:8px;box-sizing:border-box;";
+          r.parentNode.insertBefore(ph, r);
+          r.style.position = "fixed"; r.style.width = rect.width + "px"; r.style.left = rect.left + "px"; r.style.top = rect.top + "px";
+          r.style.margin = "0"; r.style.zIndex = "10000"; r.style.pointerEvents = "none"; r.style.opacity = ".92"; r.style.boxShadow = "0 8px 24px rgba(0,0,0,.45)";
+        }
+        r.style.left = (e.clientX - offX) + "px"; r.style.top = (e.clientY - offY) + "px";
+        var best = null, bd = 1e9, ref = null, ks;
+        cols().forEach(function (c) { var b = c.getBoundingClientRect(), dx = Math.abs(e.clientX - (b.left + b.width / 2)); if (dx < bd) { bd = dx; best = c; } });
+        ks = kids(best);
+        for (var i = 0; i < ks.length; i++) { var q = ks[i].getBoundingClientRect(); if (e.clientY < q.top + q.height / 2) { ref = ks[i]; break; } }
+        if (ref) { if (ph.parentNode !== best || ph.nextSibling !== ref) best.insertBefore(ph, ref); }
+        else if (ph.parentNode !== best || ph.nextSibling) best.appendChild(ph);
+      }
+      function end(e) {
+        handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end);
+        try { handle.releasePointerCapture(ev.pointerId); } catch (x) {}
+        if (!started) return;
+        var cs = cols(), col = cs.indexOf(ph.parentNode), prev = ph.previousElementSibling, next = ph.nextElementSibling, base, rev = newRev(), old = pendingCols;
+        function cid(k) { return k && k.getAttribute("data-id"); }
+        while (prev === r) prev = prev.previousElementSibling;
+        while (next === r) next = next.nextElementSibling;
+        base = pendingCols || ((lastData || {}).cfg || {}).cols;
+        if (!base || !base.length) base = cs.map(function (c) { return Array.prototype.map.call(c.querySelectorAll(".kd-card"), cid); });
+        if (e.type === "pointercancel") col = -1;
+        dragging = false;
+        if (col < 0) { renderPage(); return; }
+        pendingCols = moveCard(base, cid(r), cid(prev), cid(next), col); pendingRev = rev; pageNote = "";
+        renderPage();
+        upload("keendash 1 " + rev + "\n" + pendingCols.map(function (c, i) { return ("col " + i + " " + c.join(" ")).replace(/ $/, ""); }).join("\n") + "\nend\n", rev).then(null, function (m) {
+          if (pendingRev !== rev) return;
+          pendingCols = old; pageNote = "Не удалось сохранить раскладку: " + (typeof m === "string" ? m.replace(/^Не удалось сохранить:? ?/, "") || "ошибка" : "ошибка"); renderPage();
+        });
+      }
+      handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
+    });
   }
   /* ---------- settings dialog: edits pile up in a draft; "Сохранить" sends them as one message (bin/settings reads it) through
    * the firmware file manager: /rci/put names the file in keendash's inbox, /fui takes its content; status.json confirms ---------- */
@@ -883,14 +965,15 @@
     });
     return L.length ? "keendash 1 " + rev + "\n" + L.join("\n") + "\nend\n" : "";
   }
-  window.__servicesWidget = { newId: newId, buildMsg: buildMsg, update: update, awaitRev: awaitRev }; // for the tests
+  window.__servicesWidget = { newId: newId, buildMsg: buildMsg, update: update, awaitRev: awaitRev, fitCols: fitCols, moveCard: moveCard }; // for the tests
 
   /* the file lands in the inbox as <rev>.txt; a rejected promise carries the text to show */
+  function newRev() { return (Math.random().toString(36) + "000000000000").slice(2, 14); }
   function upload(text, rev) {
     var blob = new Blob([text], { type: "text/plain" });
     function chk(r) { if (r.status === 401) throw "Сессия истекла, войдите заново"; if (!r.ok) throw NOSAVE; return r; }
     return fetch(location.origin + "/rci/put", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: (dd.cfg || {}).vol + "/var/lib/keendash/inbox/" + rev + ".txt", size: blob.size }) })
+        body: JSON.stringify({ filename: ((lastData || dd).cfg || {}).vol + "/var/lib/keendash/inbox/" + rev + ".txt", size: blob.size }) })
       .then(chk).then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j || !j.port || !j.port.port) throw NOSAVE;
@@ -973,7 +1056,7 @@
     Array.prototype.forEach.call(dlg.querySelectorAll(".kd-dlg-q,.kd-dlg-body input,.kd-dlg-body button"), function (x) { x.disabled = !!(dst && dst.busy); });
     dlg.querySelector(".kd-dlg-bar").innerHTML = dst && dst.busy ? "<span>Сохранение…</span>" : !dirty() ? "" :
       (dst && dst.err ? '<div class="kd-dlg-err">' + esc(dst.err) + "</div>" : "") +
-      '<button type="button" class="kd-btn kd-btn-p kd-dlg-save"' + ((dd.cfg || {}).vol ? "" : " disabled") + '>Сохранить</button><button type="button" class="kd-btn kd-dlg-cancel">Отменить</button>';
+      '<button type="button" class="kd-btn kd-btn-p kd-dlg-save"' + (((lastData || dd).cfg || {}).vol ? "" : " disabled") + '>Сохранить</button><button type="button" class="kd-btn kd-dlg-cancel">Отменить</button>';
   }
   function addInst(type) {
     var d = dd, taken = {}, id, n;
@@ -992,7 +1075,7 @@
     renderList(); renderStrip();
   }
   function doSave() {
-    var d = dd, badId = "", my, rev = (Math.random().toString(36) + "000000000000").slice(2, 14);
+    var d = dd, badId = "", my, rev = newRev();
     draft.inst.forEach(function (e) {
       if (!badId && draft.del.indexOf(e.id) < 0 && sets(d, e).some(function (s) { return bad(s[0], s[1], s[0] === "name" || s[0] === "url"); })) badId = e.id;
     });

@@ -913,5 +913,42 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
     ok("settings: button disabled while there is no data", d.querySelector(".kd-set").disabled);
   }, w => () => Promise.reject(new Error("down")), URL0);
+  // page layout: fitCols / moveCard, a saved layout with unknown and new ids, a drop that saves it
+  const wide = w => Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { get: () => 900 });
+  const openPage = async w => {
+    const d = w.document; wide(w); d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
+    d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+    return d.querySelector(".kd-page");
+  };
+  await run(full, w => {
+    const W = w.__servicesWidget, j = JSON.stringify, src = [["a", "b"], ["c"], ["d"]];
+    ok("fitCols: fold 3 into 1 and 2", j(W.fitCols(src, 1)) === '[["a","b","c","d"]]' && j(W.fitCols(src, 2)) === '[["a","b"],["c","d"]]' && W.fitCols(src, 5).length === 3);
+    ok("moveCard: into another column, folded view keeps columns", j(W.moveCard(src, "a", "c", null, 0)) === '[["b"],["c","a"],["d"]]' && j(W.moveCard(src, "d", null, "a", 0)) === '[["d","a","b"],["c"],[]]', j(W.moveCard(src, "d", null, "a", 0)));
+  }, null, URL0);
+  await run(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { cols: [["sys", "gone"], ["telemt"]] }) }), async w => {
+    const p = await openPage(w), cs = Array.from(p.querySelectorAll(".kd-col")).map(c => Array.from(c.querySelectorAll(".kd-card")).map(x => x.getAttribute("data-id")));
+    ok("page: saved layout, unknown and new ids", cs.length === 2 && cs[0][0] === "sys" && cs[1][0] === "telemt" && cs[0].length + cs[1].length === 15 && !p.querySelector('[data-id="gone"]'), j2(cs));
+    function j2(x) { return JSON.stringify(x); }
+  }, null, URL0);
+  fcalls = [];
+  await run(full, async w => {
+    const p = await openPage(w), q = w.document, cols = Array.from(p.querySelectorAll(".kd-col"));
+    cols.forEach((c, i) => { c.getBoundingClientRect = () => ({ left: i * 450, top: 0, width: 400, height: 0, right: i * 450 + 400, bottom: 0 }); });
+    const h = p.querySelector('[data-id="telemt"] .kd-drag'), fire = (t, x) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = x; e.clientY = 5; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    fire("pointerdown", 10); fire("pointermove", 600); fire("pointerup", 600); await wait(200);
+    const put = post(fcalls, /\/rci\/put$/), msg = post(fcalls, /\/fui$/)[0] && post(fcalls, /\/fui$/)[0][1].body.get("Filedata");
+    const txt = msg ? await new Promise(r => { const f = new w.FileReader(); f.onload = () => r(f.result); f.readAsText(msg); }) : "";
+    ok("page: drop saves the layout", put.length === 1 && /^keendash 1 [a-z0-9]{12}\ncol 0 awg /.test(txt) && /\ncol 1 telemt\nend\n$/.test(txt) && !/col 0 [^\n]*telemt/.test(txt), txt);
+    ok("page: dropped card shows in its new column", p.querySelectorAll(".kd-col")[1].querySelector('[data-id="telemt"]'));
+  }, fm(fcalls, {}), URL0);
+  // the volume comes from the freshest status, not the snapshot the dialog opened with
+  fcalls = []; let novol = true;
+  await run(full, async w => {
+    const dlg = await openDlg(w); novol = false; await w.__servicesWidget.update();
+    dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
+    dlg.querySelector(".kd-dlg-save").click(); await wait(100);
+    const put = post(fcalls, /rci.put$/)[0];
+    ok("settings: upload takes the volume of the freshest status", put && /^v1:.var.lib.keendash.inbox./.test(JSON.parse(put[1].body).filename), put && put[1].body);
+  }, w => { const f = fm(fcalls, {})(w); return (u, i) => novol && !/rci|fui/.test(u) ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { vol: "" }) })) }) : f(u, i); }, URL0);
   console.log(res.join("\n")); process.exit(res.some(r => r.startsWith("FAIL")) ? 1 : 0);
 })();
