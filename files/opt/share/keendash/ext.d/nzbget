@@ -1,0 +1,11 @@
+#!/bin/sh
+# name: NZBGet
+# group: Медиа
+# fields: url user pass
+# hint: Логин можно не задавать, если адрес роутера в списке AuthorizedIP
+# NZBGet: download speed and remaining size as tiles (Basic auth only when a login is set)
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+[ -z "${USER:-}" ] || set -- --header "Authorization: Basic $(printf '%s:%s' "$USER" "${PASS:-}" | base64 | tr -d '\n')"
+J "$@" "${URL%/}/jsonrpc/status" | awk "$LOAD"'END {
+  if (!("result.DownloadRate" in V)) { print "ok 0"; exit }
+  print "ok 1"; print "t|Скорость|" V["result.DownloadRate"] + 0 "|bs"; printf "t|Осталось|%.0f|b\n", V["result.RemainingSizeMB"] * 1048576 }'

@@ -1,0 +1,10 @@
+#!/bin/sh
+# name: Bazarr
+# group: Медиа
+# fields: url key
+# hint: Ключ: Settings → General → Security → API Key
+# Bazarr: episodes and movies without subtitles as tiles
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+J --header "X-API-KEY: ${KEY:-}" "${URL%/}/api/badges" | awk "$LOAD"'END {
+  if (!("episodes" in V)) { print "ok 0"; exit }
+  print "ok 1"; print "t|Серий без субтитров|" V["episodes"] + 0 "|n"; print "t|Фильмов без субтитров|" V["movies"] + 0 "|n" }'

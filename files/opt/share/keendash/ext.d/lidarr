@@ -1,0 +1,12 @@
+#!/bin/sh
+# name: Lidarr
+# group: Медиа
+# fields: url key
+# hint: Ключ: Settings → General → API Key
+# Lidarr: queue and missing albums as tiles
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "X-Api-Key: ${KEY:-}"
+q=$(J "$@" "$B/api/v1/queue?pageSize=1" | awk "$LOAD"'END { if ("totalRecords" in V) print V["totalRecords"] + 0 }')
+[ -n "$q" ] || { echo "ok 0"; exit; }
+m=$(J "$@" "$B/api/v1/wanted/missing?pageSize=1" | awk "$LOAD"'END { print V["totalRecords"] + 0 }')
+echo "ok 1"; echo "t|В очереди|$q|n"; echo "t|Не скачано альбомов|$m|n"

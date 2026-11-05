@@ -1,0 +1,12 @@
+#!/bin/sh
+# name: Tautulli
+# group: Медиа
+# fields: url key
+# hint: Ключ: Settings → Web Interface → API Key
+# Tautulli: streams and traffic as tiles (the key is in the query string only, never printed)
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+J "${URL%/}/api/v2?apikey=${KEY:-}&cmd=get_activity" | awk "$LOAD"'END {
+  if (!("response.data.stream_count" in V)) { print "ok 0"; exit }
+  print "ok 1"; print "t|Потоков|" V["response.data.stream_count"] + 0 "|n"
+  print "t|Перекодируется|" V["response.data.stream_count_transcode"] + 0 "|n"
+  printf "t|Трафик|%.0f|bs\n", V["response.data.total_bandwidth"] * 125 }'

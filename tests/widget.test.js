@@ -502,7 +502,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const env = {
       qb: "URL=http://qb.test:8080 USER=admin PASS='p&s=s' ", plex: "URL=http://plex.test:32400/ TOKEN=testkey ", sonarr: "URL=http://sonarr.test KEY=testkey ",
       radarr: "URL=http://radarr.test KEY=testkey ", prowlarr: "URL=http://prowlarr.test KEY=testkey ", overseerr: "URL=http://overseerr.test KEY=testkey ", immich: "URL=http://immich.test KEY=testkey ",
-      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey "
+      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ",
+      lidarr: "URL=http://lidarr.test KEY=testkey ", bazarr: "URL=http://bazarr.test KEY=testkey ", tautulli: "URL=http://tautulli.test KEY=testkey ",
+      sabnzbd: "URL=http://sabnzbd.test KEY=testkey ", nzbget: "URL=http://nzbget.test USER=u PASS=p "
     };
     const want = {
       qb: ["ok 1", "~dl 5242880", "~up 524288", "list|Example.Show.S01E01.1080p.mkv|420|4194304|600", 'list|Big   Pipe "Quoted" Movie 2160p|900|1048576|3600', "list|Stalled.Thing|100|0|8640000", "n 3"],
@@ -513,6 +515,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       overseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
       jellyfin: ["ok 1", "list|alice|Example Show · Pilot|50|paused", "list|bob|Example Movie|10|playing", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23", "libs|Эпизоды|episode|500"],
       jellyseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
+      lidarr: ["ok 1", "t|В очереди|3|n", "t|Не скачано альбомов|14|n"],
+      bazarr: ["ok 1", "t|Серий без субтитров|4|n", "t|Фильмов без субтитров|2|n"],
+      tautulli: ["ok 1", "t|Потоков|2|n", "t|Перекодируется|1|n", "t|Трафик|500000|bs"],
+      sabnzbd: ["ok 1", "t|Скорость|1264189|bs", "t|Осталось|537395200|b", "t|Осталось времени|450|s", "t|В очереди|3|n"],
+      nzbget: ["ok 1", "t|Скорость|2097152|bs", "t|Осталось|104857600|b"],
       immich: ["ok 1", "photos 18230", "videos 1204", "usage 442381631488", "list|Alice|15000|1000|400000000000", "list|Bob|3230|204|42381631488"]
     };
     Object.keys(want).forEach(s => {
@@ -521,6 +528,16 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/" + s, !miss.length && extra, miss.join(" / ") + " || " + lines.join(" / "));
     });
     ok("ext.d/jellyfin: wrong key -> ok 0", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test KEY=bad " }).trim() === "ok 0");
+    ok("ext.d/lidarr: wrong key -> ok 0", collect("ext.d/lidarr", "", "", { env: "URL=http://lidarr.test KEY=bad " }).trim() === "ok 0");
+    ok("ext.d/tautulli: key not printed", !/testkey/.test(collect("ext.d/tautulli", "", "", { env: env.tautulli })));
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-n-")), lg = () => fs.readFileSync(path.join(sd, "log"), "utf8");
+      const o = collect("ext.d/nzbget", "", "", { state: sd, env: "URL=http://nzbget.test USER= PASS= " }).trim();
+      ok("ext.d/nzbget: no user -> no Authorization", o.startsWith("ok 1") && !/Authorization/.test(lg()), lg());
+      collect("ext.d/nzbget", "", "", { state: sd, env: "URL=http://nzbget.test USER=u PASS=p " });
+      ok("ext.d/nzbget: user -> Basic", / Authorization: Basic dTpw /.test(lg()), lg());
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
     ok("ext.d/sonarr: wrong key -> ok 0", collect("ext.d/sonarr", "", "", { env: "URL=http://sonarr.test KEY=bad " }).trim() === "ok 0");
     ok("ext.d/qb: wrong password -> ok 0", collect("ext.d/qb", "", "", { env: "URL=http://qb.test USER=admin PASS=x " }).trim() === "ok 0");
     // ext.d/custom: MAP from the browser is data (read from the environment in awk), bad pairs are skipped; fake-wget logs the request to $LOG

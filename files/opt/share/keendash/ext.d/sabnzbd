@@ -1,0 +1,12 @@
+#!/bin/sh
+# name: SABnzbd
+# group: Медиа
+# fields: url key
+# hint: Ключ: Config → General → API Key
+# SABnzbd: queue speed and size as tiles (the key is in the query string only, never printed)
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+J "${URL%/}/api?mode=queue&output=json&apikey=${KEY:-}" | awk "$LOAD"'END {
+  if (!("queue.noofslots" in V)) { print "ok 0"; exit }
+  print "ok 1"; printf "t|Скорость|%d|bs\n", V["queue.kbpersec"] * 1024
+  printf "t|Осталось|%.0f|b\n", int(V["queue.mbleft"] * 1048576)
+  print "t|Осталось времени|" tl(V["queue.timeleft"]) "|s"; print "t|В очереди|" V["queue.noofslots"] + 0 "|n" }'

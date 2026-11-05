@@ -23,6 +23,11 @@ case "$u" in
   *//immich.test/*) need "x-api-key: testkey" ;;
   *//jellyfin.test/*) need "X-Emby-Token: testkey" ;;
   *//jellyseerr.test/*) need "X-Api-Key: testkey" ;;
+  *//lidarr.test/*) need "X-Api-Key: testkey" ;;
+  *//bazarr.test/*) need "X-API-KEY: testkey" ;;
+  *//tautulli.test/* | *//sabnzbd.test/*) need "apikey=testkey" ;;
+  # accepts both; the request line goes to $LOG
+  *//nzbget.test/*) echo "nzbget$a" >> "${LOG:-/dev/null}" ;;
   *//sonarr.test/* | *//radarr.test/* | *//prowlarr.test/* | *//overseerr.test/*) need "X-Api-Key: testkey" ;;
 esac
 case "$u" in
@@ -44,6 +49,12 @@ case "$u" in
   *//radarr.test/api/v3/queue*) f=media/radarr_queue ;;
   *//radarr.test/api/v3/wanted/missing*) f=media/radarr_missing ;;
   *//radarr.test/api/v3/calendar*) f=media/radarr_calendar ;;
+  *//lidarr.test/api/v1/queue*) f=media/lidarr_queue ;;
+  *//lidarr.test/api/v1/wanted/missing*) f=media/lidarr_missing ;;
+  *//bazarr.test/api/badges) f=media/bazarr_badges ;;
+  *//tautulli.test/api/v2*) f=media/tautulli_activity ;;
+  *//sabnzbd.test/api*) f=media/sabnzbd_queue ;;
+  *//nzbget.test/jsonrpc/status) f=media/nzbget_status ;;
   */api/v1/indexer) f=media/prowlarr_indexer ;;
   */api/v1/indexerstatus) f=media/prowlarr_status ;;
   */api/v1/indexerstats*) f=media/prowlarr_stats ;;
