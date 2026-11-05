@@ -14,11 +14,9 @@
   var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip", MTABKEY = "ui.services.media";
   var ORDKEY = "ui.services.order", MORDKEY = "ui.services.morder";
   var TITLE = "Сервисы";
-  var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["tailscale", "Tailscale"], ["agh", "AdGuard"], ["media", "Медиа"], ["ascn", "Antiscan"], ["sys", "Система"]];
-  /* "Медиа" tab: one sub-tab per configured service; [id, name, its keendash.conf keys] */
-  var MEDIA = [["qb", "qBittorrent", "QBIT_URL, QBIT_USER и QBIT_PASS"], ["plex", "Plex", "PLEX_URL и PLEX_TOKEN"], ["sonarr", "Sonarr", "SONARR_URL и SONARR_KEY"],
-    ["radarr", "Radarr", "RADARR_URL и RADARR_KEY"], ["prowlarr", "Prowlarr", "PROWLARR_URL и PROWLARR_KEY"], ["overseerr", "Overseerr", "OVERSEERR_URL и OVERSEERR_KEY"],
-    ["immich", "Immich", "IMMICH_URL и IMMICH_KEY"]];
+  var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["tailscale", "Tailscale"], ["ascn", "Antiscan"], ["sys", "Система"]];
+  /* the group tabs (one per service group) go in front of this tab by default */
+  var GRPAT = "ascn";
   /* tab id -> services whose web UI the "Открыть" link points to (link itself is auto-detected) */
   var TABSVC = { telemt: ["telemt-panel"], awg: ["awg-manager"], firc: ["firc"], nfqws: ["nfqws2", "nfqws"], hydra: ["hrweb"] };
   var TABWEB = { nfqws: /nfqws/i };
@@ -269,7 +267,6 @@
   function hhmm(t) { var x = new Date(t * 1000); return ("0" + x.getHours()).slice(-2) + ":" + ("0" + x.getMinutes()).slice(-2); }
   /* third-party services: ok is null until keendash's cron has asked their API once */
   var WAIT = "Данные появятся в течение минуты", NODATA = "нет данных (" + (ST ? "status.json" : "status.cgi") + " недоступен)";
-  function apiErr(name, keys) { return '<span style="color:' + BAD + '">API ' + name + " недоступен</span> · проверьте " + keys + " в keendash.conf"; }
   /* a third-party service's own address, with the router's loopback made reachable from the browser */
   function extUrl(u) {
     var m = /^http:\/\/([^\/:]+)(?::(\d+))?\/?$/.exec(u || "");
@@ -278,30 +275,6 @@
       if (PROXY[k]) return PROXY[k];
     }
     return u ? u.replace(/\/\/(127\.0\.0\.1|localhost)(?=[:\/]|$)/, "//" + location.hostname).replace(/\/?$/, "/") : "";
-  }
-  function tabAgh(d) {
-    var a = d.agh || {}, sq = a.sq || [];
-    if (a.ok == null) return note(WAIT);
-    if (!a.ok) return note(apiErr("AdGuard Home", "ADGUARD_URL, ADGUARD_USER и ADGUARD_PASS"));
-    /* the stats period: 24 hourly points by default, 168 for a 7-day interval, daily points for longer ones */
-    var per = a.days ? sq.length + " дн" : sq.length > 24 && sq.length % 24 === 0 ? sq.length / 24 + " дн" : sq.length + " ч";
-    var h = '<div class="us-grid">' + blk("Запросов за " + per, fmtN(a.q), sq, ACC) +
-      blk("Заблокировано", fmtN(a.b) + (a.q ? " · " + (a.b / a.q * 100).toFixed(1) + "%" : ""), a.sb || [], BAD) + "</div>";
-    h += note("Среднее время ответа <b>" + a.ms + " мс</b> · фильтров <b>" + a.fon + " из " + a.fall + "</b> · правил <b>" + fmtN(a.rules) + "</b>" +
-      (a.upd ? " · обновлены <b>" + fmtDur((d.now || Date.now() / 1000) - a.upd) + "</b> назад" : ""));
-    if ((a.top || []).length) {
-      h += sec("Заблокировано чаще всего");
-      a.top.forEach(function (x) { h += line(BAD, esc(x[0]), fmtN(x[1])); });
-    }
-    if ((a.cl || []).length) {
-      h += sec("Активные клиенты");
-      a.cl.forEach(function (x) { h += line(OK, x[0] ? esc(x[0]) + ' <span class="us-tag">' + esc(x[1]) + "</span>" : esc(x[1]), fmtN(x[2])); });
-    }
-    if ((a.last || []).length) {
-      h += sec("Последние блокировки");
-      a.last.forEach(function (x) { h += line(WARN, esc(x[1]), esc(x[2]) + " · " + hhmm(x[0])); });
-    }
-    return h;
   }
   function dm(t) { var x = new Date(t * 1000); return ("0" + x.getDate()).slice(-2) + "." + ("0" + (x.getMonth() + 1)).slice(-2); }
   /* Sonarr / Radarr: queue, missing, the coming week; cal(c) -> [left, right, dim] */
@@ -319,9 +292,32 @@
     return h;
   }
   var RKIND = { c: "в кино", d: "цифровой релиз", p: "на диске" };
-  var MVIEW = {
-    qb: function (x, s) {
-      var h = '<div class="us-grid">' + blk("Загрузка", fmtBytes(x.dl) + "/с", s.qb_dl || [], ACC) + blk("Отдача", fmtBytes(x.up) + "/с", s.qb_up || [], OK) + "</div>";
+  /* view of a service type: (its data, ser(key) -> the series "<id>.<key>", status) -> html */
+  var VIEW = {
+    agh: function (x, ser, d) {
+      var sq = [].concat(x.sq || []), sb = [].concat(x.sb || []);
+      /* the stats period: 24 hourly points by default, 168 for a 7-day interval, daily points for longer ones */
+      var per = x.days ? sq.length + " дн" : sq.length > 24 && sq.length % 24 === 0 ? sq.length / 24 + " дн" : sq.length + " ч";
+      var h = '<div class="us-grid">' + blk("Запросов за " + per, fmtN(x.q), sq, ACC) +
+        blk("Заблокировано", fmtN(x.b) + (x.q ? " · " + (x.b / x.q * 100).toFixed(1) + "%" : ""), sb, BAD) + "</div>";
+      h += note("Среднее время ответа <b>" + x.ms + " мс</b> · фильтров <b>" + x.fon + " из " + x.fall + "</b> · правил <b>" + fmtN(x.rules) + "</b>" +
+        (x.upd ? " · обновлены <b>" + fmtDur((d.now || Date.now() / 1000) - x.upd) + "</b> назад" : ""));
+      if ((x.top || []).length) {
+        h += sec("Заблокировано чаще всего");
+        x.top.forEach(function (t) { h += line(BAD, esc(t[0]), fmtN(t[1])); });
+      }
+      if ((x.cl || []).length) {
+        h += sec("Активные клиенты");
+        x.cl.forEach(function (c) { h += line(OK, c[0] ? esc(c[0]) + ' <span class="us-tag">' + esc(c[1]) + "</span>" : esc(c[1]), fmtN(c[2])); });
+      }
+      if ((x.last || []).length) {
+        h += sec("Последние блокировки");
+        x.last.forEach(function (c) { h += line(WARN, esc(c[1]), esc(c[2]) + " · " + hhmm(c[0])); });
+      }
+      return h;
+    },
+    qb: function (x, ser) {
+      var h = '<div class="us-grid">' + blk("Загрузка", fmtBytes(x.dl) + "/с", ser("dl"), ACC) + blk("Отдача", fmtBytes(x.up) + "/с", ser("up"), OK) + "</div>";
       if (!x.n) return h + note("Активных загрузок нет");
       h += sec("Загружается (" + x.n + ")");
       (x.list || []).forEach(function (t) {
@@ -347,7 +343,7 @@
       h += line(ACC, "Скачиваний за 24 ч", fmtN(x.g));
       if ((x.list || []).length) {
         h += sec("Отключены после ошибок");
-        x.list.forEach(function (n) { h += line(BAD, esc(n), ""); });
+        x.list.forEach(function (n) { h += line(BAD, esc(n[0]), ""); });
       }
       return h;
     },
@@ -364,24 +360,32 @@
       return h;
     }
   };
-  /* configured media services as [id, name, keys, url]; keeps mtab on one of them */
-  function mediaOn(d) {
-    var urls = {};
-    ((d.media || {}).svc || []).forEach(function (x) { urls[x[0]] = x[1]; });
-    var on = ordered(MEDIA, MORDKEY).filter(function (m) { return urls.hasOwnProperty(m[0]); }).map(function (m) { return m.concat([urls[m[0]]]); });
-    if (on.length && !on.some(function (m) { return m[0] === mtab; })) mtab = on[0][0];
-    return on;
+  function instOf(d) {
+    return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6] }; });
   }
-  function tabMedia(d, s) {
-    var on = mediaOn(d), h = "";
-    if (on.length > 1) {
-      h = '<div class="us-sub">';
-      on.forEach(function (m) { h += '<button type="button" draggable="true" class="us-mt' + (m[0] === mtab ? " us-on" : "") + '" data-m="' + m[0] + '">' + m[1] + "</button>"; });
-      h += "</div>";
-    }
-    var m = on.filter(function (x) { return x[0] === mtab; })[0], x = (d.media || {})[mtab] || {};
-    if (!m) return note(WAIT);
-    return h + (x.ok == null ? note(WAIT) : !x.ok ? note(apiErr(m[1], m[2])) : MVIEW[mtab](x, s, d));
+  function typeOf(d, type) {
+    var t = (d.types || []).filter(function (e) { return e[0] === type; })[0] || [];
+    return { name: t[1] || type, group: t[2] || "Медиа", fields: t[3] || [] };
+  }
+  /* hidden in the settings: where is "page" or "main", name a tab, chip's service or instance id */
+  function hidden(d, where, name) { return (((d.cfg || {}).hide || {})[where] || []).indexOf(name) >= 0; }
+  function instBody(i, d) {
+    if (!i.x) return note(WAIT);
+    if (!i.x.ok) return note('<span style="color:' + BAD + '">API ' + esc(i.name) + " недоступен</span> · проверьте настройки");
+    return (VIEW[i.type] || function () { return ""; })(i.x, function (k) { return (d.series || {})[i.id + "." + k] || []; }, d);
+  }
+  /* the group tabs go before GRPAT, or last */
+  function mix(found, extra) {
+    var at = found.length;
+    found.forEach(function (t, k) { if (t[0] === GRPAT) at = k; });
+    return found.slice(0, at).concat(extra, found.slice(at));
+  }
+  /* instances of a group on the main card in the user's order; mtab is kept on one of them */
+  function grpInst(d, g) {
+    var l = instOf(d).filter(function (i) { return typeOf(d, i.type).group === g && !hidden(d, "main", i.id); });
+    var o = ordered(l.map(function (i) { return [i.id, i]; }), MORDKEY).map(function (e) { return e[1]; });
+    if (o.length && !o.some(function (i) { return i.id === mtab; })) mtab = o[0].id;
+    return o;
   }
   function tabLinks(id, svc, web) {
     var re = TABWEB[id], out = [], names = TABSVC[id] || [];
@@ -447,11 +451,11 @@
     clearTimeout(upTimer); upTimer = setTimeout(update, 3000);
   }
 
-  var TABF = { telemt: tabTelemt, awg: tabAwg, firc: tabFirc, nfqws: tabNfqws, hydra: tabHydra, tailscale: tabTs, agh: tabAgh, media: tabMedia, ascn: tabAscn, sys: tabSys };
-  /* "Открыть" links of a tab; third-party services may run anywhere: the address from keendash.conf (eu: a media service's) */
-  function openLinks(id, d, eu) {
-    if (id === "agh") eu = d.agh && d.agh.url;
-    return id === "agh" || id === "media" ? (eu ? [["", extUrl(eu)]] : []) : id === "tailscale" ? [["", "https://login.tailscale.com/admin/machines"]] : tabLinks(id, d.svc || [], d.web);
+  var TABF = { telemt: tabTelemt, awg: tabAwg, firc: tabFirc, nfqws: tabNfqws, hydra: tabHydra, tailscale: tabTs, ascn: tabAscn, sys: tabSys };
+  /* "Открыть" links of a tab; a third-party service may run anywhere: its own address (see extLink) */
+  function extLink(i) { return i && i.url ? [["", extUrl(i.url)]] : []; }
+  function openLinks(id, d) {
+    return id === "tailscale" ? [["", "https://login.tailscale.com/admin/machines"]] : tabLinks(id, d.svc || [], d.web);
   }
   function openHtml(ls) {
     return ls.map(function (x) {
@@ -466,7 +470,12 @@
     if (!d) { bodyEl.innerHTML = '<div class="us-note">загрузка…</div>'; return; }
     var svc = d.svc || [], have = d.tabs || ["sys"];
     proxies(d);
-    var avail = ordered(TABS, ORDKEY).filter(function (t) { return have.indexOf(t[0]) >= 0; });
+    var grps = [];
+    instOf(d).forEach(function (i) {
+      var g = typeOf(d, i.type).group;
+      if (!hidden(d, "main", i.id) && !grps.some(function (e) { return e[1] === g; })) grps.push(["grp:" + g, g]);
+    });
+    var avail = ordered(mix(TABS.filter(function (t) { return have.indexOf(t[0]) >= 0 && !hidden(d, "main", t[0]); }), grps), ORDKEY);
     if (!avail.some(function (t) { return t[0] === tab; })) tab = avail.length ? avail[0][0] : "sys";
     var STATE = { 1: [OK, "работает"], 0: [BAD, "не запущен"], 2: [OFF, "отключён"], 3: [OFF, "состояние неизвестно"] };
     h += updBar(d.upd) + '<div class="us-chips">';
@@ -486,6 +495,7 @@
                : '<span class="us-chip' + (state === 2 ? " us-dim" : "") + '" title="' + esc(tip) + '">' + inner + "</span>";
     }
     svc.forEach(function (x) {
+      if (hidden(d, "main", x[0])) return;
       var ws = webBy[x[0]] || [];
       var own = ws.filter(function (w) { return w[0] === x[0]; }), got = ws.filter(function (w) { return w[0] !== x[0]; });
       if (nweb[x[0]] >= 2) {
@@ -494,9 +504,18 @@
       } else h += chip(x[0], x[1], ws.length ? url(ws[0][1]) : nweb[x[0]] ? "" : linkOf(x));
     });
     h += '</div><div class="us-tabs"><div class="us-tl">';
-    avail.forEach(function (t) { h += '<button type="button" draggable="true" class="us-tab' + (t[0] === tab ? " us-on" : "") + '" data-tab="' + t[0] + '">' + t[1] + "</button>"; });
-    h += "</div>" + openHtml(openLinks(tab, d, tab === "media" ? (mediaOn(d).filter(function (m) { return m[0] === mtab; })[0] || [])[3] : null)) + "</div>";
-    h += (TABF[tab] || tabTelemt)(d, d.series || {});
+    avail.forEach(function (t) { h += '<button type="button" draggable="true" class="us-tab' + (t[0] === tab ? " us-on" : "") + '" data-tab="' + esc(t[0]) + '">' + esc(t[1]) + "</button>"; });
+    var gi = tab.slice(0, 4) === "grp:" ? grpInst(d, tab.slice(4)) : null, cur = gi && gi.filter(function (i) { return i.id === mtab; })[0];
+    h += "</div>" + openHtml(gi ? extLink(cur) : openLinks(tab, d)) + "</div>";
+    if (!gi) h += (TABF[tab] || tabTelemt)(d, d.series || {});
+    else {
+      if (gi.length > 1) {
+        h += '<div class="us-sub">';
+        gi.forEach(function (i) { h += '<button type="button" draggable="true" class="us-mt' + (i === cur ? " us-on" : "") + '" data-m="' + esc(i.id) + '">' + esc(i.name) + "</button>"; });
+        h += "</div>";
+      }
+      h += cur ? instBody(cur, d) : note(WAIT);
+    }
     bodyEl.innerHTML = h;
     /* re-rendering resets the tab strip's scroll: keep the active tab visible */
     var tl = bodyEl.querySelector(".us-tl"), on = tl && tl.querySelector(".us-on");
@@ -758,17 +777,14 @@
    * reload the loader keeps the address asked for (window.__keendash.p) and the page opens again over the dashboard. */
   var PAGE = "/keendash", ACT = "page-link__link--active";
   var page = null, pageFrom = "", pageState = null, pageTitle = "", stripped = [], pageWant = (window.__keendash || {}).p === PAGE;
-  /* [title, html, links] per card: the tabs with data, "Медиа" as a card per service */
+  /* [title, html, links, id] per card: the tabs with data, every service instance a card of its own */
   function pageCards(d) {
     var s = d.series || {}, have = d.tabs || ["sys"], out = [];
     proxies(d);
-    ordered(TABS, ORDKEY).forEach(function (t) {
-      if (have.indexOf(t[0]) < 0) return;
-      if (t[0] !== "media") { out.push([t[1], TABF[t[0]](d, s), openLinks(t[0], d)]); return; }
-      mediaOn(d).forEach(function (m) {
-        var x = (d.media || {})[m[0]] || {};
-        out.push([m[1], x.ok == null ? note(WAIT) : !x.ok ? note(apiErr(m[1], m[2])) : MVIEW[m[0]](x, s, d), openLinks("media", d, m[3])]);
-      });
+    var insts = ordered(instOf(d).filter(function (i) { return !hidden(d, "page", i.id); }).map(function (i) { return [i.id, i]; }), MORDKEY);
+    ordered(mix(TABS.filter(function (t) { return have.indexOf(t[0]) >= 0 && !hidden(d, "page", t[0]); }), insts), ORDKEY).forEach(function (t) {
+      if (typeof t[1] === "string") out.push([t[1], TABF[t[0]](d, s), openLinks(t[0], d), t[0]]);
+      else out.push([t[1].name, instBody(t[1], d), extLink(t[1]), t[0]]);
     });
     return out;
   }
@@ -784,7 +800,7 @@
     cols.forEach(function (c) { c.className = "kd-col"; });
     pageCards(d).forEach(function (c) {
       var col = cols.reduce(function (a, b) { return b.offsetHeight < a.offsetHeight ? b : a; });
-      col.insertAdjacentHTML("beforeend", '<div class="kd-card"><div class="kd-ch"><span class="kd-ct">' + esc(c[0]) + "</span>" + openHtml(c[2]) +
+      col.insertAdjacentHTML("beforeend", '<div class="kd-card" data-id="' + esc(c[3]) + '"><div class="kd-ch"><span class="kd-ct">' + esc(c[0]) + "</span>" + openHtml(c[2]) +
         '</div><div class="us-body">' + c[1] + "</div></div>");
     });
     main.scrollTop = top;

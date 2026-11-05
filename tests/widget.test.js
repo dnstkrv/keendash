@@ -1,16 +1,19 @@
 const { JSDOM } = require("jsdom"); const fs = require("fs"), path = require("path");
 const base = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "status.json"), "utf8"));
 const full = Object.assign({}, base, {
-  now: 1793438837, tabs: ["telemt", "awg", "firc", "nfqws", "hydra", "agh", "media", "ascn", "sys"], hydra: {run:1,up:7200,mem:2048,keys:120,ips:345,list:[["HydraRoute",100,300,40,0],["nwg0",20,5,0,1],["Empty",0,0,0,0]]}, nfq: {run:1,pkts:446616,drop:0,up:71735,mem:6876,user:278,auto:522,excl:171,ipsets:16,today:90,ev:[["12:06","frontier.tiktokv.com","fail counter 1/3"],["12:03","version.immich.cloud","retrans threshold reached"]],mon:[["youtube.com",1793437803,1,183],["x.com",1793437803,1,460],["bad.org",1793437803,0,0],["old.org",1793000000,1,100]]}, ascn: {ips:2,subnets:1,honeypot:3,candidates:15,bans:[["subnets","185.136.15.0/24",861460,"KZ"],["honeypot","94.154.43.234",860884,""],["ips","1.2.3.4",5000,"US"]]}, web: [["lighttpd","90","nfqws-keenetic-web"],["lighttpd","8090","nfqws2"],["firc","666","firc WebUI"]],
-  agh: {ok:1,url:"http://127.0.0.1:3000",q:52310,b:7840,ms:18,days:0,fon:3,fall:4,rules:368606,upd:1793431637,sq:[2200,2489,2765,2684,2896,3064,2854,2926,2953,2614,2578,2199,2150,2115,1776,1804,1876,1666,1835,2047,1967,2242,2202,2491],sb:[330,383,433,419,458,488,450,463,468,406,399,330,321,314,252,257,271,232,263,302,287,338,330,383],top:[["ads.example.com",812],["tracker.example.net",455],["mc.yandex.ru",301],["telemetry.example.org",120],["pixel.example.com",64]],cl:[["Ноутбук","192.168.1.20",5321],["Телефон","192.168.1.31",2210],["vpn-laptop","10.8.0.2",900],["","192.168.1.99",10]],last:[[1793438000,"ads.example.com","Ноутбук"],[1793437467,"tracker.example.net","192.168.1.99"]]},
-  media: {svc:[["immich","http://10.0.0.5:2283"],["qb","http://localhost:8080"],["plex","http://10.0.0.5:32400"],["sonarr","http://10.0.0.5:8989"],["radarr","http://10.0.0.5:7878"],["prowlarr","http://10.0.0.5:9696"],["overseerr","http://10.0.0.5:5055"]],
-    qb:{ok:1,dl:5242880,up:524288,n:3,list:[["Example.Show.S01E01.1080p.mkv",420,4194304,600],["Big Movie",900,1048576,3600],["Stalled.Thing",100,0,8640000]]},
-    plex:{ok:1,streams:2,list:[["alice","Example Show · Pilot",50,"playing"],["bob","Example Movie",10,"paused"]],libs:[["Фильмы","movie",40],["Сериалы","show",23]]},
-    sonarr:{ok:1,queue:7,missing:129,list:[["Example Show S02E05",75,750],["Other S01E12",0,93784]],cal:[[1793667600,"Example Show","S02E06",0],[1793910600,"New Show","S01E01",1]]},
-    radarr:{ok:1,queue:1,missing:null,list:[["Example Movie",75,7200]],cal:[[1793611237,"Soon Movie","d"]]},
-    prowlarr:{ok:1,all:3,on:2,bad:1,q:50,g:4,fail:5,list:["Tracker Two"]},
-    overseerr:{ok:1,pending:2,processing:3,available:6,total:12},
-    immich:{ok:1,photos:18230,videos:1204,usage:442381631488,list:[["Alice",15000,1000,400000000000],["Bob",3230,204,42381631488]]}},
+  now: 1793438837, tabs: ["telemt", "awg", "firc", "nfqws", "hydra", "ascn", "sys"], hydra: {run:1,up:7200,mem:2048,keys:120,ips:345,list:[["HydraRoute",100,300,40,0],["nwg0",20,5,0,1],["Empty",0,0,0,0]]}, nfq: {run:1,pkts:446616,drop:0,up:71735,mem:6876,user:278,auto:522,excl:171,ipsets:16,today:90,ev:[["12:06","frontier.tiktokv.com","fail counter 1/3"],["12:03","version.immich.cloud","retrans threshold reached"]],mon:[["youtube.com",1793437803,1,183],["x.com",1793437803,1,460],["bad.org",1793437803,0,0],["old.org",1793000000,1,100]]}, ascn: {ips:2,subnets:1,honeypot:3,candidates:15,bans:[["subnets","185.136.15.0/24",861460,"KZ"],["honeypot","94.154.43.234",860884,""],["ips","1.2.3.4",5000,"US"]]}, web: [["lighttpd","90","nfqws-keenetic-web"],["lighttpd","8090","nfqws2"],["firc","666","firc WebUI"]],
+  cfg: {vol:"v1:",rev:"r1",err:"",hide:{page:[],main:[]},cols:[]},
+  types: [["agh","AdGuard Home","AdGuard",["url","user","pass"]],["qb","qBittorrent","Медиа",["url","user","pass"]],["plex","Plex","Медиа",["url","token"]],["sonarr","Sonarr","Медиа",["url","key"]],["radarr","Radarr","Медиа",["url","key"]],
+    ["prowlarr","Prowlarr","Медиа",["url","key"]],["overseerr","Overseerr","Медиа",["url","key"]],["immich","Immich","Медиа",["url","key"]]],
+  inst: [["agh","agh","AdGuard Home","http://127.0.0.1:3000","u",["pass"],{ok:1,q:52310,b:7840,ms:18,days:0,fon:3,fall:4,rules:368606,upd:1793431637,sq:[2200,2489,2765,2684,2896,3064,2854,2926,2953,2614,2578,2199,2150,2115,1776,1804,1876,1666,1835,2047,1967,2242,2202,2491],sb:[330,383,433,419,458,488,450,463,468,406,399,330,321,314,252,257,271,232,263,302,287,338,330,383],top:[["ads.example.com",812],["tracker.example.net",455],["mc.yandex.ru",301],["telemetry.example.org",120],["pixel.example.com",64]],cl:[["Ноутбук","192.168.1.20",5321],["Телефон","192.168.1.31",2210],["vpn-laptop","10.8.0.2",900],["","192.168.1.99",10]],last:[[1793438000,"ads.example.com","Ноутбук"],[1793437467,"tracker.example.net","192.168.1.99"]]}],
+    ["qb","qb","Торренты","http://localhost:8080","u",["pass"],{ok:1,dl:5242880,up:524288,n:3,list:[["Example.Show.S01E01.1080p.mkv",420,4194304,600],["Big Movie",900,1048576,3600],["Stalled.Thing",100,0,8640000]]}],
+    ["plex","plex","Plex","http://10.0.0.5:32400","",["token"],{ok:1,streams:2,list:[["alice","Example Show · Pilot",50,"playing"],["bob","Example Movie",10,"paused"]],libs:[["Фильмы","movie",40],["Сериалы","show",23]]}],
+    ["sonarr","sonarr","Sonarr","http://10.0.0.5:8989","",["key"],{ok:1,queue:7,missing:129,list:[["Example Show S02E05",75,750],["Other S01E12",0,93784]],cal:[[1793667600,"Example Show","S02E06",0],[1793910600,"New Show","S01E01",1]]}],
+    ["radarr","radarr","Radarr","http://10.0.0.5:7878","",["key"],{ok:1,queue:1,list:[["Example Movie",75,7200]],cal:[[1793611237,"Soon Movie","d"]]}],
+    ["prowlarr","prowlarr","Prowlarr","http://10.0.0.5:9696","",["key"],{ok:1,all:3,on:2,bad:1,q:50,g:4,fail:5,list:[["Tracker Two"]]}],
+    ["overseerr","overseerr","Overseerr","http://10.0.0.5:5055","",["key"],{ok:1,pending:2,processing:3,available:6,total:12}],
+    ["immich","immich","Immich","http://10.0.0.5:2283","",["key"],{ok:1,photos:18230,videos:1204,usage:442381631488,list:[["Alice",15000,1000,400000000000],["Bob",3230,204,42381631488]]}]],
+  series: Object.assign({}, base.series, {"qb.dl":[0,1048576,5242880],"qb.up":[0,0,524288]}),
   svc: [["cron",1,""],["dropbear",1,""],["nfqws2",1,""],["lighttpd",1,"90"],["portal",1,"81"],["ascn",1,""],["awg-manager",1,"2222"],["firc",1,"666"],["haproxy",0,""],["telemt",2,""],["telemt-panel",1,"8083"],["foo",3,"http://example.org:99/x"],["hrweb",1,"2000"]],
   firc: Object.assign({}, base.firc, { list: base.firc.list.concat([["\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" C:\\\\x \\u00e9", "nwg0", 1, 99]]) })
 });
@@ -67,7 +70,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("hydra: policy with domains + v4+v6 addresses", /HydraRoute/.test(hr[1]) && /политика/.test(hr[1]) && /доменов 100 · адресов 340/.test(hr[1]), hr[1]);
     ok("hydra: interface, empty rule dimmed", /интерфейс/.test(hr[2]) && /^Empty.*адресов 0$/.test(hr[3]) && !/доменов/.test(hr[3]) && Array.from(m.querySelectorAll(".us-row.us-dim")).some(r => /Empty/.test(r.textContent)), hr.join(" / "));
     ok("hydra: totals", /345/.test(m.querySelector(".us-grid").textContent) && /120/.test(m.querySelector(".us-grid").textContent));
-    click("agh");
+    click("grp:AdGuard");
     const ag = Array.from(m.querySelectorAll(".us-row")).map(r => r.textContent), agt = m.querySelector(".us-grid").textContent;
     ok("agh: link = ADGUARD_URL, loopback -> router address", m.querySelector("a.us-open").href === "http://192.168.0.1:3000/", m.querySelector("a.us-open").href);
     ok("agh: totals + blocked share", /Запросов за 24 ч/.test(agt) && /52 310/.test(agt) && /7 840 · 15\.0%/.test(agt), agt);
@@ -78,24 +81,26 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("agh: no status/version line", !/защита|v0\.108/.test(m.textContent));
     click("sys"); ok("sys 3 blocks w/ temp", m.querySelectorAll(".us-blk").length === 3);
   });
-  await run(Object.assign({}, mini, { tabs: ["agh", "sys"], agh: { ok: 0, url: "http://10.0.0.5:3000" } }), (w, m) => {
-    m.querySelector('[data-tab="agh"]').dispatchEvent(new w.Event("click", { bubbles: true }));
-    ok("agh down: hint about keendash.conf, no blocks", /недоступен/.test(m.textContent) && /ADGUARD_PASS/.test(m.textContent) && !m.querySelector(".us-blk"), m.textContent);
+  const one = (type, name, group, url, x) => Object.assign({}, mini, { types: [[type, name, group, ["url"]]], inst: [[type, type, name, url, "", [], x]] });
+  const gclick = (w, m, g) => m.querySelector('[data-tab="grp:' + g + '"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+  await run(one("agh", "AdGuard Home", "AdGuard", "http://10.0.0.5:3000", { ok: 0 }), (w, m) => {
+    gclick(w, m, "AdGuard");
+    ok("agh down: hint about the settings, no blocks", /API AdGuard Home недоступен · проверьте настройки/.test(m.textContent) && !m.querySelector(".us-blk"), m.textContent);
   });
-  await run(Object.assign({}, mini, { tabs: ["agh", "sys"], agh: { ok: 1, q: 9000, b: 900, days: 0, sq: Array(168).fill(50), sb: Array(168).fill(5) } }), (w, m) => {
-    m.querySelector('[data-tab="agh"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+  await run(one("agh", "AdGuard Home", "AdGuard", "http://10.0.0.5:3000", { ok: 1, q: 9000, b: 900, days: 0, sq: Array(168).fill(50), sb: Array(168).fill(5) }), (w, m) => {
+    gclick(w, m, "AdGuard");
     ok("agh 7-day stats: 168 hourly points -> 7 дн", /Запросов за 7 дн/.test(m.querySelector(".us-grid").textContent), m.querySelector(".us-grid").textContent);
   });
-  await run(Object.assign({}, mini, { tabs: ["agh", "sys"], agh: { ok: null, url: "http://10.0.0.5:3000" } }), (w, m) => {
-    m.querySelector('[data-tab="agh"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+  await run(one("agh", "AdGuard Home", "AdGuard", "http://10.0.0.5:3000", null), (w, m) => {
+    gclick(w, m, "AdGuard");
     ok("agh before the first cron run: wait note, link already there", /появятся в течение минуты/.test(m.textContent) && !/недоступен/.test(m.textContent) && m.querySelector("a.us-open").href === "http://10.0.0.5:3000/", m.textContent);
   });
   // media tab: one sub-tab per configured service
   await run(full, (w, m) => {
     const click = (sel) => m.querySelector(sel).dispatchEvent(new w.Event("click", { bubbles: true }));
-    click('[data-tab="media"]');
+    click('[data-tab="grp:Медиа"]');
     const subs = Array.from(m.querySelectorAll(".us-mt")).map(b => b.textContent);
-    ok("media: 7 sub-tabs in fixed order, first active", subs.join() === "qBittorrent,Plex,Sonarr,Radarr,Prowlarr,Overseerr,Immich" && m.querySelector(".us-mt.us-on").textContent === "qBittorrent", subs.join());
+    ok("media: 7 sub-tabs in fixed order, first active", subs.join() === "Торренты,Plex,Sonarr,Radarr,Prowlarr,Overseerr,Immich" && m.querySelector(".us-mt.us-on").textContent === "Торренты", subs.join());
     const rows = () => Array.from(m.querySelectorAll(".us-row")).map(r => r.textContent), link = () => (m.querySelector("a.us-open") || {}).href;
     ok("media qb: speeds, link, 3 downloads", /5\.0 МБ\/с/.test(m.querySelector(".us-grid").textContent) && link() === "http://192.168.0.1:8080/" && rows().length === 3, link() + " " + rows().join(" / "));
     ok("media qb: progress · speed · eta, stalled dimmed without eta", /^Example\.Show.*42\.0% · 4\.0 МБ\/с · 10м$/.test(rows()[0]) && /^Stalled\.Thing10\.0%$/.test(rows()[2]) && !!m.querySelector(".us-row.us-dim"), rows().join(" / "));
@@ -123,8 +128,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("drag tab: order saved and kept on re-render", ids(".us-tab", "data-tab").startsWith("awg,telemt,firc") && w.localStorage.getItem("ui.services.order").startsWith('["awg","telemt"'), ids(".us-tab", "data-tab"));
     drag('[data-m="qb"]', '[data-m="immich"]');
     ok("drag media sub-tab: own order", ids(".us-mt", "data-m") === "plex,sonarr,radarr,prowlarr,overseerr,immich,qb" && /"qb"\]$/.test(w.localStorage.getItem("ui.services.morder")), ids(".us-mt", "data-m"));
-    w.localStorage.setItem("ui.services.order", '["sys","gone"]'); click('[data-tab="media"]');
-    ok("saved order first, unsaved tabs after in default order", ids(".us-tab", "data-tab") === "sys,telemt,awg,firc,nfqws,hydra,agh,media,ascn", ids(".us-tab", "data-tab"));
+    w.localStorage.setItem("ui.services.order", '["sys","gone"]'); click('[data-tab="grp:Медиа"]');
+    ok("saved order first, unsaved tabs after in default order", ids(".us-tab", "data-tab") === "sys,telemt,awg,firc,nfqws,hydra,grp:AdGuard,grp:Медиа,ascn", ids(".us-tab", "data-tab"));
     // jsdom has no layout: the strip's scroll range is faked, 0..100
     const tl = m.querySelector(".us-tl"); let sl = 0;
     Object.defineProperty(tl, "scrollLeft", { get: () => sl, set: v => { sl = Math.max(0, Math.min(100, v)); } });
@@ -133,9 +138,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("wheel at the strip's end scrolls the page", wheel(200) && sl === 100 && !wheel(10), sl);
     ok("horizontal wheel left to the browser", !wheel(1, 30) && sl === 100, sl);
   });
-  await run(Object.assign({}, mini, { tabs: ["media", "sys"], media: { svc: [["sonarr", "http://127.0.0.1:8989"]], sonarr: { ok: 0 } } }), (w, m) => {
-    m.querySelector('[data-tab="media"]').dispatchEvent(new w.Event("click", { bubbles: true }));
-    ok("media single service: no sub-tabs, keys hint, loopback link", !m.querySelector(".us-sub") && /API Sonarr недоступен/.test(m.textContent) && /SONARR_KEY/.test(m.textContent) && m.querySelector("a.us-open").href === "http://192.168.0.1:8989/", m.textContent);
+  await run(one("sonarr", "Sonarr", "Медиа", "http://127.0.0.1:8989", { ok: 0 }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("main card: one instance -> no sub-tabs, settings hint, loopback link", !m.querySelector(".us-sub,.us-mt") && /API Sonarr недоступен · проверьте настройки/.test(m.textContent) && m.querySelector("a.us-open").href === "http://192.168.0.1:8989/", m.textContent);
   });
   const tsData = { run: 1, up: 3600, mem: 51200, online: 2, total: 4, self: [["Running", "router", "100.64.0.1", "waw", "vps", 1, "192.168.1.0/24", ""]],
     list: [["old-pc", "windows", 0, 0, 0, "", "2024-08-29T23:44:19.1Z", 0, 0, 0, 0, ""],
@@ -155,14 +160,17 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("tailscale: needs login, health warning, no peers", /нужен вход: tailscale up/.test(m.textContent) && /some warning/.test(m.textContent) && !/Устройства/.test(m.textContent), m.textContent);
   });
   // KeenDNS web apps: links by their own names, only with the web UI opened by the router's domain name
-  const ndpData = Object.assign({}, mini, { tabs: ["agh", "sys"], svc: [["firc", 1, "666"], ["hrweb", 1, "2000"]], web: [],
+  const ndpData = Object.assign({}, mini, { tabs: ["sys"], svc: [["firc", 1, "666"], ["hrweb", 1, "2000"]], web: [],
     ndp: [["firc.r.example.net", "127.0.0.1", 666, 1], ["adguard.r.example.net", "10.0.0.2", 3000, 0], ["adguard.r.example.net", "10.0.0.5", 3000, 0],
-      ["other.elsewhere.net", "127.0.0.1", 2000, 1]], agh: { ok: 1, url: "http://10.0.0.5:3000" } });
+      ["other.elsewhere.net", "127.0.0.1", 2000, 1]],
+    types: [["agh", "AdGuard Home", "AdGuard", ["url"]]], inst: [["agh", "agh", "AdGuard Home", "http://10.0.0.5:3000", "", [], { ok: 1 }]] });
   await run(ndpData, (w, m) => {
+    gclick(w, m, "AdGuard");
     const hrefs = Array.from(m.querySelectorAll("a.us-lnk, a.us-open")).map(a => a.href).join(" ");
     ok("KeenDNS web apps: own service and a LAN host by their names", hrefs === "https://firc.r.example.net/ http://r.example.net:2000/ https://adguard.r.example.net/", hrefs);
   }, null, "https://r.example.net/dashboard");
   await run(ndpData, (w, m) => {
+    gclick(w, m, "AdGuard");
     const hrefs = Array.from(m.querySelectorAll("a.us-lnk, a.us-open")).map(a => a.href).join(" ");
     ok("KeenDNS web apps: by address in the LAN", hrefs === "http://192.168.0.1:666/ http://192.168.0.1:2000/ http://10.0.0.5:3000/", hrefs);
   });
@@ -175,9 +183,26 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     m.querySelector('[data-tab="awg"]').dispatchEvent(new w.Event("click", { bubbles: true }));
     ok("awg: no hint with the key", !/API-ключ/.test(m.textContent), m.textContent);
   });
-  await run(Object.assign({}, mini, { tabs: ["media", "sys"], media: { svc: [["immich", "http://10.0.0.5:2283"]], immich: { ok: null } } }), (w, m) => {
-    m.querySelector('[data-tab="media"]').dispatchEvent(new w.Event("click", { bubbles: true }));
-    ok("media before the first cron run: wait note", /появятся в течение минуты/.test(m.textContent));
+  await run(full, (w, m) => {
+    const tabs = Array.from(m.querySelectorAll(".us-tab")).map(b => b.textContent).join();
+    ok("main card: group tabs from instances", tabs === "telemt,AWG,firc,nfqws,Hydra,AdGuard,Медиа,Antiscan,Система", tabs);
+    gclick(w, m, "Медиа");
+    ok("main card: 7 sub-tabs named after instances", m.querySelectorAll(".us-mt").length === 7);
+  });
+  await run(Object.assign({}, full, { inst: full.inst.filter(i => i[0] === "qb") }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("main card: one instance in the group -> no sub-tabs", !m.querySelector(".us-mt") && !m.querySelector('[data-tab="grp:AdGuard"]') && m.querySelector(".us-grid"));
+  });
+  await run(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { hide: { page: [], main: ["telemt", "cron", "agh"] } }) }), (w, m) => {
+    const tabs = Array.from(m.querySelectorAll(".us-tab")).map(b => b.textContent).join();
+    ok("main card: hidden on main (tab, chip, instance)", tabs === "AWG,firc,nfqws,Hydra,Медиа,Antiscan,Система" && !m.querySelector('[data-tab="telemt"]') &&
+      !Array.from(m.querySelectorAll(".us-chip")).some(c => c.textContent.trim() === "cron") && m.querySelectorAll(".us-chip").length === 12, tabs);
+  });
+  await run(Object.assign({}, full, { inst: [["qb", "qb", "Торренты", "http://q", "", [], null], ["plex", "plex", "Plex", "http://p", "", [], { ok: 0 }]] }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("instance: no data yet", /Данные появятся в течение минуты/.test(m.textContent), m.textContent);
+    m.querySelector('[data-m="plex"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+    ok("instance: API down", /API Plex недоступен · проверьте настройки/.test(m.textContent), m.textContent);
   });
   const os = require("os"), cp = require("child_process");
   // C:\x -> /c/x for Git Bash: a drive colon would split PATH
@@ -693,7 +718,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const p = d.querySelector(".kd-page"), t = p && Array.from(p.querySelectorAll(".kd-ct")).map(x => x.textContent).join();
     ok("page: opens at /keendash over the hidden dashboard, its item active", p && w.location.pathname === "/keendash" && w.history.length === n + 1 && d.querySelector("ng-component").hasAttribute("data-kd-hidden") &&
       a.classList.contains(act) && !dash.classList.contains(act) && d.title === "Keenetic – Сервисы", d.title);
-    ok("page: a card per tab with data, media per service", t === "telemt,AWG,firc,nfqws,Hydra,AdGuard,qBittorrent,Plex,Sonarr,Radarr,Prowlarr,Overseerr,Immich,Antiscan,Система", t);
+    ok("page: a card per tab with data, media per service", t === "telemt,AWG,firc,nfqws,Hydra,AdGuard Home,Торренты,Plex,Sonarr,Radarr,Prowlarr,Overseerr,Immich,Antiscan,Система", t);
+    ok("page: card id = tab or instance id", Array.from(p.querySelectorAll(".kd-card")).map(x => x.getAttribute("data-id")).join() === "telemt,awg,firc,nfqws,hydra,agh,qb,plex,sonarr,radarr,prowlarr,overseerr,immich,ascn,sys");
     ok("page: no chips, tabs or update bar", p && !p.querySelector(".us-chip,.us-tab,.us-mt,.us-upd"));
     ok("page: card links", p && p.querySelector(".kd-card a.us-open").href === "http://192.168.0.1:8083/" && p.querySelectorAll(".kd-card")[3].querySelectorAll("a.us-open").length === 2);
     click(dash);
@@ -713,5 +739,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     d.title = "Keenetic Hopper – Системный монитор";
     ok("page: Angular's titles keep the page's own", d.title === "Keenetic Hopper – Сервисы", d.title);
   }, w => { w.__keendash = { p: "/keendash" }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(full) }); }, "http://192.168.0.1/dashboard");
+  // hidden on the page: no AWG card, the instance card (named after the instance) is there with the qBittorrent view
+  await run(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { hide: { page: ["awg", "agh"], main: [] } }) }), async w => {
+    const d = w.document;
+    d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
+    d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+    const p = d.querySelector(".kd-page"), t = Array.from(p.querySelectorAll(".kd-ct")).map(x => x.textContent).join(), qb = p.querySelector('[data-id="qb"]');
+    ok("page: hidden on page, instance cards", !/AWG|AdGuard/.test(t) && /Торренты/.test(t) && qb && /5\.0 МБ\/с/.test(qb.textContent) && /Stalled\.Thing/.test(qb.textContent), t);
+  }, null, "http://192.168.0.1/dashboard");
   console.log(res.join("\n")); process.exit(res.some(r => r.startsWith("FAIL")) ? 1 : 0);
 })();
