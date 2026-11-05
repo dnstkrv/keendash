@@ -176,6 +176,17 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Серверы");
     ok("kuma: a name with markup is text, no note for a short list", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>" && !m.querySelector(".us-note"), m.innerHTML);
   });
+  // kuma history: "N мс · P%", the percent alone for ms 0, "нет ответа · P%", a strip of cells (1 green, 0 red, 2 and 3 grey)
+  await run(km({ ok: 1, up: 3, down: 1, n: 5, list: [["Dn", 0, 0, 50, "1,0"], ["Pe", 2, 0, "", "2"], ["Z", 1, 0, 99.8, "1"], ["Y", 1, 20, 99.8, "3," + "1,".repeat(30) + "0"], ["Free", 1, 0, "", ""]] }), (w, m) => {
+    gclick(w, m, "Серверы");
+    const rows = Array.from(m.querySelectorAll(".us-row")), tx = rows.map(r => r.textContent), hs = Array.from(m.querySelectorAll(".us-hist"));
+    ok("kuma history: right side", tx.join(" / ") === "Dnнет ответа · 50% / Peожидание / Z99.8% / Y20 мс · 99.8% / Freeработает", tx.join(" / "));
+    ok("kuma history: strip classes, last 30 cells", hs.length === 4 && strip(hs[0]) === "us-hu,us-hd" && strip(hs[1]) === "us-hp" && hs[3].querySelectorAll("i").length === 30 && strip(hs[3]).split(",").pop() === "us-hd", hs.map(strip).join(" / "));
+  });
+  await run(km({ ok: 1, up: 0, down: 1, n: 1, list: [["<img src=x onerror=alert(1)>", 0, 0, 0, "0"]] }), (w, m) => {
+    gclick(w, m, "Серверы");
+    ok("kuma history: a name with markup is text next to a strip", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>" && m.querySelector(".us-r").textContent === "нет ответа · 0%" && !!m.querySelector(".us-hd"), m.innerHTML);
+  });
   // frigate: tiles Версия / Детектор / Занято, a row per camera "FPS n · детекций d/с", a camera with fps 0 is red "нет потока"
   const fg = (x) => one("frigate", "Frigate", "Дом", "http://10.0.0.5:5000", x);
   await run(fg({ ok: 1, ver: "0.14.1-test", inf: 22.9, det: "openvino", cam: [["front door", 5, 0.4, 0], ["garage", 0, 0, 1]], used: 128849018880, total: 1099511627776 }), (w, m) => {
@@ -709,6 +720,26 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const ko = collect("ext.d/kuma", "", "", { env: env.kuma });
       ok("ext.d/kuma: down first, then pending, maintenance, up by name; 20 rows; the name unescaped, | -> space", ko.trim() === kl.join(String.fromCharCode(10)), ko);
       ok("ext.d/kuma: key not printed, wrong key and no monitor_status -> ok 0", !/testkey/.test(ko) && collect("ext.d/kuma", "", "", { env: "URL=http://kuma.test KEY=bad " }).trim() === "ok 0" && collect("ext.d/kuma", "", "", { env: "URL=http://kuma.test/empty KEY=testkey " }).trim() === "ok 0");
+    }
+    {
+      // history: <tmp>/chk.<ID>.<key>, 24 h, percent of up among up/down, last 30 statuses; no ID -> no files and short rows
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-m-")), f = n => path.join(sd, n), rd = n => fs.existsSync(f(n)) ? fs.readFileSync(f(n), "utf8") : null, now = Math.floor(Date.now() / 1000);
+      const chks = () => fs.readdirSync(sd).filter(n => /^\.?chk\./.test(n)).sort(), kc = (u, id) => collect("ext.d/kuma", "", "", { state: sd, env: "KEENDASH_NOW=" + now + " ID=" + id + " URL=http://kuma.test" + u + " KEY=testkey " }).trim().split("\n");
+      fs.writeFileSync(f("chk.km.Host_01"), (now - 86410) + " 0\n" + (now - 100) + " 0\n" + (now - 50) + " 1\n"); fs.writeFileSync(f("chk.other.Host_09"), (now - 5) + " 1\n");
+      let l = kc("", "km");
+      ok("ext.d/kuma history: rows get percent and cells (down 0, up 100, pending has none)", l.includes('list|A "q" \\ b c|0|0|0|0') && l.includes("list|Host 01|1|101|66.6|0,1,1") && l.includes("list|Host 02|1|102|100|1") && l.includes("list|Beta Pending|2|0||2") && l.includes("list|Gamma Maint|3|0||3") && l.length === 24, l.join(" / "));
+      ok("ext.d/kuma history: a file per monitor (all 23), the old line dropped, a tricky name gets a sanitised key, another instance untouched",
+        chks().length === 24 && rd("chk.km.Host_01").trim().split("\n").length === 3 && rd("chk.km.A__q____b_c") === now + " 0\n" && rd("chk.other.Host_09") !== null, chks().join());
+      l = kc("/less", "km");
+      ok("ext.d/kuma history: runs grow the file, percent over both runs, a monitor that left loses its file",
+        l.join("\n") === 'ok 1\nup 2\ndown 0\nlist|A "q" \\ b c|1|0|50|0,1\nlist|Host 01|1|0|75|0,1,1,1\nn 2' && chks().join() === "chk.km.A__q____b_c,chk.km.Host_01,chk.other.Host_09", l.join(" / ") + " || " + chks().join());
+      fs.rmSync(sd, { recursive: true, force: true });
+      const s2 = fs.mkdtempSync(path.join(os.tmpdir(), "kd-m-"));
+      l = collect("ext.d/kuma", "", "", { state: s2, env: env.kuma }).trim().split("\n");
+      ok("ext.d/kuma: no ID -> no files, rows without percent and cells", !fs.readdirSync(s2).length && l.includes("list|Host 01|1|101"), l.join(" / "));
+      l = collect("ext.d/kuma", "", "", { state: s2, env: "ID='a/b' URL=http://kuma.test KEY=testkey " }).trim().split("\n");
+      ok("ext.d/kuma: a bad ID counts as none", !fs.readdirSync(s2).length && l.includes("list|Host 01|1|101"), l.join(" / "));
+      fs.rmSync(s2, { recursive: true, force: true });
     }
     ok("ext.d/jellyfin: string counts become numbers, zero counts skipped", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test/evil KEY=testkey " }).trim() === ["ok 1", "streams 0", "libs|Фильмы|movie|1"].join("\n"));
     ok("ext.d/sabnzbd: D:HH:MM:SS", /^t\|Осталось времени\|93784\|s$/m.test(collect("ext.d/sabnzbd", "", "", { env: "URL=http://sabnzbd.test/days KEY=testkey " })));

@@ -390,11 +390,15 @@
     if (busy) h += bar(x.pct, s[1]) + note("Прошло <b>" + fmtDur(x.el) + "</b> · Осталось <b>" + (x.left >= 0 ? fmtDur(x.left) : "—") + "</b>");
     return h + '<div class="us-grid">' + blk("Сопло", t(x.ext, x.ext_t), ser("ext"), WARN) + blk("Стол", t(x.bed, x.bed_t), ser("bed"), ACC) + "</div>";
   };
-  /* x.up, x.down: monitor counts; x.list = [[name, status 0 down|1 up|2 pending|3 maintenance, ms]] (20 at most); x.n: all monitors */
+  /* x.up, x.down: monitor counts; x.list = [[name, status 0 down|1 up|2 pending|3 maintenance, ms, percent up over 24 h or "", "1,0,2" last 30 statuses]] (20 at most); x.n: all monitors */
   VIEW.kuma = function (x) {
     var S = { 0: [BAD, "нет ответа"], 2: [WARN, "ожидание"], 3: [ACC, "обслуживание"] }, list = x.list || [];
     var h = '<div class="us-grid">' + blk("В работе", +x.up || 0, null) + blk("Упало", +x.down > 0 ? '<span style="color:' + BAD + '">' + +x.down + "</span>" : 0, null) + "</div>";
-    list.forEach(function (m) { var t = S[m[1]]; h += line(t ? t[0] : OK, esc(m[0]), t ? t[1] : (+m[2] || 0) + " мс"); });
+    list.forEach(function (m) {
+      var t = S[m[1]], p = m[3] == null || m[3] === "" ? "" : +m[3] + "%", s = "";
+      String(m[4] == null ? "" : m[4]).split(",").filter(Boolean).slice(-30).forEach(function (k) { s += '<i class="' + (k === "1" ? "us-hu" : k === "0" ? "us-hd" : "us-hp") + '"></i>'; });
+      h += line(t ? t[0] : OK, esc(m[0]), [t ? t[1] : +m[2] > 0 ? +m[2] + " мс" : "", p].filter(Boolean).join(" · ") || "работает") + (s ? '<div class="us-hist">' + s + "</div>" : "");
+    });
     return x.n > list.length ? h + note("и ещё " + (x.n - list.length)) : h;
   };
   /* x.ver, x.det + x.inf (detector, ms), x.used/x.total (bytes); x.cam = [[name, fps, detections/s, 1 when fps is 0]] */
@@ -642,7 +646,7 @@
       ".us-sec{font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.5;margin-top:2px}" +
       ".us-row{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.us-dim{opacity:.55}" +
       ".us-bar{height:6px;border-radius:3px;background:rgba(128,128,128,.25);overflow:hidden}.us-bar i{display:block;height:100%}" +
-      ".us-hist{display:flex;gap:2px;height:6px}.us-hist i{flex:1 1 0;max-width:12px;border-radius:1px}.us-hu{background:" + OK + "}.us-hd{background:" + BAD + "}" +
+      ".us-hist{display:flex;gap:2px;height:6px}.us-hist i{flex:1 1 0;max-width:12px;border-radius:1px}.us-hu{background:" + OK + "}.us-hd{background:" + BAD + "}.us-hp{background:" + OFF + "}" +
       ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +

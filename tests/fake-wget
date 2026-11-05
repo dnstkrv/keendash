@@ -135,6 +135,7 @@ case "$u" in
   *//proxmox.test/api2/json/cluster/resources) f=home/proxmox_resources ;;
   *//omv.test/*) case "$a" in *'"method":"login"'*) f=home/omv_login ;; *) case "$u" in */str/*) f=home/omv_info_str ;; */la/*) f=home/omv_info_la ;; *) f=home/omv_info ;; esac ;; esac ;;
   *//kuma.test/empty/metrics) f=home/kuma_empty.txt ;;
+  *//kuma.test/less/metrics) f=home/kuma_less.txt ;;
   *//kuma.test/metrics) f=home/kuma_metrics.txt ;;
   *//moonraker.test/idle/printer/*) f=media/moonraker_idle ;;
   *//moonraker.test/printer/*) f=media/moonraker_printing ;;
