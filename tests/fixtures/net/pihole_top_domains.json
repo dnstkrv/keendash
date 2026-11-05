@@ -1,0 +1,1 @@
+{"domains":[{"domain":"ads.example.com","count":812},{"domain":"tracker.example.net","count":455},{"domain":"<b>x</b>.example.org","count":301},{"domain":"telemetry.example.org","count":120},{"domain":"pixel.example.com","count":64}],"total_queries":52310,"blocked_queries":7840,"took":0.001}

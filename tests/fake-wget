@@ -63,6 +63,18 @@ case "$u" in
   *//frigate.test:8971/api/login) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"
     need "--no-check-certificate"; need '--post-data {"user":"admin","password":"p\"a\\ss"}'; echo "  Set-Cookie: frigate_token=abc; Path=/; HttpOnly" >&2 ;;
   *//frigate.test:8971/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "--no-check-certificate"; need "Cookie: frigate_token=abc" ;;
+  # Pi-hole v6: login only for the password p"a\ss (JSON-escaped in the body), it answers sid S1D-test; data routes need it in X-FTL-SID
+  # (/open/ has no password, /h500/ fails its history); DELETE /api/auth ends the session. Requests go to $LOG
+  *//pihole.test/*) printf 'pihole%s\n' "$a" >> "${LOG:-/dev/null}"
+    case "$u" in
+      */api/auth) case "$a" in
+        *" --method=DELETE "*) exit 0 ;;
+        *'--post-data {"password":"p\"a\\ss"}'*) ;;
+        *) echo '{"session":{"valid":false,"sid":null}}'; exit 8 ;; esac ;;
+      */h500/api/history) exit 8 ;;
+      */open/*) ;;
+      *) need "X-FTL-SID: S1D-test" ;;
+    esac ;;
   # Home Assistant: Bearer token only; every request goes to $LOG, an entity without a fixture is a 404
   *//ha.test/*) echo "ha$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
@@ -136,6 +148,11 @@ case "$u" in
   *//jellyfin.test/evil/Items/Counts) f=media/jellyfin_counts_evil ;;
   *//jellyfin.test/Items/Counts) f=media/jellyfin_counts ;;
   */api/server/statistics) f=media/immich_stats ;;
+  *//pihole.test/*api/auth) f=net/pihole_auth ;;
+  *//pihole.test/*api/stats/summary) f=net/pihole_summary ;;
+  *//pihole.test/*api/history) f=net/pihole_history ;;
+  *//pihole.test/*api/stats/top_domains*) f=net/pihole_top_domains ;;
+  *//pihole.test/*api/stats/top_clients*) f=net/pihole_top_clients ;;
   */rci/show/interface) f=rci/interface ;;
   */rci/show/ip/http/proxy) f=rci/proxy ;;
   */rci/) f=rci/system_name ;;

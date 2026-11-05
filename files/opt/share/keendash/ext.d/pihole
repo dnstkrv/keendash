@@ -1,0 +1,38 @@
+#!/bin/sh
+# name: Pi-hole
+# group: Сеть
+# fields: url pass
+# hint: Pi-hole v6. Пароль веб-интерфейса или пароль приложения (Settings → Web interface / API → App password); без пароля, если он в Pi-hole не задан
+# Pi-hole v6 stats from its REST API. With PASS a session: the sid from a JSON login body goes in X-FTL-SID on every request and is deleted at the end (seats are limited: 16 sessions, then 429 for everyone)
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; sid=
+esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+# a function, not exits: the logout below runs after every path
+pi() {
+  set --
+  if [ -n "${PASS:-}" ]; then
+    # a refused login answers sid null (the flattener prints it as the word null)
+    sid=$(J --header 'Content-Type: application/json' --post-data "{\"password\":\"$(esc "$PASS")\"}" "$B/api/auth" |
+      awk -F'\t' '$1 == "session.valid" { v = $2 } $1 == "session.sid" { s = $2 } END { if (v == "true" && s != "null") print s }')
+    [ -n "$sid" ] || { echo "ok 0"; return; }
+    set -- --header "X-FTL-SID: $sid"
+  fi
+  sm=$(J "$@" "$B/api/stats/summary" | awk "$LOAD"'END { if (V["queries.total"] == "") exit 1
+    print "q " V["queries.total"] + 0; print "b " V["queries.blocked"] + 0; print "act " V["clients.active"] + 0
+    print "rules " V["gravity.domains_being_blocked"] + 0; print "upd " V["gravity.last_update"] + 0 }') || { echo "ok 0"; return; }
+  echo "ok 1"; echo "$sm"
+  # 10-minute slots -> hourly sums (6 slots; fewer at the end)
+  J "$@" "$B/api/history" | awk "$LOAD"'END {
+    for (i = 0; V["history." i ".total"] != ""; i++) { h = int(i / 6); q[h] += V["history." i ".total"]; b[h] += V["history." i ".blocked"] }
+    if (!i) exit
+    for (k = 0; k <= h; k++) { sq = sq (k ? "," : "") q[k] + 0; sb = sb (k ? "," : "") b[k] + 0 }
+    print "sq " sq; print "sb " sb }'
+  J "$@" "$B/api/stats/top_domains?blocked=true&count=5" | awk "$LOAD"'END {
+    for (i = 0; i < 5 && V["domains." i ".domain"] != ""; i++) { d = V["domains." i ".domain"]; gsub(/[[:cntrl:]]/, " ", d); print "top|" d "|" V["domains." i ".count"] + 0 } }'
+  J "$@" "$B/api/stats/top_clients?count=5" | awk "$LOAD"'END {
+    for (i = 0; i < 5 && V["clients." i ".ip"] != ""; i++) {
+      n = V["clients." i ".name"]; if (n == "null") n = ""; gsub(/[[:cntrl:]]/, " ", n)
+      ip = V["clients." i ".ip"]; gsub(/[[:cntrl:]]/, " ", ip); print "cl|" n "|" ip "|" V["clients." i ".count"] + 0 } }'
+}
+pi
+[ -z "$sid" ] || dl -qO- --method=DELETE --header "X-FTL-SID: $sid" "$B/api/auth" >/dev/null 2>&1

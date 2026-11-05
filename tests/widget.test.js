@@ -189,6 +189,17 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Дом");
     ok("frigate: a camera name with markup is text, no detector and storage -> dashes", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>" && vals(m) === "1|—|—", vals(m));
   });
+  // pihole: AdGuard's card without the filter/latency note and the recent blocks: two graphs, top domains, clients, its own note
+  const ph = (x) => Object.assign(one("pihole", "Pi-hole", "Сеть", "http://10.0.0.5", x), { now: 1793438837 });
+  await run(ph({ ok: 1, q: 52310, b: 7840, act: 12, rules: 368606, upd: 1793431637, sq: Array(24).fill(100), sb: Array(24).fill(10),
+    top: [["<b>x</b>.example.org", 812], ["ads.example.com", 455]], cl: [["laptop", "192.168.1.20", 5321], ["", "192.168.1.99", 10]] }), (w, m) => {
+    gclick(w, m, "Сеть");
+    const rows = Array.from(m.querySelectorAll(".us-row")).map(r => r.textContent);
+    ok("pihole: two graph blocks, totals + blocked share", m.querySelectorAll(".us-blk").length === 2 && /Запросов за 24 ч52 310/.test(m.querySelector(".us-grid").textContent) && /7 840 · 15\.0%/.test(m.querySelector(".us-grid").textContent), m.querySelector(".us-grid").textContent);
+    ok("pihole: note", m.querySelector(".us-note").textContent === "Доменов в списках 368 606 · активных клиентов 12 · списки обновлены 2ч 0м назад", m.querySelector(".us-note").textContent);
+    ok("pihole: a domain with markup is text", !m.querySelector(".us-row b") && m.querySelector(".us-row .us-nm").textContent === "<b>x</b>.example.org", m.innerHTML);
+    ok("pihole: top domains, clients with IP tag, no recent blocks", rows.join(" / ") === "<b>x</b>.example.org812 / ads.example.com455 / laptop 192.168.1.205 321 / 192.168.1.9910" && !/Последние блокировки/.test(m.textContent), rows.join(" / "));
+  });
   // ha: a row per entity "label — state unit"; on/off in words, unavailable/unknown grey, nothing -> a dash; no rows -> a note
   const ha = (x) => one("ha", "Home Assistant", "Дом", "http://10.0.0.5:8123", x);
   await run(ha({ ok: 1, e: [["Температура", 23.5, "°C"], ["Свет", "on", ""], ["Розетка", "off", ""], ["Датчик", "unavailable", ""], ["Дверь", "unknown", ""], ["Нет", "", ""], ["<img src=x onerror=alert(1)>", "<b>x</b>", "<i>"]] }), (w, m) => {
@@ -650,7 +661,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       spoolman: "URL=http://spoolman.test ", grafana: "URL=http://grafana.test TOKEN=testkey ", glances: "URL=http://glances.test USER= PASS= ",
       portainer: "URL=http://portainer.test KEY=testkey ", truenas: "URL=http://truenas.test KEY=testkey ",
       proxmox: "URL=http://proxmox.test USER='root@pam!kd' KEY=testkey ", omv: "URL=http://omv.test USER=admin PASS='p\"a\\ss' ",
-      transmission: "URL=http://transmission.test USER= PASS= ", deluge: "URL=http://deluge.test PASS='p\"a\\ss' "
+      pihole: "URL=http://pihole.test PASS='p\"a\\ss' ", transmission: "URL=http://transmission.test USER= PASS= ", deluge: "URL=http://deluge.test PASS='p\"a\\ss' "
     };
     const want = {
       qb: ["ok 1", "~dl 5242880", "~up 524288", "list|Example.Show.S01E01.1080p.mkv|420|4194304|600", 'list|Big   Pipe "Quoted" Movie 2160p|900|1048576|3600', "list|Stalled.Thing|100|0|8640000", "n 3"],
@@ -661,6 +672,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       overseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
       moonraker: ["ok 1", "state printing", "file benchy.gcode", "pct 40", "el 1200", "left 1800", "~ext 209", "ext_t 215", "~bed 59", "bed_t 60"],
       frigate: ["ok 1", "ver 0.14.1-test", "inf 22.9", "det openvino", "cam|front door|5|0.4|0", "cam|garage|0|0|1", "used 128849018880", "total 1099511627776"],
+      pihole: ["ok 1", "q 52310", "b 7840", "act 12", "rules 368606", "upd 1793431637",
+        "sq 75,111,147,183,219,255,291,327,363,399,435,471,507,543,579,615,651,687,723,759,795,831,867,903", "sb 10,11,12,13,14,10,11,12,13,14,10,11,12,13,14,10,11,12,13,14,10,11,12,13",
+        "top|ads.example.com|812", "top|tracker.example.net|455", "top|<b>x</b>.example.org|301", "top|telemetry.example.org|120", "top|pixel.example.com|64",
+        "cl|laptop|192.168.1.20|5321", "cl|phone|192.168.1.31|2210", "cl|vpn laptop|10.8.0.2|900", "cl||192.168.1.99|10"],
       ha: ["ok 1", "e|Temp|23.5|°C", "e|Hall|on|", "e|Gone||", "e|Odd|a b c| %"],
       jellyfin: ["ok 1", "list|alice|Example Show · Pilot|50|paused", "list|bob|Example Movie|10|playing", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23", "libs|Эпизоды|episode|500", "libs|Музыка|music|12"],
       jellyseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
@@ -722,6 +737,23 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/frigate: user -> JSON-escaped login, then stats with the cookie", lo === want.frigate.join("\n") && ll.length === 2 && / --no-check-certificate /.test(ll[0]) && / --no-check-certificate /.test(ll[1]) && ll[0].endsWith(' --post-data {"user":"admin","password":"p\\"a\\\\ss"} http://frigate.test:8971/api/login ') && / Cookie: frigate_token=abc /.test(ll[1]) && ll[1].endsWith(" http://frigate.test:8971/api/stats "), lg());
       ok("ext.d/frigate: password not printed", !/a\\+ss/.test(lo));
       ok("ext.d/frigate: wrong password and no answer -> ok 0", fr("URL=http://frigate.test:8971 USER=admin PASS=x ") === "ok 0" && fr("URL=http://nohost.test USER= PASS= ") === "ok 0");
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
+    // pihole: JSON-escaped login, the sid in X-FTL-SID, the session is deleted at the end of every run that logged in
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-h-")), lg = () => fs.readFileSync(path.join(sd, "log"), "utf8"), ll = () => lg().split("\n").filter(Boolean);
+      const run = (e) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/pihole", "", "", { state: sd, env: e }).trim(); };
+      const dels = () => ll().filter(l => / --method=DELETE /.test(l));
+      const po = run(env.pihole), l1 = ll();
+      ok("ext.d/pihole: login, 4 requests with the sid, then one DELETE with it", po === want.pihole.join("\n") && l1.length === 6 && l1[0].endsWith(' --post-data {"password":"p\\"a\\\\ss"} http://pihole.test/api/auth ') && !/X-FTL-SID/.test(l1[0]) &&
+        l1.slice(1, 5).every(l => / --header X-FTL-SID: S1D-test /.test(l) && !/DELETE/.test(l)) && dels().length === 1 && l1[5] === "pihole -qO- --method=DELETE --header X-FTL-SID: S1D-test http://pihole.test/api/auth ", lg());
+      ok("ext.d/pihole: sid and password not printed", !/S1D-test|a\\+ss/.test(po));
+      const op = run("URL=http://pihole.test/open PASS= ");
+      ok("ext.d/pihole: no password -> no login, no header, no DELETE", op === want.pihole.join("\n") && ll().length === 4 && !/X-FTL-SID|api\/auth|DELETE/.test(lg()), lg());
+      const h5 = run("URL=http://pihole.test/h500 PASS='p\"a\\ss' ");
+      ok("ext.d/pihole: history fails -> no graphs, the rest stays, DELETE still sent once", h5 === want.pihole.filter(l => !/^s[qb] /.test(l)).join("\n") && dels().length === 1, lg());
+      ok("ext.d/pihole: wrong password -> ok 0, no data requests, no DELETE", run("URL=http://pihole.test PASS=x ") === "ok 0" && ll().length === 1 && !dels().length, lg());
+      ok("ext.d/pihole: no answer -> ok 0", run("URL=http://nohost.test PASS= ") === "ok 0");
       fs.rmSync(sd, { recursive: true, force: true });
     }
     // proxmox: token header and --no-check-certificate (only here); omv: JSON-escaped login body, then the session cookie

@@ -293,29 +293,37 @@
     return h;
   }
   var RKIND = { c: "в кино", d: "цифровой релиз", p: "на диске" };
+  /* AdGuard Home and Pi-hole: the two graphs, the note nt, top blocked domains, clients */
+  function dnsView(x, nt) {
+    var sq = [].concat(x.sq || []), sb = [].concat(x.sb || []);
+    /* the stats period: 24 hourly points by default, 168 for a 7-day interval, daily points for longer ones */
+    var per = x.days ? sq.length + " дн" : sq.length > 24 && sq.length % 24 === 0 ? sq.length / 24 + " дн" : sq.length + " ч";
+    var h = '<div class="us-grid">' + blk("Запросов за " + per, fmtN(x.q), sq, ACC) +
+      blk("Заблокировано", fmtN(x.b) + (x.q ? " · " + (x.b / x.q * 100).toFixed(1) + "%" : ""), sb, BAD) + "</div>" + note(nt);
+    if ((x.top || []).length) {
+      h += sec("Заблокировано чаще всего");
+      x.top.forEach(function (t) { h += line(BAD, esc(t[0]), fmtN(t[1])); });
+    }
+    if ((x.cl || []).length) {
+      h += sec("Активные клиенты");
+      x.cl.forEach(function (c) { h += line(OK, c[0] ? esc(c[0]) + ' <span class="us-tag">' + esc(c[1]) + "</span>" : esc(c[1]), fmtN(c[2])); });
+    }
+    return h;
+  }
   /* view of a service type: (its data, ser(key) -> the series "<id>.<key>", status) -> html */
   var VIEW = {
     agh: function (x, ser, d) {
-      var sq = [].concat(x.sq || []), sb = [].concat(x.sb || []);
-      /* the stats period: 24 hourly points by default, 168 for a 7-day interval, daily points for longer ones */
-      var per = x.days ? sq.length + " дн" : sq.length > 24 && sq.length % 24 === 0 ? sq.length / 24 + " дн" : sq.length + " ч";
-      var h = '<div class="us-grid">' + blk("Запросов за " + per, fmtN(x.q), sq, ACC) +
-        blk("Заблокировано", fmtN(x.b) + (x.q ? " · " + (x.b / x.q * 100).toFixed(1) + "%" : ""), sb, BAD) + "</div>";
-      h += note("Среднее время ответа <b>" + x.ms + " мс</b> · фильтров <b>" + x.fon + " из " + x.fall + "</b> · правил <b>" + fmtN(x.rules) + "</b>" +
+      var h = dnsView(x, "Среднее время ответа <b>" + x.ms + " мс</b> · фильтров <b>" + x.fon + " из " + x.fall + "</b> · правил <b>" + fmtN(x.rules) + "</b>" +
         (x.upd ? " · обновлены <b>" + fmtDur((d.now || Date.now() / 1000) - x.upd) + "</b> назад" : ""));
-      if ((x.top || []).length) {
-        h += sec("Заблокировано чаще всего");
-        x.top.forEach(function (t) { h += line(BAD, esc(t[0]), fmtN(t[1])); });
-      }
-      if ((x.cl || []).length) {
-        h += sec("Активные клиенты");
-        x.cl.forEach(function (c) { h += line(OK, c[0] ? esc(c[0]) + ' <span class="us-tag">' + esc(c[1]) + "</span>" : esc(c[1]), fmtN(c[2])); });
-      }
       if ((x.last || []).length) {
         h += sec("Последние блокировки");
         x.last.forEach(function (c) { h += line(WARN, esc(c[1]), esc(c[2]) + " · " + hhmm(c[0])); });
       }
       return h;
+    },
+    pihole: function (x, ser, d) {
+      return dnsView(x, "Доменов в списках <b>" + fmtN(x.rules) + "</b> · активных клиентов <b>" + fmtN(x.act) + "</b>" +
+        (x.upd ? " · списки обновлены <b>" + fmtDur((d.now || Date.now() / 1000) - x.upd) + "</b> назад" : ""));
     },
     qb: function (x, ser) {
       var h = '<div class="us-grid">' + blk("Загрузка", fmtBytes(x.dl) + "/с", ser("dl"), ACC) + blk("Отдача", fmtBytes(x.up) + "/с", ser("up"), OK) + "</div>";
