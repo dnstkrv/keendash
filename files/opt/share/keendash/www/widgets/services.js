@@ -280,7 +280,7 @@
   /* Sonarr / Radarr: queue, missing, the coming week; cal(c) -> [left, right, dim] */
   function arrView(x, what, cal) {
     var h = line(x.queue ? ACC : OFF, "В очереди", x.queue);
-    if (x.missing != null) h += line(x.missing ? WARN : OK, "Не скачано " + what, fmtN(x.missing));
+    if (x.missing != null) h += line(x.missing ? WARN : OK, "Не скачано " + what, fmtN(+x.missing || 0));
     if ((x.list || []).length) {
       h += sec("Загружается");
       x.list.forEach(function (q) { h += line(ACC, esc(q[0]), q[1] + "%" + (q[2] >= 0 ? " · " + fmtDur(q[2]) : "")); });
@@ -826,20 +826,23 @@
     if (at < 0) out[col].push(id);
     return out;
   }
-  /* pendingCols: the layout just dropped, shown until status.json carries its rev; pageNote: why saving it failed */
-  var pendingCols = null, pendingRev = "", pageNote = "";
+  /* pendingCols: the layout just dropped, shown until status.json carries its rev (or another one, or 45 s pass: pendingFrom
+   * is the rev it was dropped over, pendingAt the time); pageNote: why saving it failed */
+  var pendingCols = null, pendingRev = "", pendingFrom, pendingAt = 0, pageNote = "";
   function renderPage() {
     var main = page && page.parentNode, d = lastData;
     if (!main || dragging) return;
     var top = main.scrollTop, wrap = document.createElement("div"), cols = [];
     page.innerHTML = '<div class="kd-ph"><h1>' + TITLE + '</h1><button type="button" class="kd-btn kd-set"' + (d ? "" : " disabled") + '>Настройки</button></div>';
     if (!d) { page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
-    if (pendingCols && (d.cfg || {}).rev === pendingRev) pendingCols = null;
+    var cf = d.cfg || {};
+    if (pendingCols && cf.rev === pendingRev && cf.err) pageNote = "Не удалось сохранить раскладку: " + cf.err;
+    if (pendingCols && (cf.rev === pendingRev || cf.rev !== pendingFrom || Date.now() - pendingAt > 45000)) pendingCols = null;
     if (pageNote) page.insertAdjacentHTML("beforeend", note(esc(pageNote)));
     /* columns as on the dashboard: the saved layout (as many as fit), else each card into the shortest one */
     var saved = pendingCols || (d.cfg || {}).cols || [], seen = {}, cards = {}, fit;
     wrap.className = "kd-cols"; page.appendChild(wrap);
-    var n = Math.max(1, Math.floor((wrap.clientWidth + 24) / 444));
+    var n = Math.min(6, Math.max(1, Math.floor((wrap.clientWidth + 24) / 444)));
     fit = saved.length ? fitCols(saved, n) : [];
     for (var i = fit.length || n; i > 0; i--) cols.push(wrap.appendChild(document.createElement("div")));
     cols.forEach(function (c) { c.className = "kd-col"; });
@@ -892,12 +895,23 @@
         function cid(k) { return k && k.getAttribute("data-id"); }
         while (prev === r) prev = prev.previousElementSibling;
         while (next === r) next = next.nextElementSibling;
-        base = pendingCols || ((lastData || {}).cfg || {}).cols;
-        if (!base || !base.length) base = cs.map(function (c) { return Array.prototype.map.call(c.querySelectorAll(".kd-card"), cid); });
+        var cf = (lastData || {}).cfg || {};
         if (e.type === "pointercancel") col = -1;
         dragging = false;
         if (col < 0) { renderPage(); return; }
-        pendingCols = moveCard(base, cid(r), cid(prev), cid(next), col); pendingRev = rev; pageNote = "";
+        if (!cf.vol) { pageNote = "Не найден диск Entware"; renderPage(); return; }
+        base = pendingCols || cf.cols;
+        if (!base || !base.length) {
+          /* no saved layout: at least 3 columns (a wide screen shows them all), each card into the shortest by its height, as renderPage does */
+          var hs = [], hh = {};
+          base = []; for (var k = Math.max(cs.length, 3); k > 0; k--) { base.push([]); hs.push(0); }
+          Array.prototype.forEach.call(page.querySelectorAll(".kd-card"), function (c) { hh[cid(c)] = c.offsetHeight; });
+          pageCards(lastData).forEach(function (c) {
+            var s = 0; hs.forEach(function (h, j) { if (h < hs[s]) s = j; });
+            base[s].push(c[3]); hs[s] += hh[c[3]] || 0;
+          });
+        }
+        pendingCols = moveCard(base, cid(r), cid(prev), cid(next), col); pendingRev = rev; pendingFrom = cf.rev; pendingAt = Date.now(); pageNote = "";
         renderPage();
         upload("keendash 1 " + rev + "\n" + pendingCols.map(function (c, i) { return ("col " + i + " " + c.join(" ")).replace(/ $/, ""); }).join("\n") + "\nend\n", rev).then(null, function (m) {
           if (pendingRev !== rev) return;
@@ -944,6 +958,7 @@
     var o = instOf(d).filter(function (i) { return i.id === e.id; })[0], out = [];
     ["name"].concat(typeOf(d, e.type).fields).forEach(function (f) {
       var v = fv(e, f);
+      if (f === "url") v = v.trim();
       if (!o || (SECRET.test(f) ? v : v !== o[f])) out.push([f, v, !o]);
     });
     return out;

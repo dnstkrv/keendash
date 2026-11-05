@@ -277,7 +277,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     r.rm();
 
     const bad = [["set qb-2 foo x"], ["add QB qb"], ["add x nosuch"], ["set qb-2 url ftp://h"], ["set qb-2 user " + "a".repeat(513)], ["set qb-2 user a\x01b"],
-      ["set qb-2 name a|b"], ["set nope name x"], ["add y qb", "set y name Y"], ["bogus"]];
+      ["set qb-2 name a|b"], ["set qb-2 url http://h|x"], ["set qb-2 user a|b"], ["col 6 a"], ["set pl name " + "a".repeat(65)], ["set nope name x"], ["add y qb", "set y name Y"], ["bogus"]];
     const fails = [];
     bad.concat([null]).forEach(l => {
       const f = Object.assign({ "var/inbox/r2.txt": l ? msg("r2", l) : "keendash 2 r2\nend\n" }, base);
@@ -752,6 +752,12 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const p = d.querySelector(".kd-page"), t = Array.from(p.querySelectorAll(".kd-ct")).map(x => x.textContent).join(), qb = p.querySelector('[data-id="qb"]');
     ok("page: hidden on page, instance cards", !/AWG|AdGuard/.test(t) && /Торренты/.test(t) && qb && /5\.0 МБ\/с/.test(qb.textContent) && /Stalled\.Thing/.test(qb.textContent), t);
   }, null, "http://192.168.0.1/dashboard");
+  // a hostile API answer in "missing" is shown as a number, never as markup
+  await run(Object.assign({}, full, { inst: full.inst.map(i => i[0] === "sonarr" ? i.slice(0, 6).concat([Object.assign({}, i[6], { missing: "<img src=x onerror=1>" })]) : i) }), (w, m) => {
+    m.querySelector('[data-tab="grp:Медиа"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+    m.querySelector('[data-m="sonarr"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+    ok("media sonarr: missing is coerced to a number", !m.querySelector("img") && /Не скачано серий0/.test(m.textContent), m.innerHTML.slice(0, 300));
+  });
   // settings dialog: the button on the page, search, secrets never shown, the message built from a draft, saving through the file manager
   const URL0 = "http://192.168.0.1/dashboard", ev = (w, t) => new w.Event(t, { bubbles: true });
   const openDlg = async w => {
@@ -805,6 +811,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       "keendash 1 r\ndel qb\nadd qb-2 qb\nset qb-2 name qBittorrent\nset qb-2 url http://h:1\nend\n");
     const hid = Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { hide: { page: ["awg"], main: [] } }) });
     ok("buildMsg: hide both scopes, show for an unchecked box", W.buildMsg("r", hid, dr([qb], [], ["telemt"], ["cron"])) === "keendash 1 r\nhide page telemt\nshow page awg\nhide main cron\nend\n");
+  }, null, URL0);
+  await run(full, (w, m) => {
+    const W = w.__servicesWidget, dr = e => ({ inst: [e], del: [], hide: { page: [], main: [] } });
+    ok("buildMsg: url is trimmed", W.buildMsg("r", full, dr({ id: "qb-2", type: "qb", name: "N", url: "  http://h:1 \t", user: "", vals: {} })) === "keendash 1 r\nadd qb-2 qb\nset qb-2 name N\nset qb-2 url http://h:1\nend\n");
   }, null, URL0);
   // fetch stub of the firmware file manager: /rci/put -> port, /fui -> done; status shows the rev after the upload
   const fm = (fcalls, o) => w => {
@@ -938,8 +948,64 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fire("pointerdown", 10); fire("pointermove", 600); fire("pointerup", 600); await wait(200);
     const put = post(fcalls, /\/rci\/put$/), msg = post(fcalls, /\/fui$/)[0] && post(fcalls, /\/fui$/)[0][1].body.get("Filedata");
     const txt = msg ? await new Promise(r => { const f = new w.FileReader(); f.onload = () => r(f.result); f.readAsText(msg); }) : "";
-    ok("page: drop saves the layout", put.length === 1 && /^keendash 1 [a-z0-9]{12}\ncol 0 awg /.test(txt) && /\ncol 1 telemt\nend\n$/.test(txt) && !/col 0 [^\n]*telemt/.test(txt), txt);
+    ok("page: drop saves the layout", put.length === 1 && /^keendash 1 [a-z0-9]{12}\ncol 0 awg /.test(txt) && /\ncol 1 telemt\ncol 2\nend\n$/.test(txt) && !/col 0 [^\n]*telemt/.test(txt), txt);
     ok("page: dropped card shows in its new column", p.querySelectorAll(".kd-col")[1].querySelector('[data-id="telemt"]'));
+  }, fm(fcalls, {}), URL0);
+  // drop helper of the layout tests: moves telemt to the column at x, returns the page
+  const dropTelemt = async (w, x) => {
+    const p = await openPage(w), cols = Array.from(p.querySelectorAll(".kd-col"));
+    cols.forEach((c, i) => { c.getBoundingClientRect = () => ({ left: i * 450, top: 0, width: 400, height: 0, right: i * 450 + 400, bottom: 0 }); });
+    const h = p.querySelector('[data-id="telemt"] .kd-drag'), fire = (t, cx) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = cx; e.clientY = 5; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    fire("pointerdown", 10); fire("pointermove", x); fire("pointerup", x); await wait(200);
+    return p;
+  };
+  const inCol = (p, k) => !!p.querySelectorAll(".kd-col")[k] && !!p.querySelectorAll(".kd-col")[k].querySelector('[data-id="telemt"]');
+  await run(full, async w => {
+    const d = w.document; d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
+    Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { get: () => 4000 });
+    d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+    const p = d.querySelector(".kd-page");
+    ok("page: at most 6 columns on a wide screen", p.querySelectorAll(".kd-col").length === 6, p.querySelectorAll(".kd-col").length);
+  }, null, URL0);
+  fcalls = [];
+  await run(full, async w => {
+    const p = await dropTelemt(w, 600);
+    await w.__servicesWidget.update();
+    ok("page: failed save shows the error and drops the layout", inCol(p, 0) && !inCol(p, 1) && /Не удалось сохранить раскладку: строка 1: неверный номер колонки/.test(p.textContent), p.textContent.slice(0, 200));
+  }, fm(fcalls, { err: "строка 1: неверный номер колонки" }), URL0);
+  fcalls = [];
+  await run(full, async w => {
+    const p = await dropTelemt(w, 600);
+    ok("page: no Entware disk -> nothing uploaded, said so", !post(fcalls, /rci|fui/).length && /Не найден диск Entware/.test(p.textContent) && !inCol(p, 1), p.textContent.slice(0, 200));
+  }, w => (u, i) => { fcalls.push([u, i || {}]); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { vol: "" }) })) }); }, URL0);
+  // the upload hangs: the dropped layout stays until another rev shows in status.json or 45 s pass
+  let seen = "r1";
+  const hang = w => u => /rci/.test(u) ? new Promise(() => {}) : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { rev: seen }) })) });
+  await run(full, async w => {
+    const p = await dropTelemt(w, 600), kept = inCol(p, 1);
+    seen = "other"; await w.__servicesWidget.update();
+    ok("page: dropped layout is forgotten when another rev appears", kept && inCol(p, 0) && !inCol(p, 1), kept + " " + inCol(p, 0));
+  }, hang, URL0);
+  seen = "r1";
+  await run(full, async w => {
+    const p = await dropTelemt(w, 600), kept = inCol(p, 1), now = w.Date.now;
+    await w.__servicesWidget.update(); const still = inCol(p, 1);
+    w.Date.now = () => now() + 46000; await w.__servicesWidget.update();
+    ok("page: dropped layout is forgotten after 45 s", kept && still && inCol(p, 0) && !inCol(p, 1), kept + " " + still);
+  }, hang, URL0);
+  // no saved layout, one visible column: the drop still saves three columns
+  fcalls = [];
+  await run(full, async w => {
+    const d = w.document; d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
+    Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { get: () => 400 });
+    d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+    const p = d.querySelector(".kd-page");
+    p.querySelector(".kd-col").getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 0, right: 400, bottom: 0 });
+    const h = p.querySelector('[data-id="telemt"] .kd-drag'), fire = (t, y) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = 10; e.clientY = y; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    fire("pointerdown", 5); fire("pointermove", 300); fire("pointerup", 300); await wait(200);
+    const f = post(fcalls, /\/fui$/)[0], blob = f && f[1].body.get("Filedata");
+    const txt = blob ? await new Promise(r => { const fr = new w.FileReader(); fr.onload = () => r(fr.result); fr.readAsText(blob); }) : "";
+    ok("page: first drop on a narrow screen saves 3 columns", p.querySelectorAll(".kd-col").length === 1 && /\ncol 0 /.test(txt) && /\ncol 1(\n|$)/.test(txt) && /\ncol 2(\n|$)/.test(txt) && !/\ncol 3/.test(txt), txt);
   }, fm(fcalls, {}), URL0);
   // the volume comes from the freshest status, not the snapshot the dialog opened with
   fcalls = []; let novol = true;
