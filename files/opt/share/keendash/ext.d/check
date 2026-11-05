@@ -1,0 +1,60 @@
+#!/bin/sh
+# name: Доступность сайтов
+# group: Доступность
+# fields: hosts every
+# hint: Домены или адреса http(s)://, через пробел. Доступен — любой HTTP-ответ
+# Up to 20 addresses in parallel, any HTTP answer is "up". HOSTS comes from the browser: awk reads it from ENVIRON and re-checks every
+# element, the address is one wget argument after the options, nothing is executed. History per address: <tmp>/chk.<ID>.<key>, lines
+# "<epoch> <1|0>" of the last 24 h (ID is the instance, from bin/ext). The last 30 cells are comma separated: keendashd would turn "0011" into a number
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+T=${KEENDASH_TMP:-/tmp/keendash}
+case "${ID:-}" in ""|*[!a-z0-9-]*) echo "ok 0"; exit ;; esac
+# key|as entered|url for each valid element; key = the address with all but [A-Za-z0-9.-] turned into _ (120 characters at most, the same key is the same address)
+list=$(awk 'BEGIN {
+  n = split(ENVIRON["HOSTS"], A, /[ ,]+/)
+  for (i = 1; i <= n && c < 20; i++) {
+    h = A[i]
+    if (h ~ /[[:cntrl:]]/ || h ~ /^-/) continue
+    if (h ~ /^[A-Za-z0-9.-]+(:[0-9][0-9]?[0-9]?[0-9]?[0-9]?)?$/) u = "https://" h "/"
+    else if (h ~ "^https?://[^ \t|\047\"\\\\$`<>]+$") u = h
+    else continue
+    k = h; gsub(/[^A-Za-z0-9.-]/, "_", k); k = substr(k, 1, 120)
+    if (k in S) continue
+    S[k] = 1; c++; print k "|" h "|" u
+  } }')
+up() { read -r u _ < "${KEENDASH_UPTIME:-/proc/uptime}"; echo "${u:-0}"; }
+rm -f "$T"/.chk."$ID".*
+keep=" " nn=0
+while IFS='|' read -r k h u; do
+  [ -n "$k" ] || continue
+  keep="$keep$k "; nn=$((nn + 1))
+  ( t0=$(up); o=$(dl -S -O /dev/null --max-redirect=0 "$u" 2>&1); t1=$(up)
+    c=$(printf '%s\n' "$o" | sed -n 's|^ *HTTP/[0-9.]* \([1-5][0-9][0-9]\).*|\1|p' | tail -n 1)
+    echo "${c:-0} $t0 $t1" > "$T/.chk.$ID.$k.now" ) </dev/null &
+done <<EOF
+$list
+EOF
+# addresses that left the list lose their history
+for f in "$T"/chk."$ID".*; do
+  [ -f "$f" ] || continue
+  k=${f#"$T/chk.$ID."}
+  case "$keep" in *" $k "*) ;; *) rm -f "$f" ;; esac
+done
+[ "$nn" -gt 0 ] || { echo "ok 0"; exit; }
+wait
+echo "ok 1"
+echo "up $(cat "$T"/.chk."$ID".*.now 2>/dev/null | grep -vc '^0 ')"
+echo "n $nn"
+now=$(date +%s)
+while IFS='|' read -r k h u; do
+  [ -n "$k" ] || continue
+  c= t0= t1=; read -r c t0 t1 2>/dev/null < "$T/.chk.$ID.$k.now"
+  ms=$(awk -v a="${t0:-0}" -v b="${t1:-0}" 'BEGIN { printf "%d", (b - a) * 1000 + 0.5 }')
+  f=$T/chk.$ID.$k; v=1; [ "${c:-0}" != 0 ] || v=0
+  { cat "$f" 2>/dev/null; echo "$now $v"; } | awk -v n="$now" '$1 + 0 > n - 86400 && $2 ~ /^[01]$/' > "$T/.chk.$ID.$k.t" && mv "$T/.chk.$ID.$k.t" "$f"
+  echo "h|$h|${c:-0}|$ms|$(awk '$2 == 1 { u++ } { c[NR] = $2 }
+    END { b = NR > 30 ? NR - 29 : 1; for (i = b; i <= NR; i++) s = s (i > b ? "," : "") c[i]; printf "%d|%s", NR ? int(u * 100 / NR) : 0, s }' "$f")"
+done <<EOF
+$list
+EOF
+rm -f "$T"/.chk."$ID".*

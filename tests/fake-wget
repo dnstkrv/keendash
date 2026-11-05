@@ -14,6 +14,14 @@ case "$u" in
     [ -z "$t" ] || [ "$t" = Tk0123456789abcdefghijklmnopqrstuvWXYZ ] || { printf '  HTTP/1.1 403 Forbidden\n  X-Detail: 0x2312, not identified\n' >&2; exit 8; } ;;
   # awg-manager with its login on (AWG_KEY): only its API key passes. Requests go to $LOG
   http://127.0.0.1:2222/api/*) echo "awg /${u#*/api/}" >> "${LOG:-/dev/null}"; [ -z "$AWG_KEY" ] || need "Authorization: Bearer $AWG_KEY" ;;
+  # availability check: up.test answers 200, bad.test 503, down.test not at all. Requests go to $LOG; UPBUMP moves the fake uptime file by 120 ms
+  *//up.test[:/]* | *//bad.test[:/]* | *//down.test[:/]*)
+    echo "check$a" >> "${LOG:-/dev/null}"
+    case "$u" in
+      *//up.test*) [ -z "$UPBUMP" ] || echo "1000.12 0.00" > "$KEENDASH_UPTIME"; printf '  HTTP/1.1 200 OK\n  Server: up\n' >&2; exit 0 ;;
+      *//bad.test*) printf '  HTTP/1.1 503 Service Unavailable\n' >&2; exit 8 ;;
+      *) echo "wget: unable to resolve host address" >&2; exit 4 ;;
+    esac ;;
   # cookie only for admin / p&s=s, percent-encoded
   */api/v2/auth/login) need "username=%61%64%6d%69%6e&password=%70%26%73%3d%73"; echo "  Set-Cookie: SID=test123; HttpOnly; path=/" >&2; exit 0 ;;
   */api/v2/*) need "Cookie: SID=test123" ;;

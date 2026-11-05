@@ -358,6 +358,18 @@
         x.list.forEach(function (u) { h += line(ACC, esc(u[0]), fmtN(u[1]) + " фото · " + fmtN(u[2]) + " видео · " + fmtBytes(u[3])); });
       }
       return h;
+    },
+    /* x.h = [[address, code (0 = no answer), ms, percent over 24 h, "1,0,1" last cells]]; a one-cell history comes as a number */
+    check: function (x) {
+      var up = +x.up || 0, n = +x.n || 0, v = up + " из " + n;
+      var h = '<div class="us-grid">' + blk("Доступно", up < n ? '<span style="color:' + BAD + '">' + v + "</span>" : v, null) + "</div>";
+      (x.h || []).forEach(function (r) {
+        var c = +r[1] || 0, s = "";
+        String(r[4] == null ? "" : r[4]).split(",").filter(Boolean).slice(-30).forEach(function (k) { s += '<i class="' + (k === "1" ? "us-hu" : "us-hd") + '"></i>'; });
+        h += line(c ? (c >= 500 ? WARN : OK) : BAD, esc(String(r[0]).replace(/^https:\/\//, "").replace(/\/$/, "")),
+          (c ? c + " · " + (+r[2] || 0) + " мс" : "нет ответа") + " · " + (+r[3] || 0) + "%") + '<div class="us-hist">' + s + "</div>";
+      });
+      return h;
     }
   };
   VIEW.jellyfin = VIEW.plex; VIEW.jellyseerr = VIEW.overseerr;
@@ -585,6 +597,7 @@
       ".us-spark{width:100%;height:44px;display:block}.us-empty{font-size:12px;opacity:.5;line-height:44px}" +
       ".us-sec{font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.5;margin-top:2px}" +
       ".us-row{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.us-dim{opacity:.55}" +
+      ".us-hist{display:flex;gap:2px;height:6px}.us-hist i{flex:1 1 0;max-width:12px;border-radius:1px}.us-hu{background:" + OK + "}.us-hd{background:" + BAD + "}" +
       ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +

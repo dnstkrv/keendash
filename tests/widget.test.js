@@ -117,6 +117,32 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Медиа");
     ok("tiles: no rows, no blocks", !m.querySelector(".us-blk"));
   });
+  // check: the tile "Доступно N из M" (red when N < M), a dot, the address, "code · ms" or "нет ответа", the percent and the strip of cells per address
+  const ck = (x) => one("check", "Сайты", "Доступность", "", x);
+  const strip = (r) => Array.from(r.querySelectorAll(".us-hist i")).map(i => i.className).join();
+  await run(ck({ ok: 1, up: 2, n: 3, h: [["up.test", 200, 120, 100, "1,1,1"], ["https://bad.test:8443/", 503, 40, 99, "1,0,1"], ["down.test", 0, 4000, 0, 0]] }), (w, m) => {
+    gclick(w, m, "Доступность");
+    const rows = Array.from(m.querySelectorAll(".us-row")), tx = rows.map(r => r.textContent);
+    ok("check: tile 2 of 3 is red", m.querySelector(".us-lbl").textContent === "Доступно" && m.querySelector(".us-val").textContent === "2 из 3" && /#ff6b6b/.test(m.querySelector(".us-val").innerHTML), m.querySelector(".us-grid").innerHTML);
+    ok("check: rows, address without https:// and the trailing /, code · ms, percent", tx.length === 3 && tx[0] === "up.test200 · 120 мс · 100%" && tx[1] === "bad.test:8443503 · 40 мс · 99%" && tx[2] === "down.testнет ответа · 0%", tx.join(" / "));
+    ok("check: dots green, yellow, red", rows[0].innerHTML.includes("#3ecf8e") && rows[1].innerHTML.includes("#f5a623") && rows[2].innerHTML.includes("#ff6b6b"), rows.map(r => r.querySelector(".us-dot").style.background).join());
+    const hs = Array.from(m.querySelectorAll(".us-hist"));
+    ok("check: strip cells green and red, a single cell 0 from the daemon", hs.length === 3 && strip(hs[0]) === "us-hu,us-hu,us-hu" && strip(hs[1]) === "us-hu,us-hd,us-hu" && strip(hs[2]) === "us-hd", hs.map(strip).join(" / "));
+  });
+  await run(ck({ ok: 1, up: 3, n: 3, h: [["a.test", 200, 1, 100, "0,".repeat(40) + "1"], ["10", 301, 1, 100, 1], ["c.test", 404, 1, 100, ""]] }), (w, m) => {
+    gclick(w, m, "Доступность");
+    const hs = Array.from(m.querySelectorAll(".us-hist"));
+    ok("check: tile 3 of 3 is not red, strip is the last 30, a numeric address and an empty history work", !/#ff6b6b/.test(m.querySelector(".us-val").innerHTML) && m.querySelector(".us-val").textContent === "3 из 3" &&
+      hs[0].querySelectorAll("i").length === 30 && strip(hs[0]).split(",").pop() === "us-hu" && strip(hs[0]).split(",")[28] === "us-hd" && m.querySelectorAll(".us-row")[1].textContent.startsWith("10301") && !hs[2].querySelector("i"), hs.map(strip).join(" / "));
+  });
+  await run(ck({ ok: 1, up: 0, n: 1, h: [["<img src=x onerror=alert(1)>", 200, 5, 100, "1"]] }), (w, m) => {
+    gclick(w, m, "Доступность");
+    ok("check: an address with markup is text", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>", m.innerHTML);
+  });
+  await run(ck({ ok: 0 }), (w, m) => {
+    gclick(w, m, "Доступность");
+    ok("check: ok 0 -> the settings hint", /API Сайты недоступен · проверьте настройки/.test(m.textContent) && !m.querySelector(".us-hist"), m.textContent);
+  });
   // media tab: one sub-tab per configured service
   await run(full, (w, m) => {
     const click = (sel) => m.querySelector(sel).dispatchEvent(new w.Event("click", { bubbles: true }));
@@ -678,6 +704,63 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/ext: wrong key -> ok 0", one === "ok 0\n", one);
     const cu = collect("ext", "cu-1", "", { files: { "etc/services/cu-1.conf": "TYPE='custom'\nURL='http://custom.test/stats'\nMAP='A=queue.total; B=speed:bs'\n" } });
     ok("bin/ext: MAP of the instance reaches ext.d/custom", cu === "ok 1\nt|A|7|\nt|B|2048|bs\n", cu);
+    // ext.d/check: HOSTS is data (awk ENVIRON, every element re-checked), the address is one argument after the options; fake-wget logs requests to $LOG.
+    // The fake uptime file makes the times 0 ms, UPBUMP moves it by 120 ms inside the request
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-k-")), ud = unix(sd) + "/uptime", sq = v => "'" + v.replace(/'/g, "'\\''") + "'", now = Math.floor(Date.now() / 1000);
+      const f = n => path.join(sd, n), rd = n => fs.existsSync(f(n)) ? fs.readFileSync(f(n), "utf8") : null, chks = () => fs.readdirSync(sd).filter(n => /^\.?chk\./.test(n)).sort();
+      const run = (hosts, env, id) => {
+        fs.writeFileSync(f("uptime"), "1000.00 500.00\n"); fs.rmSync(f("log"), { force: true });
+        return collect("ext.d/check", "", "", { state: sd, env: "ID=" + (id || "ck") + " KEENDASH_UPTIME=" + ud + " " + (env || "") + " HOSTS=" + sq(hosts) + " EVERY=5 " }).trim().split("\n");
+      };
+      let l = run("up.test bad.test down.test");
+      ok("ext.d/check: up, 503 and no answer, exact lines", l.join("\n") === "ok 1\nup 2\nn 3\nh|up.test|200|0|100|1\nh|bad.test|503|0|100|1\nh|down.test|0|0|0|0", l.join(" / "));
+      ok("ext.d/check: history files per address, no leftovers", chks().join() === "chk.ck.bad.test,chk.ck.down.test,chk.ck.up.test" && /^\d+ 1\n$/.test(rd("chk.ck.up.test")) && /^\d+ 0\n$/.test(rd("chk.ck.down.test")), chks().join());
+      let lg = rd("log");
+      ok("ext.d/check: a domain is https://<d>/ after the options, an address stays as is, a port stays",
+        lg.includes(" -S -O /dev/null --max-redirect=0 https://up.test/ ") && lg.includes(" -S -O /dev/null --max-redirect=0 https://bad.test/ "), lg);
+      l = run("up.test:81 http://up.test/x?y=1, https://bad.test:8443/");
+      lg = rd("log");
+      ok("ext.d/check: domain:port, http(s) addresses, comma", l[0] === "ok 1" && l[2] === "n 3" && lg.includes(" --max-redirect=0 https://up.test:81/ ") && lg.includes(" --max-redirect=0 http://up.test/x?y=1 ") && lg.includes(" --max-redirect=0 https://bad.test:8443/ ") &&
+        chks().join() === "chk.ck.http___up.test_x_y_1,chk.ck.https___bad.test_8443_,chk.ck.up.test_81", lg + " || " + chks().join());
+      l = run("up.test", "UPBUMP=1");
+      ok("ext.d/check: time is the uptime difference in ms", l.join("\n") === "ok 1\nup 1\nn 1\nh|up.test|200|120|100|1", l.join(" / "));
+      // history: grows per run, lines older than 24 h go, the new line is epoch + 1|0; the percent and the last 30 come from the file; other instances and removed addresses
+      fs.writeFileSync(f("chk.ck.up.test"), "1000 0\n" + (now - 86390) + " 1\n" + (now - 100) + " 0\n" + (now - 50) + " 1\n" + (now - 86410) + " 0\n");
+      fs.writeFileSync(f("chk.ck.gone.test"), (now - 5) + " 1\n"); fs.writeFileSync(f("chk.other.up.test"), (now - 5) + " 1\n");
+      l = run("up.test");
+      const h1 = rd("chk.ck.up.test").trim().split("\n");
+      ok("ext.d/check: history grows, drops lines older than 24 h, percent and last cells from it", h1.length === 4 && h1.slice(0, 3).join() === [now - 86390 + " 1", now - 100 + " 0", now - 50 + " 1"].join() && /^\d+ 1$/.test(h1[3]) &&
+        l[3] === "h|up.test|200|0|75|1,0,1,1", l.join(" / ") + " || " + h1.join());
+      ok("ext.d/check: a removed address's file is deleted, another instance's is not", rd("chk.ck.gone.test") === null && rd("chk.other.up.test") !== null, chks().join());
+      l = run("up.test", "", "other");
+      ok("ext.d/check: the id keeps histories apart", rd("chk.other.up.test").trim().split("\n").length === 2 && rd("chk.ck.up.test").trim().split("\n").length === 4, rd("chk.other.up.test"));
+      // 41 samples: the strip is the last 30, newest on the right
+      fs.writeFileSync(f("chk.ck.up.test"), Array.from({ length: 40 }, (_, i) => (now - 2000 + i) + " " + (i < 20 ? 0 : 1)).join("\n") + "\n");
+      l = run("up.test");
+      ok("ext.d/check: last 30 cells", l[3] === "h|up.test|200|0|" + Math.floor(21 * 100 / 41) + "|" + "0,".repeat(9) + "1,".repeat(20) + "1", l[3]);
+      // browser input is data: nothing executed, bad elements skipped, nothing kept for them
+      fs.rmSync(f("pwn"), { force: true });
+      const bad = "$(touch " + unix(sd) + "/pwn) -x `touch " + unix(sd) + "/pwn` up.test a'b http://a|b http://a/$(touch " + unix(sd) + "/pwn) --spider http://x/\"y ftp://x a:123456 a/b -up.test";
+      l = run(bad);
+      lg = rd("log");
+      ok("ext.d/check: bad elements skipped, nothing executed, no file for them", l.length === 4 && l.slice(0, 3).join() === "ok 1,up 1,n 1" && /^h\|up\.test\|200\|0\|\d+\|[01,]+$/.test(l[3]) && !fs.existsSync(f("pwn")) && !/spider| -x |pwn|ftp/.test(lg) && lg.trim().split(String.fromCharCode(10)).length === 1 &&
+        chks().join() === "chk.ck.up.test,chk.other.up.test", l.join(" / ") + " || " + lg + " || " + chks().join());
+      l = run("");
+      ok("ext.d/check: empty HOSTS -> ok 0, histories of the instance removed", l.join("\n") === "ok 0" && chks().join() === "chk.other.up.test", l.join(" / ") + chks().join());
+      l = run("-x $(id)");
+      ok("ext.d/check: nothing valid -> ok 0", l.join("\n") === "ok 0", l.join(" / "));
+      l = run("up.test", "", "A.b");
+      ok("ext.d/check: a bad id -> ok 0", l.join("\n") === "ok 0" && chks().join() === "chk.other.up.test", l.join(" / "));
+      // the 21st element is not asked
+      l = run(Array.from({ length: 25 }, (_, i) => "up.test:" + (1000 + i)).join(" "));
+      ok("ext.d/check: at most 20 addresses", l[2] === "n 20" && l.length === 23, l.join(" / "));
+      // through bin/ext: it passes the instance id; the real /proc/uptime gives the time
+      for (const n of fs.readdirSync(sd)) fs.rmSync(f(n), { recursive: true, force: true });
+      const ck = collect("ext", "ck-1", "", { state: sd, files: { "etc/services/ck-1.conf": "TYPE='check'\nHOSTS='up.test down.test'\nEVERY='5'\n" } }).trim().split("\n");
+      ok("bin/ext: the instance id reaches ext.d/check", ck[0] === "ok 1" && ck[1] === "up 1" && ck[2] === "n 2" && /^h\|up\.test\|200\|\d+\|100\|1$/.test(ck[3]) && /^h\|down\.test\|0\|\d+\|0\|0$/.test(ck[4]) && !!rd("chk.ck-1.up.test"), ck.join(" / "));
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
   }
   if (haveCc) {
     // bin/rci: NDMS over RCI with keendash's own token, issued through ndmc (tests/fake-ndmc); the log lists ndmc and RCI calls in order
