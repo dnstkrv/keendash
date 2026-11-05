@@ -331,7 +331,7 @@
       (x.list || []).forEach(function (p) { h += line(p[3] === "playing" ? OK : WARN, esc(p[1]), esc(p[0]) + " · " + p[2] + "%" + (p[3] === "paused" ? " · пауза" : "")); });
       if ((x.libs || []).length) {
         h += sec("Библиотеки");
-        x.libs.forEach(function (l) { h += line(ACC, esc(l[0]), fmtN(l[2])); });
+        x.libs.forEach(function (l) { h += line(ACC, esc(l[0]), esc(fmtN(l[2]))); });
       }
       return h;
     },

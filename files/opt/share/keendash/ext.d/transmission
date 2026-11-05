@@ -2,10 +2,10 @@
 # name: Transmission
 # group: Медиа
 # fields: url user pass
-# hint: Логин можно не задавать, если адрес роутера в rpc-whitelist
+# hint: Логин не нужен, если в Transmission выключен вход (rpc-authentication-required)
 # Transmission RPC: the first POST is answered 409 with X-Transmission-Session-Id, repeat it with that header (Basic only when a login is set)
 BIN=${0%/*}/../bin; . "$BIN/extlib"
-R=${URL%/}/transmission/rpc; P='{"method":"session-stats"}'
+R=${URL%/}; R=${R%/transmission/web}/transmission/rpc; P='{"method":"session-stats"}'
 [ -z "${USER:-}" ] || set -- --header "Authorization: Basic $(printf '%s:%s' "$USER" "${PASS:-}" | base64 | tr -d '\n')"
 sid=$(dl -S -O /dev/null "$@" --post-data "$P" "$R" 2>&1 | sed -n 's/.*X-Transmission-Session-Id: *\([^[:space:]]*\).*/\1/p' | head -n 1)
 [ -z "$sid" ] || set -- "$@" --header "X-Transmission-Session-Id: $sid"

@@ -226,6 +226,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Медиа");
     ok("jellyfin instance: plex view", /Сейчас смотрят/.test(m.textContent) && !m.querySelector("b"), m.textContent);
   });
+  await run(Object.assign({}, full, { inst: [["jf", "jellyfin", "Jellyfin", "http://j", "", ["key"], { ok: 1, streams: 0, list: [], libs: [["Фильмы", "movie", "1<b>x</b>"]] }]] }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("plex view: library count is escaped", /Фильмы/.test(m.textContent) && !m.querySelector("b"), m.textContent);
+  });
   const os = require("os"), cp = require("child_process");
   // C:\x -> /c/x for Git Bash: a drive colon would split PATH
   const unix = p => p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase());
@@ -514,7 +518,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       radarr: ["ok 1", "queue 1", "list|Example Movie|75|7200", "missing 3"],
       prowlarr: ["ok 1", "list|Tracker Two", "all 3", "on 2", "bad 1", "q 50", "g 4", "fail 5"],
       overseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
-      jellyfin: ["ok 1", "list|alice|Example Show · Pilot|50|paused", "list|bob|Example Movie|10|playing", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23", "libs|Эпизоды|episode|500"],
+      jellyfin: ["ok 1", "list|alice|Example Show · Pilot|50|paused", "list|bob|Example Movie|10|playing", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23", "libs|Эпизоды|episode|500", "libs|Музыка|music|12"],
       jellyseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
       lidarr: ["ok 1", "t|В очереди|3|n", "t|Не скачано альбомов|14|n"],
       bazarr: ["ok 1", "t|Серий без субтитров|4|n", "t|Фильмов без субтитров|2|n"],
@@ -530,6 +534,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const extra = s === "radarr" ? /^cal\|\d+\|Soon Movie\|d$/.test(lines[lines.length - 1]) && lines.length === 5 : lines.length === want[s].length;
       ok("ext.d/" + s, !miss.length && extra, miss.join(" / ") + " || " + lines.join(" / "));
     });
+    ok("ext.d/jellyfin: string counts become numbers, zero counts skipped", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test/evil KEY=testkey " }).trim() === ["ok 1", "streams 0", "libs|Фильмы|movie|1"].join("\n"));
+    ok("ext.d/sabnzbd: D:HH:MM:SS", /^t\|Осталось времени\|93784\|s$/m.test(collect("ext.d/sabnzbd", "", "", { env: "URL=http://sabnzbd.test/days KEY=testkey " })));
     ok("ext.d/jellyfin: wrong key -> ok 0", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test KEY=bad " }).trim() === "ok 0");
     ok("ext.d/lidarr: wrong key -> ok 0", collect("ext.d/lidarr", "", "", { env: "URL=http://lidarr.test KEY=bad " }).trim() === "ok 0");
     ok("ext.d/tautulli: key not printed", !/testkey/.test(collect("ext.d/tautulli", "", "", { env: env.tautulli })));
@@ -550,6 +556,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/transmission: no user -> no Authorization, session id repeated", !/Authorization/.test(lg()) && / X-Transmission-Session-Id: sess1 /.test(lg()), lg());
       collect("ext.d/transmission", "", "", { state: sd, env: "URL=http://transmission.test USER=u PASS=p " });
       ok("ext.d/transmission: user -> Basic", / Authorization: Basic dTpw /.test(lg()), lg());
+      fs.writeFileSync(path.join(sd, "log"), "");
+      const o = collect("ext.d/transmission", "", "", { state: sd, env: "URL=http://transmission.test/transmission/web/ USER= PASS= " });
+      ok("ext.d/transmission: browser URL .../transmission/web/ -> rpc", o.startsWith("ok 1") && / http:\/\/transmission\.test\/transmission\/rpc $/m.test(lg()) && !/\/web/.test(lg()), lg());
       fs.rmSync(sd, { recursive: true, force: true });
     }
     ok("ext.d/sonarr: wrong key -> ok 0", collect("ext.d/sonarr", "", "", { env: "URL=http://sonarr.test KEY=bad " }).trim() === "ok 0");
@@ -967,6 +976,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     };
   };
   const post = (fcalls, re) => fcalls.filter(c => re.test(c[0]));
+  const blobText = (w, b) => new Promise(r => { const fr = new w.FileReader(); fr.onload = () => r(fr.result); fr.readAsText(b); });
   let fcalls = [];
   await run(full, async w => {
     const dlg = await openDlg(w);
@@ -1084,13 +1094,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     q('.kd-dlg-i[data-id="cu"] .kd-dlg-hd').click();
     ok("dialog: empty hint, no tip; unchanged map, no save bar", !q(".kd-dlg-tip") && !q(".kd-dlg-save"));
     const wrong = v => { typeIn(w, mp(), v); return mh() === MAPERR; };
-    ok("dialog: map rule accepts", [" A=x ; B=y:s ", "A=x;B=y;C=z;D=p:p", "Ж=a.b-c_d:n", "A=x:"," A=x","00a0A=x", "\u{1F600}".repeat(32) + "=x", "a=" + "x".repeat(128)].every(v => !wrong(v)));
+    ok("dialog: map rule accepts", [" A=x ; B=y:s ", "A=x;B=y;C=z;D=p:p", "Ж=a.b-c_d:n", "A=x:"," A=x","\u00a0A=x", "\u{1F600}".repeat(32) + "=x", "a=" + "x".repeat(128)].every(v => !wrong(v)));
     ok("dialog: map rule refuses", ["A", "=x", "A=", "A=x:q", "A=x:n:n", "A=b=c", "A;B=c", "A=x;B=y;C=z;D=p;E=q","A=x\u00a0", "A\u00a0=x\u00a0", "A=x ; B", "A;=x", ";",
       "\u{1F600}".repeat(33) + "=x", "a=" + "x".repeat(129), "A=x:bs ;", "A b=x y"].every(wrong));
     typeIn(w, mp(), "A=x; B=y:bs");
     q(".kd-dlg-save").click(); await wait(100);
     const put = post(fcalls, /\/rci\/put$/)[0], rev = put && JSON.parse(put[1].body).filename.split("/").pop().replace(".txt", "");
-    ok("dialog: map sent as typed", !!put && post(fcalls, /\/fui$/)[0][1].body.get("Filedata").size === ("keendash 1 " + rev + "\nset cu map A=x; B=y:bs\nend\n").length, rev);
+    ok("dialog: map sent as typed", !!put && await blobText(w, post(fcalls, /\/fui$/)[0][1].body.get("Filedata")) === ("keendash 1 " + rev + "\nset cu map A=x; B=y:bs\nend\n"), rev);
   }, cf(fcalls, cust("")), URL0);
   fcalls = [];
   await run(cust(""), async w => {
@@ -1100,7 +1110,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("dialog: empty map is valid", mp().parentNode.querySelector(".kd-dlg-hint").textContent === "" && !!q(".kd-dlg-save"));
     q(".kd-dlg-save").click(); await wait(100);
     const put = post(fcalls, /\/rci\/put$/)[0], rev = put && JSON.parse(put[1].body).filename.split("/").pop().replace(".txt", "");
-    ok("dialog: cleared map sends an empty value", !!put && JSON.parse(put[1].body).size === ("keendash 1 " + rev + "\nset cu map \nend\n").length, rev);
+    ok("dialog: cleared map sends an empty value", !!put && await blobText(w, post(fcalls, /\/fui$/)[0][1].body.get("Filedata")) === ("keendash 1 " + rev + "\nset cu map \nend\n"), rev);
   }, cf(fcalls, cust("")), URL0);
   await run(full, async w => {
     const dlg = await openDlg(w);

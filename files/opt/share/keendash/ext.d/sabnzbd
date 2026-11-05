@@ -9,4 +9,5 @@ J "${URL%/}/api?mode=queue&output=json&apikey=${KEY:-}" | awk "$LOAD"'END {
   if (!("queue.noofslots" in V)) { print "ok 0"; exit }
   print "ok 1"; printf "t|Скорость|%d|bs\n", V["queue.kbpersec"] * 1024
   printf "t|Осталось|%.0f|b\n", int(V["queue.mbleft"] * 1048576)
-  print "t|Осталось времени|" tl(V["queue.timeleft"]) "|s"; print "t|В очереди|" V["queue.noofslots"] + 0 "|n" }'
+  n = split(V["queue.timeleft"], a, ":")  # more than a day comes as D:HH:MM:SS
+  print "t|Осталось времени|" (n == 4 ? a[1] * 86400 + a[2] * 3600 + a[3] * 60 + a[4] : tl(V["queue.timeleft"])) "|s"; print "t|В очереди|" V["queue.noofslots"] + 0 "|n" }'

@@ -16,5 +16,5 @@ J "$@" "$B/Sessions?activeWithinSeconds=600" | awk "$LOAD"'END {
     print "list|" V[i ".UserName"] "|" t "|" (r > 0 ? int(V[i ".PlayState.PositionTicks"] * 100 / r) : 0) "|" (V[i ".PlayState.IsPaused"] == "true" ? "paused" : "playing"); n++ }
   print "streams " n + 0 }'
 printf '%s\n' "$c" | awk "$LOAD"'END {
-  split("MovieCount|Фильмы|movie SeriesCount|Сериалы|show EpisodeCount|Эпизоды|episode", a, " ")
-  for (i = 1; i <= 3; i++) { split(a[i], f, "|"); if (V[f[1]] + 0 > 0) print "libs|" f[2] "|" f[3] "|" V[f[1]] } }'
+  split("MovieCount|Фильмы|movie SeriesCount|Сериалы|show EpisodeCount|Эпизоды|episode SongCount|Музыка|music", a, " ")
+  for (i = 1; i <= 4; i++) { split(a[i], f, "|"); n = V[f[1]] + 0; if (n > 0) print "libs|" f[2] "|" f[3] "|" n } }'

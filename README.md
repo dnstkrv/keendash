@@ -98,7 +98,7 @@ telemt=hide
 
 Сервисы AdGuard Home, qBittorrent, Plex, Sonarr, Radarr, Prowlarr, Overseerr и Immich (а также новые типы из таблицы выше) больше не настраиваются в `keendash.conf`. Их добавляют, правят и удаляют в окне «Настройки» на странице «Сервисы». Тип можно добавить несколько раз (например, два qBittorrent). При обновлении старые ключи `ADGUARD_*`, `QBIT_*` и т. д. сами переезжают в `/opt/etc/keendash/services/<id>.conf`.
 
-Поля окна: «Адрес» (веб-интерфейс сервиса), «Логин» и «Пароль» (AdGuard Home, qBittorrent, Transmission, NZBGet; Deluge только пароль; логин и пароль можно не задавать там, где сервис пускает адрес роутера без них: белые списки qBittorrent, Transmission, NZBGet), «API-ключ» (Sonarr, Radarr, Prowlarr, Overseerr, Immich, Jellyfin, Jellyseerr, Lidarr, Bazarr, Tautulli, SABnzbd), «Токен» (Plex). Где взять ключи:
+Поля окна: «Адрес» (веб-интерфейс сервиса), «Логин» и «Пароль» (AdGuard Home, qBittorrent, Transmission, NZBGet; Deluge только пароль; логин и пароль можно не задавать там, где сервис пускает адрес роутера без них: белые списки qBittorrent и NZBGet; в Transmission логин не нужен, если выключен вход, `rpc-authentication-required`), «API-ключ» (Sonarr, Radarr, Prowlarr, Overseerr, Immich, Jellyfin, Jellyseerr, Lidarr, Bazarr, Tautulli, SABnzbd), «Токен» (Plex). Где взять ключи:
 
 - Sonarr, Radarr, Prowlarr, Overseerr: Settings → General → API Key, в поле «API-ключ»;
 - Jellyfin: Панель управления → API-ключи → +; Jellyseerr, Lidarr, Bazarr: Settings → General (Bazarr: Security) → API Key; Tautulli: Settings → Web Interface → API Key; SABnzbd: Config → General → API Key;

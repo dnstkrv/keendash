@@ -2,7 +2,7 @@
 # name: Deluge
 # group: Медиа
 # fields: url pass
-# hint: Пароль веб-интерфейса Deluge
+# hint: Пароль веб-интерфейса Deluge; веб-интерфейс должен быть подключён к демону
 # Deluge web JSON-RPC: the password goes into the login body (JSON-escaped), the _session_id cookie into the stats request
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 B=${URL%/}/json; H='Content-Type: application/json'
