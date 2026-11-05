@@ -1,0 +1,26 @@
+#!/bin/sh
+# name: Свой API
+# group: Другое
+# fields: url user pass key token map
+# hint: Любой адрес с JSON (GET). «Что показывать»: Подпись=путь[:формат]; формат n, b, bs, p или s
+# Any JSON over GET: MAP "Label=path[:fmt]; ..." picks up to 4 values as tiles; MAP comes from the browser, so awk reads it from ENVIRON
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+# a URL that is not http(s) could be taken by wget as an option
+case "${URL:-}" in http://*|https://*) ;; *) echo "ok 0"; exit ;; esac
+set --
+[ -z "${KEY:-}" ] || set -- "$@" --header "X-Api-Key: $KEY"
+if [ -n "${TOKEN:-}" ]; then set -- "$@" --header "Authorization: Bearer $TOKEN"
+elif [ -n "${USER:-}${PASS:-}" ]; then set -- "$@" --header "Authorization: Basic $(printf '%s:%s' "${USER:-}" "${PASS:-}" | base64 | tr -d '\n')"; fi
+J "$@" "$URL" | awk "$LOAD"'END {
+  # keendashd json turns text that is not JSON into lines with an empty path
+  for (k in V) if (k != "") g = 1
+  if (!g) { print "ok 0"; exit }
+  print "ok 1"
+  m = ENVIRON["MAP"]; gsub(/[[:cntrl:]]/, " ", m)
+  n = split(m, P, ";")
+  for (i = 1; i <= n && c < 4; i++) {
+    e = index(P[i], "="); if (!e) continue
+    l = substr(P[i], 1, e - 1); r = substr(P[i], e + 1); gsub(/^ +| +$/, "", l); gsub(/^ +| +$/, "", r)
+    k = split(r, B, ":")
+    if (l == "" || index(l, "|") || k > 2 || B[1] !~ /^[A-Za-z0-9_.-]+$/ || length(B[1]) > 128 || B[2] !~ /^(n|b|bs|p|s)?$/) continue
+    c++; print "t|" l "|" V[B[1]] "|" B[2] } }'

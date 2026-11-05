@@ -1,7 +1,7 @@
 #!/bin/sh
 # Third-party services over their HTTP APIs: one collector per type in ext.d, one run per instance (etc/services/<id>.conf).
 # Their APIs can be slow or down, so bin/tick runs this every minute in the background: each instance goes to
-# /tmp/keendash/x/<id>, keendashd reads that cache. A collector gets URL USER PASS KEY TOKEN in its environment and prints
+# /tmp/keendash/x/<id>, keendashd reads that cache. A collector gets URL USER PASS KEY TOKEN MAP in its environment and prints
 # "key value" / "table|a|b" lines; "~key value" lines are also appended to s.<id>.<key> (graph history).
 #   ext          refresh the cache for every instance
 #   ext <id>     print one instance to stdout (debugging, tests)
@@ -13,11 +13,11 @@ EXTD=${KEENDASH_EXTD:-/opt/share/keendash/ext.d}
 
 # run the collector of one instance; the conf is KEY='value' lines written by bin/settings, so sourcing it is safe
 inst() {
-  unset TYPE URL USER PASS KEY TOKEN
+  unset TYPE URL USER PASS KEY TOKEN MAP
   . "$ETC/services/$1.conf"
   case "${TYPE:-}" in ""|*[!a-z0-9-]*) return 1 ;; esac
   [ -f "$EXTD/$TYPE" ] || return 1
-  export URL USER PASS KEY TOKEN
+  export URL USER PASS KEY TOKEN MAP
   # 2>/dev/null: the shell reports a wget killed by its deadline as "Terminated"; || : keeps the cache when a collector exits non-zero
   sh "$EXTD/$TYPE" 2>/dev/null || :
 }

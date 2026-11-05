@@ -511,6 +511,29 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     });
     ok("ext.d/sonarr: wrong key -> ok 0", collect("ext.d/sonarr", "", "", { env: "URL=http://sonarr.test KEY=bad " }).trim() === "ok 0");
     ok("ext.d/qb: wrong password -> ok 0", collect("ext.d/qb", "", "", { env: "URL=http://qb.test USER=admin PASS=x " }).trim() === "ok 0");
+    // ext.d/custom: MAP from the browser is data (read from the environment in awk), bad pairs are skipped; fake-wget logs the request to $LOG
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-c-")), run = (env, url) => {
+        fs.rmSync(path.join(sd, "log"), { force: true });
+        const out = collect("ext.d/custom", "", "", { state: sd, env: "USER= PASS= KEY= TOKEN= URL=http://custom.test/" + (url || "stats") + " " + env + " " });
+        return [out.trim().split("\n"), fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : ""];
+      };
+      const M = "MAP='Задачи=queue.total; Скорость=speed:bs; Имя=queue.items.0.name; Нет=no.such:n' ";
+      let [l, lg] = run(M + "KEY=testkey");
+      ok("ext.d/custom: tiles from the map, X-Api-Key", l.join("\n") === "ok 1\nt|Задачи|7|\nt|Скорость|2048|bs\nt|Имя|a|\nt|Нет||n" && / --header X-Api-Key: testkey /.test(lg), l.join(" / ") + " || " + lg);
+      [l, lg] = run(M + "TOKEN=testkey");
+      ok("ext.d/custom: token -> Bearer", / --header Authorization: Bearer testkey /.test(lg) && !/X-Api-Key/.test(lg), lg);
+      [l, lg] = run(M + "USER=u PASS=p");
+      ok("ext.d/custom: user and pass -> Basic", / --header Authorization: Basic dTpw /.test(lg), lg);
+      [l, lg] = run(M);
+      ok("ext.d/custom: no credentials -> no auth header", l[0] === "ok 1" && lg.startsWith("custom ") && !/Authorization|X-Api-Key|--header/.test(lg), lg);
+      // up to 4 pairs; the others fail the collector's own check: shell syntax in the path, "|" label, 2 colons, no "=", empty path; the label with " and \ is data
+      [l] = run("MAP='T=txt; X=$(touch " + unix(sd) + "/pwn); Q\"\\x=speed; Y=queue.total:zz; |=speed; Z=speed:n:n; W=a b; V=; U=queue.total; T5=speed; T6=speed'");
+      ok("ext.d/custom: bad pairs skipped, values and labels are data, nothing executed", l.join("\n") === "ok 1\nt|T|x$(id)`y|\nt|Q\"\\x|2048|\nt|U|7|\nt|T5|2048|" && !fs.existsSync(path.join(sd, "pwn")), l.join(" / "));
+      [l] = run(M, "html");
+      ok("ext.d/custom: an answer that is not JSON -> ok 0", l.join("\n") === "ok 0", l.join(" / "));
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
     // bin/ext: every etc/services/<id>.conf is one run of its type's collector, cached in x/<id>; "~key" lines grow s.<id>.<key>
     const QB = "TYPE='qb'\nNAME='qBittorrent'\nURL='http://qb.test:8080'\nUSER='admin'\nPASS='p&s=s'\n", rd = (d, n) => fs.existsSync(path.join(d, n)) ? fs.readFileSync(path.join(d, n), "utf8") : null;
     const ls = d => fs.readdirSync(d).concat(fs.readdirSync(path.join(d, "x"))).join(" ");
@@ -530,6 +553,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.rmSync(d, { recursive: true, force: true });
     const one = collect("ext", "sonarr-1", "", { files: { "etc/services/sonarr-1.conf": "TYPE='sonarr'\nURL='http://sonarr.test'\nKEY='bad'\n" } });
     ok("bin/ext: wrong key -> ok 0", one === "ok 0\n", one);
+    const cu = collect("ext", "cu-1", "", { files: { "etc/services/cu-1.conf": "TYPE='custom'\nURL='http://custom.test/stats'\nMAP='A=queue.total; B=speed:bs'\n" } });
+    ok("bin/ext: MAP of the instance reaches ext.d/custom", cu === "ok 1\nt|A|7|\nt|B|2048|bs\n", cu);
   }
   if (haveCc) {
     // bin/rci: NDMS over RCI with keendash's own token, issued through ndmc (tests/fake-ndmc); the log lists ndmc and RCI calls in order
@@ -603,9 +628,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     // keendashd kvjson: collector lines -> JSON; first key wins, broken lines skipped
     let kj = null;
     try { kj = JSON.parse(cp.execFileSync(kd, ["kvjson"], { encoding: "utf8",
-      input: 'ok 1\n~dl 5242880\nname a "b"\\c\tz\nsq 1,2,3\nlist|x|420|S02E06\nlist|y||7\nwget: bad address\nok 0\n' })); } catch (e) { kj = e.message; }
+      input: 'ok 1\n~dl 5242880\nname a "b"\\c\tz\nsq 1,2,3\nlist|x|420|S02E06\nlist|y||7\nt|Нет||n\nwget: bad address\nok 0\n' })); } catch (e) { kj = e.message; }
     ok("keendashd kvjson: numbers, strings, lists, tables, ~", JSON.stringify(kj) === JSON.stringify({ ok: 1, dl: 5242880, name: 'a "b"\\c\tz', sq: [1, 2, 3],
-      list: [["x", 420, "S02E06"], ["y", "", 7]] }), JSON.stringify(kj));
+      list: [["x", 420, "S02E06"], ["y", "", 7]], t: [["Нет", "", "n"]] }), JSON.stringify(kj));
 
     // keendashd status: stats/services output -> the card's JSON; broken numbers become 0/null, strings are escaped
     const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));

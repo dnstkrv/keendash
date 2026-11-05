@@ -17,11 +17,15 @@ case "$u" in
   # cookie only for admin / p&s=s, percent-encoded
   */api/v2/auth/login) need "username=%61%64%6d%69%6e&password=%70%26%73%3d%73"; echo "  Set-Cookie: SID=test123; HttpOnly; path=/" >&2; exit 0 ;;
   */api/v2/*) need "Cookie: SID=test123" ;;
+  # any JSON API of the custom type: no auth required, the request line goes to $LOG
+  *//custom.test/*) echo "custom$a" >> "${LOG:-/dev/null}" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
   *//immich.test/*) need "x-api-key: testkey" ;;
   *//sonarr.test/* | *//radarr.test/* | *//prowlarr.test/* | *//overseerr.test/*) need "X-Api-Key: testkey" ;;
 esac
 case "$u" in
+  *//custom.test/html) echo "<html>not json</html>"; exit 0 ;;
+  *//custom.test/*) f=media/custom ;;
   */control/stats) f=agh/stats ;;
   */control/clients) f=agh/clients ;;
   */control/filtering/status) f=agh/filtering ;;
