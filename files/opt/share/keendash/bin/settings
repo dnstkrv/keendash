@@ -20,7 +20,7 @@ types() {
     FNR == 1 { out(); t = FILENAME; sub(/.*\//, "", t); n = t; g = ""; f = "" }
     FNR <= 20 && /^# name: / { n = substr($0, 9) }
     FNR <= 20 && /^# group: / { g = substr($0, 10) }
-    FNR <= 20 && /^# fields: / { f = ""; k = split(substr($0, 11), a, " "); for (i = 1; i <= k; i++) if (a[i] ~ /^[a-z]+$/) f = f (f == "" ? "" : ",") a[i] }
+    FNR <= 20 && /^# fields: / { f = ""; k = split(substr($0, 11), a, " "); for (i = 1; i <= k; i++) if (a[i] ~ /^(url|user|pass|key|token)$/) f = f (f == "" ? "" : ",") a[i] }
     END { out() }' "$@"
 }
 
@@ -29,6 +29,8 @@ list() {
   [ -f "$TMP/settings.state" ] && sed -n 's/^rev /rev|/p; s/^err /err|/p' "$TMP/settings.state"
   types
   set -- "$ETC"/services/*.conf
+  # a conf removed by apply in between must not abort awk
+  for f; do [ -f "$f" ] && set -- "$@" "$f"; shift; done
   # secrets: only the names of the ones that are set
   [ -e "$1" ] && awk -v q="'" 'FNR == 1 { if (id != "") out(); id = FILENAME; sub(/.*\//, "", id); sub(/\.conf$/, "", id); split("", V) }
     match($0, /^[A-Z]+=/) && substr($0, RLENGTH + 1, 1) == q { v = substr($0, RLENGTH + 2); if (substr(v, length(v)) == q) v = substr(v, 1, length(v) - 1)
@@ -43,7 +45,7 @@ list() {
 
 # check a message against the types, the instances and ui.conf; print "E <error>" or what to move into place:
 # "M <id>" ($W/<id>.conf -> services), "R <id>" (remove), "U" ($W/ui.conf)
-CHECK='function bad(r) { if (err == "") err = "строка " FNR ": " r }
+CHECK='function bad(r) { if (err == "") err = "строка " FNR ": " substr(r, 1, 120) }
 function okid(s) { return s ~ /^[a-z0-9-]+$/ && length(s) <= 32 }
 function okname(s) { return s ~ /^[A-Za-z0-9._-]+$/ && length(s) <= 64 }
 function clr(id,  k, p) { for (k in V) { split(k, p, SUBSEP); if (p[1] == id) delete V[k] } }
@@ -98,23 +100,26 @@ END {
   for (id in R) print "R " id
   if (ui) {
     o = W "/ui.conf"; printf "" > o; hides("page", o); hides("main", o)
-    k = 0; for (n = 0; n < 32; n++) if (C[n] != "") print "col " (k++) " " C[n] > o
+    k = 0; for (n = 0; n < 32; n++) if (n in C) print "col " (k++) (C[n] == "" ? "" : " " C[n]) > o
     close(o); print "U"
   }
 }'
 
 apply() {
   umask 077
-  IN=$VAR/inbox W=$TMP/settings.w
+  # the work dir is on the same filesystem as the config, so mv is an atomic rename
+  IN=$VAR/inbox W=$ETC/.w
   mkdir -p "$ETC/services" "$TMP" "$IN" || return 1
-  ls -tr "$IN" | while read -r n; do
+  # shortcut: mtime has 1 s resolution, two drops within a second may apply out of order; upgrade: time-prefixed rev
+  ls -tr "$IN" | while IFS= read -r n; do
     f=$IN/$n
-    [ -f "$f" ] || continue
+    [ -f "$f" ] || { rm -rf "$f"; continue; }
     age=$(( $(date +%s) - $(date -r "$f" +%s) ))
     # still being uploaded
     [ $age -lt 2 ] && continue
     rev=$(printf %s "${n%.txt}" | tr -cd 'A-Za-z0-9' | cut -c1-16)
     if [ "$(wc -c < "$f")" -gt 65536 ]; then err="сообщение больше 64 КБ"
+    elif [ "$(tr -d '\000' < "$f" | wc -c)" -ne "$(wc -c < "$f")" ]; then err="строка 0: байт NUL в сообщении"
     elif [ "$(tail -n 1 "$f")" != end ]; then
       [ $age -lt 30 ] && continue
       err="сообщение загружено не полностью"
@@ -126,19 +131,21 @@ apply() {
       [ -f "$ETC/ui.conf" ] && set -- "$@" "$ETC/ui.conf"
       if out=$(LC_ALL=C awk -v q="'" -v W="$W" -v TY="$W/types" -v UI="$ETC/ui.conf" -v MSG="$f" "$CHECK" "$W/types" "$@" "$f"); then
         err=
+        # the loop is a pipeline subshell: its exit status says whether every mv/rm worked
         printf '%s\n' "$out" | while read -r op id; do
           case $op in
-            M) mv -f "$W/$id.conf" "$ETC/services/$id.conf" ;;
-            R) rm -f "$ETC/services/$id.conf" ;;
-            U) mv -f "$W/ui.conf" "$ETC/ui.conf" ;;
+            M) mv -f "$W/$id.conf" "$ETC/services/$id.conf" || exit 1 ;;
+            R) rm -f "$ETC/services/$id.conf" || exit 1 ;;
+            U) mv -f "$W/ui.conf" "$ETC/ui.conf" || exit 1 ;;
           esac
-        done
+        done || err="не удалось записать настройки"
       else
         err=${out#E }
         [ "$err" = "$out" ] && err="не удалось проверить сообщение"
       fi
       rm -rf "$W"
     fi
+    # shortcut: settings.state keeps only the last rev; two browsers in one apply run → the first times out though applied; upgrade: keep a short list of recent revs
     printf 'rev %s\nerr %s\n' "$rev" "$err" > "$TMP/settings.state"
     rm -f "$f"
   done

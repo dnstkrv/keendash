@@ -260,6 +260,23 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       JSON.stringify([waits, r.rd("tmp/settings.state")]));
     r.rm();
 
+    // an empty column stays (the column count is kept); a hide-only message keeps the col lines
+    r = settingsRun(Object.assign({ "var/inbox/r6.txt": msg("r6", ["col 0 a b", "col 1", "col 2 c"]) }, base), "apply");
+    ok("settings apply: empty column kept", r.rd("etc/ui.conf") === UI + "col 0 a b\ncol 1\ncol 2 c\n", JSON.stringify(r.rd("etc/ui.conf")));
+    r.rm();
+    r = settingsRun(Object.assign({ "var/inbox/r7.txt": msg("r7", ["hide main awg"]) }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1\ncol 2 qb-2\n" }), "apply");
+    ok("settings apply: hide keeps columns", r.rd("etc/ui.conf") === "hide page cron\nhide main awg\nhide main telemt\ncol 0 telemt awg\ncol 1\ncol 2 qb-2\n", JSON.stringify(r.rd("etc/ui.conf")));
+    r.rm();
+    // a NUL ends an awk record in busybox: the whole file is rejected, the content is not echoed
+    r = settingsRun(Object.assign({ "var/inbox/r8.txt": msg("r8", ["set qb-2 pass a\0hide page x"]) }, base), "apply");
+    ok("settings apply: NUL rejected", /^rev r8\nerr строка \d+: ./.test(r.rd("tmp/settings.state")) && !/hide|\0/.test(r.rd("tmp/settings.state")) && r.rd("etc/services/qb-2.conf") === QB &&
+      r.rd("etc/ui.conf") === UI && !r.ls("var/inbox").length, JSON.stringify(r.rd("tmp/settings.state")));
+    r.rm();
+    const PT = PL.replace("t0ken", "t'\\''0ken");
+    r = settingsRun(Object.assign({ "var/inbox/r9.txt": msg("r9", ["set pl name X"]) }, base, { "etc/services/pl.conf": PT }), "apply");
+    ok("settings apply: quote in TOKEN survives", r.rd("etc/services/pl.conf") === "TYPE='plex'\nNAME='X'\nURL='http://10.0.0.6:32400'\nTOKEN='t'\\''0ken'\n", JSON.stringify(r.rd("etc/services/pl.conf")));
+    r.rm();
+
     r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\n" }), "list");
     ok("settings list", r.out === "vol|v1:\nrev|r1\nerr|\ntype|plex|Plex|Медиа|url,token\ntype|qb|qBittorrent|Медиа|url,user,pass\n" +
       "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
