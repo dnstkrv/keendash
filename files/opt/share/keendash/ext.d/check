@@ -9,7 +9,7 @@
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 T=${KEENDASH_TMP:-/tmp/keendash}
 case "${ID:-}" in ""|*[!a-z0-9-]*) echo "ok 0"; exit ;; esac
-# key|as entered|url for each valid element; key = the address with all but [A-Za-z0-9.-] turned into _ (120 characters at most, the same key is the same address)
+# key|as entered|url for each valid element; key = the address with all but [A-Za-z0-9.-] turned into _ (120 characters at most, _2, _3 ... if another address has the same key); the same address twice is one element
 list=$(awk 'BEGIN {
   n = split(ENVIRON["HOSTS"], A, /[ ,]+/)
   for (i = 1; i <= n && c < 20; i++) {
@@ -18,9 +18,10 @@ list=$(awk 'BEGIN {
     if (h ~ /^[A-Za-z0-9.-]+(:[0-9][0-9]?[0-9]?[0-9]?[0-9]?)?$/) u = "https://" h "/"
     else if (h ~ "^https?://[^ \t|\047\"\\\\$`<>]+$") u = h
     else continue
-    k = h; gsub(/[^A-Za-z0-9.-]/, "_", k); k = substr(k, 1, 120)
-    if (k in S) continue
-    S[k] = 1; c++; print k "|" h "|" u
+    if (h in S) continue
+    S[h] = 1; k = h; gsub(/[^A-Za-z0-9.-]/, "_", k); k = substr(k, 1, 120)
+    b = k; for (j = 2; k in K; j++) k = b "_" j
+    K[k] = 1; c++; print k "|" h "|" u
   } }')
 up() { read -r u _ < "${KEENDASH_UPTIME:-/proc/uptime}"; echo "${u:-0}"; }
 rm -f "$T"/.chk."$ID".*

@@ -2,10 +2,10 @@
 # name: TrueNAS
 # group: Серверы
 # fields: url key
-# hint: Ключ: Credentials → API Keys; TrueNAS до 25.10
-# TrueNAS: pools, alerts, load, uptime
+# hint: Ключ: Credentials → API Keys; TrueNAS до 25.10; адрес https://, ключ по http отзывается. Сертификат не проверяется
+# TrueNAS: pools, alerts, load, uptime; certificate not checked (usually self-signed), 25.x revokes a key sent over plain http
 BIN=${0%/*}/../bin; . "$BIN/extlib"
-B=${URL%/}; set -- --header "Authorization: Bearer ${KEY:-}"
+B=${URL%/}; set -- --no-check-certificate --header "Authorization: Bearer ${KEY:-}"
 i=$(J "$@" "$B/api/v2.0/system/info" | awk "$LOAD"'END { if ("uptime_seconds" in V) printf "%.2f %d\n", V["loadavg.0"], V["uptime_seconds"] }')
 p=$(JN "$@" "$B/api/v2.0/pool") && a=$(JN "$@" "$B/api/v2.0/alert/list") || i=
 [ -n "$i" ] || { echo "ok 0"; exit; }

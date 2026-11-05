@@ -6,6 +6,9 @@
 # Spoolman: spool count, remaining filament weight, nearly empty spools
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 o=$(JN "${URL%/}/api/v1/spool") || { echo "ok 0"; exit; }
-printf '%s\n' "$o" | awk "$LOAD"'$1 ~ /^[0-9]+[.]id$/ { n++ }
+printf '%s\n' "$o" | awk "$LOAD"'# keendashd json turns text that is not JSON into lines with an empty path (an empty list gives no lines)
+NR == 1 && NF && $1 == "" { bad = 1 }
+  $1 ~ /^[0-9]+[.]id$/ { n++ }
   $1 ~ /^[0-9]+[.]remaining_weight$/ && $2 ~ /^[0-9.]+$/ { w += $2; if ($2 < 100) low++ }
-  END { print "ok 1"; print "t|Катушек|" n + 0 "|n"; print "t|Остаток, г|" int(w) "|n"; print "t|Меньше 100 г|" low + 0 "|n" }'
+  END { if (bad) { print "ok 0"; exit }
+    print "ok 1"; print "t|Катушек|" n + 0 "|n"; print "t|Остаток, г|" int(w) "|n"; print "t|Меньше 100 г|" low + 0 "|n" }'

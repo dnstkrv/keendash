@@ -4,7 +4,7 @@ Architecture: @ARCH@
 Maintainer: keendash contributors
 Section: net
 Priority: optional
-Depends: busybox, wget-ssl
+Depends: busybox, wget-ssl, ca-bundle
 Source: @SOURCE@
 Installed-Size: @SIZE@
 Description: Dashboard widgets for the Keenetic web UI

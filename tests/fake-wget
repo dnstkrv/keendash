@@ -26,11 +26,14 @@ case "$u" in
   # glances: v4 is absent under /old (v3 only); accepts both logins, requests go to $LOG
   *//glances.test/old/api/4/*) exit 8 ;;
   *//glances.test/*) echo "glances$a" >> "${LOG:-/dev/null}" ;;
+  *//spoolman.test/html/*) echo "<html>login</html>"; exit 0 ;;
+  *//spoolman.test/empty/*) echo "[]"; exit 0 ;;
   *//spoolman.test/*) ;;
   *//grafana.test/api/health) ;;
   *//grafana.test/*) need "Authorization: Bearer testkey" ;;
   *//portainer.test/*) need "X-API-Key: testkey" ;;
-  *//truenas.test/*) need "Authorization: Bearer testkey" ;;
+  # TrueNAS revokes a key sent over plain http, so the certificate check is off; requests go to $LOG
+  *//truenas.test/*) printf 'truenas%s\n' "$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey"; need "--no-check-certificate" ;;
   # Proxmox: the API token header and no certificate check are required; requests go to $LOG
   *//proxmox.test/*) printf 'proxmox%s\n' "$a" >> "${LOG:-/dev/null}"; need "Authorization: PVEAPIToken=root@pam!kd=testkey"; need "--no-check-certificate" ;;
   # OpenMediaVault JSON-RPC: login only for admin / p"a\ss (JSON-escaped in the body), then the cookie; without it an RPC error with status 200. Requests go to $LOG
@@ -55,11 +58,11 @@ case "$u" in
   *//deluge.test/json) case "$a" in
     *auth.login*) need '--post-data {"method":"auth.login","params":["p\"a\\ss"],"id":1}'; echo "  Set-Cookie: _session_id=abc; Path=/; HttpOnly" >&2 ;;
     *) need "Cookie: _session_id=abc" ;; esac ;;
-  # port 5000 needs no login; 8971 only after the login for admin / p"a\ss (JSON-escaped in the body), then the cookie. Requests go to $LOG
-  *//frigate.test:5000/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}" ;;
+  # Frigate is asked without a certificate check (8971 is https, self-signed). Port 5000 needs no login; 8971 only after the login for admin / p"a\ss (JSON-escaped in the body), then the cookie. Requests go to $LOG
+  *//frigate.test:5000/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "--no-check-certificate" ;;
   *//frigate.test:8971/api/login) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"
-    need '--post-data {"user":"admin","password":"p\"a\\ss"}'; echo "  Set-Cookie: frigate_token=abc; Path=/; HttpOnly" >&2 ;;
-  *//frigate.test:8971/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "Cookie: frigate_token=abc" ;;
+    need "--no-check-certificate"; need '--post-data {"user":"admin","password":"p\"a\\ss"}'; echo "  Set-Cookie: frigate_token=abc; Path=/; HttpOnly" >&2 ;;
+  *//frigate.test:8971/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "--no-check-certificate"; need "Cookie: frigate_token=abc" ;;
   # Home Assistant: Bearer token only; every request goes to $LOG, an entity without a fixture is a 404
   *//ha.test/*) echo "ha$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
@@ -118,7 +121,7 @@ case "$u" in
   *//truenas.test/api/v2.0/pool) f=home/truenas_pool ;;
   *//truenas.test/api/v2.0/alert/list) f=home/truenas_alerts ;;
   *//proxmox.test/api2/json/cluster/resources) f=home/proxmox_resources ;;
-  *//omv.test/*) case "$a" in *'"method":"login"'*) f=home/omv_login ;; *) case "$u" in */str/*) f=home/omv_info_str ;; *) f=home/omv_info ;; esac ;; esac ;;
+  *//omv.test/*) case "$a" in *'"method":"login"'*) f=home/omv_login ;; *) case "$u" in */str/*) f=home/omv_info_str ;; */la/*) f=home/omv_info_la ;; *) f=home/omv_info ;; esac ;; esac ;;
   *//kuma.test/empty/metrics) f=home/kuma_empty.txt ;;
   *//kuma.test/metrics) f=home/kuma_metrics.txt ;;
   *//moonraker.test/idle/printer/*) f=media/moonraker_idle ;;

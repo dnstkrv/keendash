@@ -2,15 +2,15 @@
 # name: Frigate
 # group: Дом
 # fields: url user pass
-# hint: Порт 5000 работает без входа; для 8971 — логин и пароль Frigate
-# Frigate NVR: version, detector speed, cameras (fps 0 = no stream), storage; the login (only with USER) goes in a JSON body, its cookie into the stats request
+# hint: Адрес https://хост:8971 и логин Frigate либо http://хост:5000 без логина. Сертификат не проверяется
+# Frigate NVR (certificate not checked, 8971 is usually self-signed): version, detector speed, cameras (fps 0 = no stream), storage; the login (only with USER) goes in a JSON body, its cookie into the stats request
 BIN=${0%/*}/../bin; . "$BIN/extlib"
-B=${URL%/}
+B=${URL%/}; set -- --no-check-certificate
 if [ -n "${USER:-}" ]; then
   esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
-  sid=$(dl -S -O /dev/null --header 'Content-Type: application/json' --post-data "{\"user\":\"$(esc "$USER")\",\"password\":\"$(esc "${PASS:-}")\"}" "$B/api/login" 2>&1 |
+  sid=$(dl -S -O /dev/null --no-check-certificate --header 'Content-Type: application/json' --post-data "{\"user\":\"$(esc "$USER")\",\"password\":\"$(esc "${PASS:-}")\"}" "$B/api/login" 2>&1 |
     sed -n 's/.*[Ss]et-[Cc]ookie: *\(frigate_token=[^;[:space:]]*\).*/\1/p' | head -n 1)
-  set -- --header "Cookie: $sid"
+  set -- "$@" --header "Cookie: $sid"
 fi
 J "$@" "$B/api/stats" | awk "$LOAD"'END {
   for (k in V) {

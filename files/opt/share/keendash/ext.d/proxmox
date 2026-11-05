@@ -9,6 +9,7 @@ B=${URL%/}
 J --no-check-certificate --header "Authorization: PVEAPIToken=${USER:-}=${KEY:-}" "$B/api2/json/cluster/resources" | awk "$LOAD"'END {
   for (k in V) if (k ~ /^data\.[0-9]+\.type$/) {
     i = substr(k, 6, length(k) - 10); t = V[k]; s = V["data." i ".status"]
+    if (V["data." i ".template"] == 1) continue
     if (t == "node") { n++; if (s == "online") o++; if (("data." i ".cpu") in V) { c += V["data." i ".cpu"]; cn++ } }
     else if (t == "qemu") { q++; if (s == "running") qr++ }
     else if (t == "lxc") { l++; if (s == "running") lr++ }

@@ -711,10 +711,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("ext.d/deluge: password not printed", !/a\\+ss/.test(collect("ext.d/deluge", "", "", { env: env.deluge })));
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-f-")), lg = () => fs.readFileSync(path.join(sd, "log"), "utf8"), fr = (e) => collect("ext.d/frigate", "", "", { state: sd, env: e }).trim();
-      ok("ext.d/frigate: no user -> no login request, no cookie, one stats request", fr(env.frigate) === want.frigate.join("\n") && lg() === "frigate -qO- http://frigate.test:5000/api/stats \n", lg());
+      ok("ext.d/frigate: no user -> no login request, no cookie, one stats request", fr(env.frigate) === want.frigate.join("\n") && lg() === "frigate -qO- --no-check-certificate http://frigate.test:5000/api/stats \n", lg());
       fs.rmSync(path.join(sd, "log"));
       const lo = fr("URL=http://frigate.test:8971 USER=admin PASS='p\"a\\ss' "), ll = lg().split("\n").filter(Boolean);
-      ok("ext.d/frigate: user -> JSON-escaped login, then stats with the cookie", lo === want.frigate.join("\n") && ll.length === 2 && ll[0].endsWith(' --post-data {"user":"admin","password":"p\\"a\\\\ss"} http://frigate.test:8971/api/login ') && / Cookie: frigate_token=abc /.test(ll[1]) && ll[1].endsWith(" http://frigate.test:8971/api/stats "), lg());
+      ok("ext.d/frigate: user -> JSON-escaped login, then stats with the cookie", lo === want.frigate.join("\n") && ll.length === 2 && / --no-check-certificate /.test(ll[0]) && / --no-check-certificate /.test(ll[1]) && ll[0].endsWith(' --post-data {"user":"admin","password":"p\\"a\\\\ss"} http://frigate.test:8971/api/login ') && / Cookie: frigate_token=abc /.test(ll[1]) && ll[1].endsWith(" http://frigate.test:8971/api/stats "), lg());
       ok("ext.d/frigate: password not printed", !/a\\+ss/.test(lo));
       ok("ext.d/frigate: wrong password and no answer -> ok 0", fr("URL=http://frigate.test:8971 USER=admin PASS=x ") === "ok 0" && fr("URL=http://nohost.test USER= PASS= ") === "ok 0");
       fs.rmSync(sd, { recursive: true, force: true });
@@ -728,12 +728,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/proxmox: key not printed, wrong key -> ok 0", !/testkey/.test(po) && run("proxmox", "URL=http://proxmox.test USER='root@pam!kd' KEY=bad ") === "ok 0");
       run("glances", env.glances);
       ok("ext.d/glances: certificate is checked (no --no-check-certificate)", !/no-check-certificate/.test(lg()), lg());
+      ok("ext.d/glances: empty user -> no Authorization", !/Authorization/.test(lg()), lg());
+      run("glances", "URL=http://glances.test USER=u PASS=p ");
+      ok("ext.d/glances: user -> Basic", / Authorization: Basic dTpw /.test(lg()), lg());
+      const to = run("truenas", env.truenas), tl = lg().split("\n").filter(Boolean);
+      ok("ext.d/truenas: --no-check-certificate on every request, key not printed", to === want.truenas.join("\n") && tl.length === 3 && tl.every(x => / --no-check-certificate /.test(x)) && !/testkey/.test(to), lg());
       const oo = run("omv", env.omv), ol = lg().split("\n").filter(Boolean);
       ok("ext.d/omv: JSON-escaped login, then getInformation with the session cookie", oo === want.omv.join("\n") && ol.length === 2 && ol[0].endsWith(' --post-data {"service":"Session","method":"login","params":{"username":"admin","password":"p\\"a\\\\ss"}} http://omv.test/rpc.php ') &&
         / Cookie: X-OPENMEDIAVAULT-SESSIONID=abc /.test(ol[1]) && ol[1].endsWith(' --post-data {"service":"System","method":"getInformation","params":{}} http://omv.test/rpc.php '), ol.join(" / "));
       ok("ext.d/omv: password not printed", !/a\\+ss/.test(oo));
       ok("ext.d/omv: wrong password and no answer -> ok 0", run("omv", "URL=http://omv.test USER=admin PASS=x ") === "ok 0" && run("omv", "URL=http://nohost.test USER=admin PASS=x ") === "ok 0");
       ok("ext.d/omv: uptime as a string, load as a string", run("omv", "URL=http://omv.test/str USER=admin PASS='p\"a\\ss' ") === ["ok 1", "t|Работает|93784|s", "t|Нагрузка|1.50|t", "t|Память|75|p"].join("\n"));
+      ok("ext.d/omv: loadAverage as a string, no memTotal -> empty memory value", run("omv", "URL=http://omv.test/la USER=admin PASS='p\"a\\ss' ") === ["ok 1", "t|Работает|93784|s", "t|Нагрузка|0.52|t", "t|Память||p"].join("\n"));
+      ok("ext.d/spoolman: HTML 200 -> ok 0, empty list -> zeros", run("spoolman", "URL=http://spoolman.test/html ") === "ok 0" && run("spoolman", "URL=http://spoolman.test/empty ") === ["ok 1", "t|Катушек|0|n", "t|Остаток, г|0|n", "t|Меньше 100 г|0|n"].join("\n"));
       fs.rmSync(sd, { recursive: true, force: true });
     }
     // ext.d/ha: each map path is an entity_id that goes into the URL; anything else is skipped, not requested, not executed
@@ -842,9 +849,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     every(bt + 270, set5);
     ok("bin/ext: EVERY=5 runs once the cache is 270 s old (EVERY*60-30), HOSTS and EVERY exported", rd(e, "x/t5") === "ok 1\nh=a.test b.test e=5\n", JSON.stringify(rd(e, "x/t5")));
     // a conf newer than the cache (just saved) runs at once; an older conf with a fresh cache does not
-    stamp("t9", nowS - 1000); stamp("t10", bt);
-    every(nowS - 990, { "etc/services/t9.conf": cf("", "5"), "etc/services/t10.conf": cf("", "5") });
-    ok("bin/ext: EVERY=5 runs when the conf is newer than the cache", rd(e, "x/t9") === "ok 1\nh= e=5\n" && rd(e, "x/t10") === "old\n", JSON.stringify([rd(e, "x/t9"), rd(e, "x/t10")]));
+    stamp("t9", nowS - 1000);
+    every(nowS - 990, { "etc/services/t9.conf": cf("", "5") });
+    ok("bin/ext: EVERY=5 runs when the conf is newer than the cache", rd(e, "x/t9") === "ok 1\nh= e=5\n", JSON.stringify(rd(e, "x/t9")));
+    stamp("t10", bt); every(bt + 10, { "etc/services/t10.conf": cf("", "5") });
+    ok("bin/ext: EVERY=5 skips an older conf with a fresh cache", rd(e, "x/t10") === "old\n", JSON.stringify(rd(e, "x/t10")));
+    stamp("t11", bt); every(bt - 50, { "etc/services/t11.conf": cf("", "5") });
+    ok("bin/ext: a cache mtime in the future (negative age) counts as due", rd(e, "x/t11") === "ok 1\nh= e=5\n", JSON.stringify(rd(e, "x/t11")));
     fs.rmSync(e, { recursive: true, force: true });
     const one = collect("ext", "sonarr-1", "", { files: { "etc/services/sonarr-1.conf": "TYPE='sonarr'\nURL='http://sonarr.test'\nKEY='bad'\n" } });
     ok("bin/ext: wrong key -> ok 0", one === "ok 0\n", one);
@@ -871,6 +882,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
         chks().join() === "chk.ck.http___up.test_x_y_1,chk.ck.https___bad.test_8443_,chk.ck.up.test_81", lg + " || " + chks().join());
       l = run("up.test", "UPBUMP=1");
       ok("ext.d/check: time is the uptime difference in ms", l.join("\n") === "ok 1\nup 1\nn 1\nh|up.test|200|120|100|1", l.join(" / "));
+      l = run("http://up.test/x?y http://up.test/x&y");
+      ok("ext.d/check: two addresses with the same key keep two rows and two histories", l.join("\n") === "ok 1\nup 2\nn 2\nh|http://up.test/x?y|200|0|100|1\nh|http://up.test/x&y|200|0|100|1" && chks().join() === "chk.ck.http___up.test_x_y,chk.ck.http___up.test_x_y_2", l.join(" / ") + chks().join());
+      l = run("up.test http://up.test/x up.test");
+      ok("ext.d/check: the same address twice is one row", l[2] === "n 2" && l.length === 5, l.join(" / "));
       // history: grows per run, lines older than 24 h go, the new line is epoch + 1|0; the percent and the last 30 come from the file; other instances and removed addresses
       fs.writeFileSync(f("chk.ck.up.test"), "1000 0\n" + (now - 86390) + " 1\n" + (now - 100) + " 0\n" + (now - 50) + " 1\n" + (now - 86410) + " 0\n");
       fs.writeFileSync(f("chk.ck.gone.test"), (now - 5) + " 1\n"); fs.writeFileSync(f("chk.other.up.test"), (now - 5) + " 1\n");
@@ -1446,6 +1461,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     q(".kd-dlg-save").click(); await wait(100);
     const [rev, txt] = await sent(w, fcalls);
     ok("dialog: a new instance sends hosts and every 5", txt === "keendash 1 " + rev + "\nadd check check\nset check name Доступность\nset check hosts a.test\nset check every 5\nend\n", JSON.stringify(txt));
+  }, cf(fcalls, chk), URL0);
+  fcalls = [];
+  await run(chk, async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s);
+    q('.kd-dlg-add[data-type="check"]').click();
+    q(".kd-dlg-save").click(); await wait(100);
+    ok("dialog: hosts is required, an empty one blocks the save", !post(fcalls, /\/rci\/put$/).length && q('input[data-f="hosts"][data-id="check"]').parentNode.querySelector(".kd-dlg-hint").textContent === "Заполните поле");
   }, cf(fcalls, chk), URL0);
   await run(full, async w => {
     const dlg = await openDlg(w);

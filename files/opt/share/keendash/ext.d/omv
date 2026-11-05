@@ -2,7 +2,7 @@
 # name: OpenMediaVault
 # group: Серверы
 # fields: url user pass
-# hint: Пользователь веб-интерфейса OMV
+# hint: Администратор веб-интерфейса OMV (роль administrator)
 # OpenMediaVault: uptime, load, memory over JSON-RPC; the login goes in a JSON body, its session cookie into the next request
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 B=${URL%/}
@@ -20,6 +20,6 @@ function up(u,  s, i, a) {
 }
 END {
   if (!("response.uptime" in V)) { print "ok 0"; exit }
-  l = V["response.loadAverage.1min"]; if (l == "") l = V["response.loadAverage.0"]; if (l == "") l = V["response.load.1min"]; if (l == "") l = V["response.load.0"]; if (l == "") l = V["response.load"]
+  l = V["response.loadAverage.1min"]; if (l == "") l = V["response.loadAverage.0"]; if (l == "") l = V["response.load.1min"]; if (l == "") l = V["response.load.0"]; if (l == "") l = V["response.load"]; if (l == "") l = V["response.loadAverage"]
   print "ok 1"; print "t|Работает|" up(V["response.uptime"]) "|s"; printf "t|Нагрузка|%.2f|t\n", l + 0
-  print "t|Память|" (V["response.memTotal"] > 0 ? int(V["response.memUsed"] * 100 / V["response.memTotal"]) : "—") "|p" }'
+  print "t|Память|" (V["response.memTotal"] > 0 ? int(V["response.memUsed"] * 100 / V["response.memTotal"]) : "") "|p" }'

@@ -1131,7 +1131,7 @@
   }
   function hint(inp) {
     var f = inp.getAttribute("data-f"), s = sets(dd, entry(inp.getAttribute("data-id"))).filter(function (x) { return x[0] === f; })[0];
-    inp.nextSibling.textContent = s ? bad(f, s[1], dtried && (f === "name" || f === "url")) : "";
+    inp.nextSibling.textContent = s ? bad(f, s[1], dtried && (f === "name" || f === "url" || f === "hosts")) : "";
   }
   function renderList() {
     if (!dlg) return;
@@ -1187,7 +1187,7 @@
   function doSave() {
     var d = dd, badId = "", my, rev = newRev();
     draft.inst.forEach(function (e) {
-      if (!badId && draft.del.indexOf(e.id) < 0 && sets(d, e).some(function (s) { return bad(s[0], s[1], s[0] === "name" || s[0] === "url"); })) badId = e.id;
+      if (!badId && draft.del.indexOf(e.id) < 0 && sets(d, e).some(function (s) { return bad(s[0], s[1], s[0] === "name" || s[0] === "url" || s[0] === "hosts"); })) badId = e.id;
     });
     dtried = true;
     if (badId) { dopen = badId; dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; renderList(); return; }

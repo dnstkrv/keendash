@@ -117,7 +117,7 @@ telemt=hide
 - Immich: Настройки аккаунта → API-ключи, ключ администратора с правом `server.statistics`, в поле «API-ключ»;
 - Plex: токен виден в адресе страницы «View XML» у любого фильма ([инструкция Plex](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)), в поле «Токен»;
 - Uptime Kuma: Settings → API Keys; Portainer: My account → Access tokens; TrueNAS: Credentials → API Keys (TrueNAS до 25.10); Grafana: Administration → Service accounts, роль Viewer, в поле «Токен»; Home Assistant: Профиль → Безопасность → Долгосрочные токены, в поле «Токен»;
-- Proxmox: Datacenter → Permissions → API Tokens, роль PVEAuditor; в «Логин» ID токена (`root@pam!keendash`), в «API-ключ» его секрет. **Сертификат Proxmox не проверяется** (обычно он самоподписанный); остальные типы проверяют сертификат, для самоподписанного используйте http-адрес.
+- Proxmox: Datacenter → Permissions → API Tokens, роль PVEAuditor; в «Логин» ID токена (`root@pam!keendash`), в «API-ключ» его секрет. **Сертификат Proxmox, Frigate и TrueNAS не проверяется** (обычно он самоподписанный); остальные типы проверяют сертификат, для самоподписанного используйте http-адрес. TrueNAS — только https, ключ, отправленный по http, TrueNAS отзывает; Frigate — `https://хост:8971` с логином или `http://хост:5000` без.
 
 #### Доступность сайтов
 
