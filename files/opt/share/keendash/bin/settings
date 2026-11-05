@@ -4,6 +4,7 @@
 #   settings list    the settings for status.json (keendashd status): vol|, rev|, err|, type|, inst|, hide|, col| lines
 #   settings vol     the volume of /opt for the firmware file manager: "<name>:" or "<name>:/<folder>", exit 1 if not found
 #   settings apply   check and apply the inbox messages, oldest first; the last result goes to $TMP/settings.state
+#   settings migrate move the third-party keys of keendash.conf (before v2) into services/<type>.conf
 # A message is "keendash 1 <rev>", then add/set/del/hide/show/col lines, then "end". One bad line rejects all of it.
 # Values from the browser are never run: services/<id>.conf has only KEY='value' lines, ids are [a-z0-9-].
 PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -27,6 +28,9 @@ types() {
     END { out() }' "$@"
 }
 
+# a value as one quoted shell word: ' becomes '\''
+sq() { printf "'%s'" "$(printf %s "$1" | sed "s/'/'\\\\''/g")"; }
+
 list() {
   [ -f "$TMP/vol" ] && echo "vol|$(cat "$TMP/vol")"
   [ -f "$TMP/settings.state" ] && sed -n 's/^rev /rev|/p; s/^err /err|/p' "$TMP/settings.state"
@@ -47,7 +51,8 @@ list() {
 }
 
 # check a message against the types, the instances and ui.conf; print "E <error>" or what to move into place:
-# "M <id>" ($W/<id>.conf -> services), "R <id>" (remove), "U" ($W/ui.conf)
+# "N <id>" (new: drop any cache and history of that id), "M <id>" ($W/<id>.conf -> services), "R <id>" (remove, cache too),
+# "U" ($W/ui.conf)
 CHECK='function bad(r) { if (err == "") err = "строка " FNR ": " substr(r, 1, 120) }
 function okid(s) { return s ~ /^[a-z0-9-]+$/ && length(s) <= 32 }
 function okname(s) { return s ~ /^[A-Za-z0-9._-]+$/ && length(s) <= 64 }
@@ -93,6 +98,7 @@ END {
   if (err == "") for (id in A) if (index(F[V[id, "TYPE"]], " url ") && V[id, "URL"] == "" && (m == "" || A[id] < m)) m = A[id]
   if (err == "" && m != "") err = "строка " m ": не задан адрес"
   if (err != "") { print "E " err; exit 1 }
+  for (id in A) print "N " id
   for (id in X) {
     o = W "/" id ".conf"; t = V[id, "TYPE"]
     print "TYPE=" sq(t) > o; print "NAME=" sq(V[id, "NAME"]) > o
@@ -150,8 +156,9 @@ apply() {
         # the loop is a pipeline subshell: its exit status says whether every mv/rm worked
         printf '%s\n' "$out" | while read -r op id; do
           case $op in
+            N) rm -f "$TMP/x/$id" "$TMP/s.$id."* || exit 1 ;;
             M) mv -f "$W/$id.conf" "$ETC/services/$id.conf" || exit 1 ;;
-            R) rm -f "$ETC/services/$id.conf" || exit 1 ;;
+            R) rm -f "$ETC/services/$id.conf" "$TMP/x/$id" "$TMP/s.$id."* || exit 1 ;;
             U) mv -f "$W/ui.conf" "$ETC/ui.conf" || exit 1 ;;
           esac
         done || err="не удалось записать настройки"
@@ -167,9 +174,50 @@ apply() {
   done
 }
 
+# one-time move of the third-party keys of keendash.conf into services/<type>.conf (id = type), run by postinst.
+# The conf is the user's own file, so a subshell sources it; the keys are dropped only when every write went through.
+migrate() {
+  umask 077
+  C=${KEENDASH_CONF:-$ETC/keendash.conf}
+  [ -f "$C" ] || return 0
+  mkdir -p "$ETC/services" || return 1
+  T=$(types) rc=0
+  for tp in agh:ADGUARD qb:QBIT plex:PLEX sonarr:SONARR radarr:RADARR prowlarr:PROWLARR overseerr:OVERSEERR immich:IMMICH; do
+    t=${tp%:*} p=${tp#*:} o=$ETC/services/$t.conf
+    [ -e "$o" ] && continue
+    h=$(printf '%s\n' "$T" | grep "^type|$t|")
+    fl=${h##*|} name=${h#type|$t|}
+    name=${name%%|*}
+    (
+      . "$C"
+      eval "u=\${${p}_URL:-}"
+      [ -n "$u" ] || exit 0
+      [ -n "$name" ] || exit 1
+      {
+        echo "TYPE=$(sq "$t")"; echo "NAME=$(sq "$name")"
+        for f in $(echo "$fl" | tr , ' '); do
+          k=$(echo "$f" | tr a-z A-Z); eval "v=\${${p}_$k:-}"
+          if [ -n "$v" ]; then echo "$k=$(sq "$v")"; fi
+        done
+      } > "$o.new" && mv "$o.new" "$o"
+    ) || rc=1
+  done
+  [ $rc = 0 ] || return 1
+  sed -E -e '/^#?(ADGUARD|QBIT|PLEX|SONARR|RADARR|PROWLARR|OVERSEERR|IMMICH)_[A-Z]+=/d' \
+    -e '/^# Third-party services: a tab appears/d' -e '/^# within a minute, no restart needed/d' -e '/^# The file then holds passwords/d' \
+    -e '/^# AdGuard Home: web UI address/d' -e '/^# qBittorrent: web UI address/d' -e '/^# Plex: address and X-Plex-Token/d' \
+    -e '/^# Sonarr, Radarr, Prowlarr, Overseerr: address and API key/d' -e '/^# Immich: address and an admin API key/d' \
+    -e '/^# Third-party services \(AdGuard Home/d' -e '/^# once their keys are added here/d' "$C" > "$C.1" &&
+    sed '/^$/N;/^\n$/D' "$C.1" > "$C.new"
+  r=$?; rm -f "$C.1"
+  [ $r = 0 ] || { rm -f "$C.new"; return 1; }
+  if cmp -s "$C" "$C.new"; then rm -f "$C.new"; else mv "$C.new" "$C"; fi
+}
+
 case $1 in
   list) list ;;
   vol) vol ;;
   apply) apply ;;
-  *) echo "usage: settings list | vol | apply" >&2; exit 2 ;;
+  migrate) migrate ;;
+  *) echo "usage: settings list | vol | apply | migrate" >&2; exit 2 ;;
 esac

@@ -18,6 +18,8 @@ c=/opt/etc/keendash/keendash.conf
 [ -f "$c" ] && grep -q '^HTTPS_PORT=' "$c" && sed -i -e '/^# HTTPS for the web UI opened via KeenDNS/d' -e "/^# port with the router's own KeenDNS certificate/d" \
   -e '/^# firewall, also from the internet. Needs direct KeenDNS/d' -e '/^# http only; to turn it on e.g. HTTPS_PORT=/d' -e '/^HTTPS_PORT=/d' "$c" &&
   sed -i '/^$/N;/^\n$/D' "$c"
+# 1.2.x: third-party service keys of keendash.conf -> services/<type>.conf
+/opt/share/keendash/bin/settings migrate >/dev/null 2>&1
 # keendashd finds the services itself right at its start (bin/tick 5)
 /opt/etc/init.d/S81keendash restart >/dev/null 2>&1
 echo "keendash installed. Reload the Keenetic web UI main page (Ctrl+F5). Settings: /opt/etc/keendash/keendash.conf"

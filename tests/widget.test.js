@@ -213,7 +213,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   // bin/settings in a scratch etc/var/tmp/ext.d: files {"etc/services/qb.conf": "..."}, inbox files 10 s old unless ago {path: seconds}
   function settingsRun(files, cmd, ago) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kdset-")), now = Date.now() / 1000;
-    ["etc/services", "var/inbox", "tmp", "ext.d"].forEach(d => fs.mkdirSync(path.join(tmp, d), { recursive: true }));
+    ["etc/services", "var/inbox", "tmp/x", "ext.d"].forEach(d => fs.mkdirSync(path.join(tmp, d), { recursive: true }));
     fs.writeFileSync(path.join(tmp, "ext.d", "qb"), "#!/bin/sh\n# name: qBittorrent\n# group: Медиа\n# fields: url user pass\n");
     fs.writeFileSync(path.join(tmp, "ext.d", "plex"), "#!/bin/sh\n# name: Plex\n# group: Медиа\n# fields: url token\n");
     Object.keys(files).forEach(f => {
@@ -309,6 +309,54 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
       !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
     r.rm();
+
+    // a deleted or newly added id starts without the cache and history of an earlier one with the same id
+    r = settingsRun(Object.assign({ "var/inbox/r10.txt": msg("r10", ["del qb-2", "add z qb", "set z url http://h"]), "tmp/x/qb-2": "ok 1\n", "tmp/s.qb-2.dl": "1\n", "tmp/x/z": "ok 1\n", "tmp/s.z.dl": "1\n",
+      "tmp/x/pl": "ok 1\n", "tmp/s.pl.dl": "1\n" }, base), "apply");
+    ok("settings apply: del and add drop the cache and history", r.rd("etc/services/z.conf") !== null && ["tmp/x/qb-2", "tmp/s.qb-2.dl", "tmp/x/z", "tmp/s.z.dl"].every(n => r.rd(n) === null) &&
+      r.rd("tmp/x/pl") === "ok 1\n" && r.rd("tmp/s.pl.dl") === "1\n", JSON.stringify(r.ls("tmp")));
+    r.rm();
+  }
+  {
+    // settings migrate: the third-party block of the 1.2.5 template, as it was
+    const TPL = [
+      "# keendash settings (the only config file). Shell syntax. After editing:", "#   /opt/etc/init.d/S81keendash restart", "",
+      "# TCP port of keendash's own web server (CGI status + widget scripts).", "PORT=8189", "",
+      "# Network interface to take the router's LAN address from (Keenetic: br0 = \"Home\" segment).",
+      "# Several interfaces can be listed, the first one that has an IPv4 address wins.", 'LAN_IFACE="br0"', "",
+      "# Fixed LAN address to listen on. Leave empty to detect it from LAN_IFACE.", 'LAN_IP=""', "",
+      "# Country tags for Antiscan addresses. 1 = look them up via ip-api.com (plain HTTP, banned", "# addresses leave the router), 0 = off.", "GEO=1", "",
+      "# Third-party services: a tab appears once the service's keys are uncommented and filled in, data comes",
+      '# within a minute, no restart needed. See "Сторонние сервисы" in the README for where to get the keys.',
+      "# The file then holds passwords: chmod 600 /opt/etc/keendash/keendash.conf", "",
+      "# AdGuard Home: web UI address, login and password", '#ADGUARD_URL="http://192.168.1.10:3000"', '#ADGUARD_USER="admin"', '#ADGUARD_PASS=""', "",
+      "# qBittorrent: web UI address, login and password (empty if LAN clients skip the login)", '#QBIT_URL="http://192.168.1.10:8080"', '#QBIT_USER="admin"', '#QBIT_PASS=""', "",
+      "# Plex: address and X-Plex-Token", '#PLEX_URL="http://192.168.1.10:32400"', '#PLEX_TOKEN=""', "",
+      "# Sonarr, Radarr, Prowlarr, Overseerr: address and API key (Settings -> General)", '#SONARR_URL="http://192.168.1.10:8989"', '#SONARR_KEY=""',
+      '#RADARR_URL="http://192.168.1.10:7878"', '#RADARR_KEY=""', '#PROWLARR_URL="http://192.168.1.10:9696"', '#PROWLARR_KEY=""',
+      '#OVERSEERR_URL="http://192.168.1.10:5055"', '#OVERSEERR_KEY=""', "",
+      "# Immich: address and an admin API key with server.statistics", '#IMMICH_URL="http://192.168.1.10:2283"', '#IMMICH_KEY=""', "",
+      '# Web UI links of the "Сервисы" card are detected automatically. Override here, one per line:', "#   service=8080                 open http://<router>:8080/",
+      "#   service=http://host:1234/x   open a full URL", "#   service=-                    no link for this service", "#   service=hide                 hide the service from the card", 'LINKS="', '"', ""].join("\n");
+    const set = TPL.replace('#QBIT_URL="http://192.168.1.10:8080"', 'QBIT_URL="http://10.0.0.5:8080"').replace('#QBIT_USER="admin"', "QBIT_USER=admin").replace('#QBIT_PASS=""', "QBIT_PASS='p'\\''s$x'");
+    let r = settingsRun({ "etc/keendash.conf": set }, "migrate");
+    const c1 = r.rd("etc/keendash.conf"), qbc = r.rd("etc/services/qb.conf");
+    ok("settings migrate: keys -> services, conf cleaned", qbc === "TYPE='qb'\nNAME='qBittorrent'\nURL='http://10.0.0.5:8080'\nUSER='admin'\nPASS='p'\\''s$x'\n" &&
+      r.mode("etc/services/qb.conf") === 0o600 && r.ls("etc/services").join() === "qb.conf" && !/QBIT_|PLEX_|SONARR_|IMMICH_|Third-party|AdGuard|passwords/.test(c1) && /PORT=8189\n/.test(c1) && /LINKS="/.test(c1) &&
+      /GEO=1\n\n# Web UI links/.test(c1) && !/\n\n\n/.test(c1), JSON.stringify([qbc, c1]));
+    const again = settingsRun({ "etc/keendash.conf": c1 || "", "etc/services/qb.conf": qbc || "" }, "migrate");
+    ok("settings migrate: second run changes nothing", again.rd("etc/keendash.conf") === c1 && again.rd("etc/services/qb.conf") === qbc && again.ls("etc/services").join() === "qb.conf", JSON.stringify(again.ls("etc/services")));
+    again.rm(); r.rm();
+    // the two-line comment of the later template goes too
+    const short = "GEO=1\n\n# Third-party services (AdGuard Home, Plex) appear\n# once their keys are added here, e.g. ADGUARD_URL=... - see README.\n\nLINKS=\"\n\"\n";
+    r = settingsRun({ "etc/keendash.conf": short }, "migrate");
+    ok("settings migrate: short comment removed", r.rd("etc/keendash.conf") === "GEO=1\n\nLINKS=\"\n\"\n", JSON.stringify(r.rd("etc/keendash.conf")));
+    r.rm();
+    // a type without a collector header: its keys stay in the conf
+    const nohdr = set.replace("#SONARR_URL=", "SONARR_URL=");
+    r = settingsRun({ "etc/keendash.conf": nohdr }, "migrate");
+    ok("settings migrate: no header for the type -> conf kept", r.rd("etc/keendash.conf") === nohdr, r.ls("etc/services").join());
+    r.rm();
   }
   // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers) and tests/fake-ndmc.
   // o.state: the dir for /tmp/keendash (the RCI token) and the fakes' request log; o.edit(script, dir): paths for the test;
@@ -327,7 +375,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const name = path.basename(script), ext = script === "ext" || script.startsWith("ext.d/");
     fs.writeFileSync(path.join(tmp, "rci"), src("rci"), { mode: 0o755 });
     if (ext) {
-      fs.mkdirSync(path.join(tmp, "bin")); fs.mkdirSync(path.join(tmp, "ext.d"));
+      fs.mkdirSync(path.join(tmp, "bin")); fs.mkdirSync(path.join(tmp, "ext.d"), { recursive: true });
       fs.writeFileSync(path.join(tmp, "bin", "extlib"), src("extlib"));
       if (haveCc) fs.copyFileSync(kd, path.join(tmp, "bin", "keendashd")), fs.chmodSync(path.join(tmp, "bin", "keendashd"), 0o755);
       fs.readdirSync(path.join(sh, "ext.d")).forEach(n => fs.writeFileSync(path.join(tmp, "ext.d", n), src("ext.d/" + n)));
@@ -380,6 +428,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(d, "x", "old"), "ok 1\n"); fs.writeFileSync(path.join(d, "s.old.dl"), "1\n");
     collect("ext", "", "", { state: d, files: { "etc/services/qb.conf": QB } });
     ok("bin/ext: removed instance -> cache gone", rd(d, "x/old") === null && rd(d, "s.old.dl") === null && rd(d, "x/qb-2") === null && rd(d, "s.qb.dl") === "5242880\n5242880\n" && /^ok 1\n/.test(rd(d, "x/qb")), ls(d));
+    // a collector that exits non-zero keeps its cache file
+    fs.writeFileSync(path.join(d, "x", "boom"), "ok 1\n");
+    collect("ext", "", "", { state: d, files: { "ext.d/boom": "#!/bin/sh\nexit 1\n", "etc/services/boom.conf": "TYPE='boom'\n" } });
+    ok("bin/ext: collector exit status 1 -> cache kept", rd(d, "x/boom") !== null, ls(d));
     fs.rmSync(d, { recursive: true, force: true });
     const one = collect("ext", "sonarr-1", "", { files: { "etc/services/sonarr-1.conf": "TYPE='sonarr'\nURL='http://sonarr.test'\nKEY='bad'\n" } });
     ok("bin/ext: wrong key -> ok 0", one === "ok 0\n", one);
@@ -462,8 +514,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
 
     // keendashd status: stats/services output -> the card's JSON; broken numbers become 0/null, strings are escaped
     const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));
-    fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "awg_nokey 1", "telemt_ok 1", "telemt_conn 12", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
-      "agh_url http://10.0.0.5:3000", "agh_ok 1", "agh_sq 1,2,x,3", "al|1793540467|ads.example.com|tv", "ms|qb|http://q", "qb_ok 0", 'pwb|Tracker "One"',
+    fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "awg_nokey 1", "telemt_ok 1", "telemt_conn 12", "telemt_users x", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
       "sys_load 007", "sys_temp", "ts_running 1", "ts_online 1", "tss|Running|router|100.64.0.1|waw||0||", "tsp|pc|windows|1|1|1||0001-01-01T00:00:00Z|10|20|0|0|"].join("\n") + "\n");
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
@@ -472,7 +523,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       "inst|pl|plex|Plex|http://p||token\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n");
     fs.mkdirSync(path.join(sd, "x"));
     fs.writeFileSync(path.join(sd, "x", "qb-2"), "ok 1\n~dl 5\nlist|a|1\n");
-    fs.writeFileSync(path.join(sd, "s.qb-2.dl"), "4\n5\n");
+    fs.writeFileSync(path.join(sd, "s.qb-2.dl"), "4\n5\n"); fs.writeFileSync(path.join(sd, "s.qb-2.dl.t"), "9\n");
     const env = Object.assign({}, process.env, { KEENDASH_STATS: "cat '" + sd + "/stats'", KEENDASH_SERVICES: "cat '" + sd + "/services'",
       KEENDASH_SETTINGS: "cat '" + sd + "/settings'", KEENDASH_TMP: sd });
     let s = null;
@@ -481,10 +532,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       ok("keendashd status: tabs, services, links", eq(s.tabs, ["telemt", "sys"]) && eq(s.svc, [["cron", 1, ""]]) && eq(s.web, [["lighttpd", 8090, "nfqws2"]]) && eq(s.ndp, [["firc.r.example.net", "127.0.0.1", 666, 1]]), JSON.stringify([s.tabs, s.svc, s.web, s.ndp]));
       ok("keendashd status: values, missing ones 0", s.telemt.ok === 1 && s.telemt.conn === 12 && s.telemt.users === 0 && s.sys.mem === 0 && s.awg.nokey === 1 && s.awg.up === 0, JSON.stringify(s.telemt) + JSON.stringify(s.awg));
-      ok("keendashd status: strings escaped", eq(s.telemt.list, [['alice "a"\\b', 3, 100, 200]]) && eq(s.media.prowlarr.list, ['Tracker "One"']), JSON.stringify(s.telemt.list));
+      ok("keendashd status: strings escaped", eq(s.telemt.list, [['alice "a"\\b', 3, 100, 200]]), JSON.stringify(s.telemt.list));
       ok("keendashd status: empty fields 0 / null", eq(s.awg.px, [["home", "freeturn-server", 1, 0, null, ""]]), JSON.stringify(s.awg.px));
-      ok("keendashd status: AdGuard url, series, recent", s.agh.ok === 1 && s.agh.url === "http://10.0.0.5:3000" && eq(s.agh.sq, [1, 2, 3]) && eq(s.agh.sb, []) && eq(s.agh.last, [[1793540467, "ads.example.com", "tv"]]), JSON.stringify(s.agh));
-      ok("keendashd status: media ok null until asked", eq(s.media.svc, [["qb", "http://q"]]) && s.media.qb.ok === 0 && s.media.plex.ok === null && s.media.sonarr.missing === null, JSON.stringify(s.media.qb));
       ok("keendashd status: 007 -> 7, empty temp -> null", s.sys.load === 7 && s.sys.temp === null, JSON.stringify(s.sys));
       ok("keendashd status: graph history, broken lines skipped", eq(s.series.sys_load, [10, 20, 30]) && eq(s.series.awg_bytes, []), JSON.stringify(s.series.sys_load));
       ok("keendashd status: Tailscale", s.ts.run === 1 && s.ts.online === 1 && s.ts.total === 0 && eq(s.ts.self, [["Running", "router", "100.64.0.1", "waw", "", 0, "", ""]]) &&
@@ -494,7 +543,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"]]]), JSON.stringify(s.types));
       ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }],
         ["pl", "plex", "Plex", "http://p", "", ["token"], null]]), JSON.stringify(s.inst));
-      ok("keendashd status: instance series", eq(s.series["qb-2.dl"], [4, 5]), JSON.stringify(s.series));
+      ok("keendashd status: instance series, no temp files, no old third-party keys", eq(s.series["qb-2.dl"], [4, 5]) && !("qb-2.dl.t" in s.series) && !("agh" in s) && !("media" in s) && !("qb_dl" in s.series), JSON.stringify(s.series));
     }
 
     // keendashd serve: static files, CGI, the built-in status; the daemon prints its pid

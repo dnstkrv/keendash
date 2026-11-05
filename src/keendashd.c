@@ -231,6 +231,7 @@ static void kvjson(buf *o, const char *text) {
   bs(o, "}");
   free(t); free(L.l);
 }
+static int ends(const char *s, const char *x) { size_t a = strlen(s), b = strlen(x); return a >= b && !strcmp(s + a - b, x); }
 /* graph history: the first word of each line of <tmp>/<key> */
 static void series(buf *b, const char *dir, const char *k) {
   char p[512], l[128], out[64]; int first = 1;
@@ -300,41 +301,15 @@ static void status(buf *o) {
   bs(o, "]},\"ts\":{"); kv(o, &S, "run=ts_running up=ts_up mem=ts_mem online=ts_online total=ts_total");
   bs(o, ",\"self\":["); rows(o, &S, "tss", "sssssnss");
   bs(o, "],\"list\":["); rows(o, &S, "tsp", "ssnnnssnnnns");
-  /* third-party services: "ok" is null until bin/ext has asked the API once */
-  bs(o, "]},\"agh\":{"); kv(o, &S, "ok=?agh_ok");
-  bs(o, ",\"url\":"); v = val(&S, "agh_url", &n); jstr(o, v ? v : "", v ? n : 0);
-  bs(o, ","); kv(o, &S, "q=agh_q b=agh_b ms=agh_ms days=agh_days fon=agh_fon fall=agh_fall rules=agh_rules upd=agh_upd");
-  bs(o, ",\"sq\":["); if ((v = val(&S, "agh_sq", &n))) nums(o, v, n, ',');
-  bs(o, "],\"sb\":["); if ((v = val(&S, "agh_sb", &n))) nums(o, v, n, ',');
-  bs(o, "],\"top\":["); rows(o, &S, "ab", "sn");
-  bs(o, "],\"cl\":["); rows(o, &S, "ac", "ssn");
-  bs(o, "],\"last\":["); rows(o, &S, "al", "nss");
-  bs(o, "]},\"media\":{\"svc\":["); rows(o, &S, "ms", "ss");
-  bs(o, "],\"qb\":{"); kv(o, &S, "ok=?qb_ok dl=qb_dl up=qb_up n=qb_n");
-  bs(o, ",\"list\":["); rows(o, &S, "qbt", "snnn");
-  bs(o, "]},\"plex\":{"); kv(o, &S, "ok=?pl_ok streams=pl_streams");
-  bs(o, ",\"list\":["); rows(o, &S, "pls", "ssns");
-  bs(o, "],\"libs\":["); rows(o, &S, "pll", "ssn");
-  bs(o, "]},\"sonarr\":{"); kv(o, &S, "ok=?sn_ok queue=sn_queue missing=?sn_missing");
-  bs(o, ",\"list\":["); rows(o, &S, "snq", "snn");
-  bs(o, "],\"cal\":["); rows(o, &S, "snc", "nssn");
-  bs(o, "]},\"radarr\":{"); kv(o, &S, "ok=?rd_ok queue=rd_queue missing=?rd_missing");
-  bs(o, ",\"list\":["); rows(o, &S, "rdq", "snn");
-  bs(o, "],\"cal\":["); rows(o, &S, "rdc", "nss");
-  bs(o, "]},\"prowlarr\":{"); kv(o, &S, "ok=?pw_ok all=pw_all on=pw_on bad=pw_bad q=pw_q g=pw_g fail=pw_fail");
-  bs(o, ",\"list\":["); rows(o, &S, "pwb", "=s");
-  bs(o, "]},\"overseerr\":{"); kv(o, &S, "ok=?ov_ok pending=ov_pending processing=ov_processing available=ov_available total=ov_total");
-  bs(o, "},\"immich\":{"); kv(o, &S, "ok=?im_ok photos=im_photos videos=im_videos usage=im_usage");
-  bs(o, ",\"list\":["); rows(o, &S, "imu", "snnn");
-  bs(o, "]}},\"sys\":{"); kv(o, &S, "load=sys_load mem=sys_mem memtotal=sys_memtotal temp=?sys_temp disk=sys_disk free=sys_free up=sys_uptime");
+  bs(o, "]},\"sys\":{"); kv(o, &S, "load=sys_load mem=sys_mem memtotal=sys_memtotal temp=?sys_temp disk=sys_disk free=sys_free up=sys_uptime");
   bs(o, "},\"series\":{");
   static const char *ser[] = { "telemt_conn", "telemt_octets", "awg_bytes", "awg_up", "firc_domains", "ascn_ips", "ascn_honeypot",
-                               "nfq_pkts", "nfq_auto", "hr_ips", "ts_bytes", "ts_online", "qb_dl", "qb_up", "sys_load", "sys_mem", "sys_temp" };
+                               "nfq_pkts", "nfq_auto", "hr_ips", "ts_bytes", "ts_online", "sys_load", "sys_mem", "sys_temp" };
   for (size_t i = 0; i < sizeof ser / sizeof *ser; i++) { bf(o, "%s\"%s\":[", i ? "," : "", ser[i]); series(o, tmp, ser[i]); bs(o, "]"); }
   /* s.<id>.<key>: graph history of the services' "~key" values (bin/ext) */
   DIR *dd = opendir(tmp);
   for (struct dirent *de; dd && (de = readdir(dd)); )
-    if (!strncmp(de->d_name, "s.", 2) && de->d_name[2]) { bs(o, ","); jstr(o, de->d_name + 2, strlen(de->d_name + 2)); bs(o, ":["); series(o, tmp, de->d_name); bs(o, "]"); }
+    if (!strncmp(de->d_name, "s.", 2) && de->d_name[2] && !ends(de->d_name, ".t")) { bs(o, ","); jstr(o, de->d_name + 2, strlen(de->d_name + 2)); bs(o, ":["); series(o, tmp, de->d_name); bs(o, "]"); }
   if (dd) closedir(dd);
 
   /* bin/settings list: the web UI's settings, the services' types and instances */

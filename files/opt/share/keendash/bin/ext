@@ -18,8 +18,8 @@ inst() {
   case "${TYPE:-}" in ""|*[!a-z0-9-]*) return 1 ;; esac
   [ -f "$EXTD/$TYPE" ] || return 1
   export URL USER PASS KEY TOKEN
-  # 2>/dev/null: the shell reports a wget killed by its deadline as "Terminated"
-  sh "$EXTD/$TYPE" 2>/dev/null
+  # 2>/dev/null: the shell reports a wget killed by its deadline as "Terminated"; || : keeps the cache when a collector exits non-zero
+  sh "$EXTD/$TYPE" 2>/dev/null || :
 }
 
 # refresh one instance: x/<id> atomically, "~key value" lines into the history files (the last 180)

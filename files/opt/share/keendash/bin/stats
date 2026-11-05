@@ -27,11 +27,6 @@ HAS_TS=0; { command -v tailscale >/dev/null 2>&1 || [ -n "$TS_PID" ]; } && HAS_T
 [ $HAS_NFQWS = 1 ] && echo "tab|nfqws"
 [ $HAS_HR = 1 ] && echo "tab|hydra"
 [ $HAS_TS = 1 ] && echo "tab|tailscale"
-[ -n "${ADGUARD_URL:-}" ] && printf 'tab|agh\nagh_url %s\n' "${ADGUARD_URL%/}"
-# media services: "ms|id|url" for each configured one, and their tab when there is any
-for x in qb:QBIT_URL plex:PLEX_URL sonarr:SONARR_URL radarr:RADARR_URL prowlarr:PROWLARR_URL overseerr:OVERSEERR_URL immich:IMMICH_URL; do
-  eval "u=\${${x#*:}:-}"; [ -n "$u" ] && echo "ms|${x%%:*}|${u%/}"
-done | { ms=$(cat); [ -n "$ms" ] && printf 'tab|media\n%s\n' "$ms"; }
 echo "tab|sys"
 
 # ---- telemt (API address is read from its config) ----
@@ -254,9 +249,6 @@ if [ $HAS_TS = 1 ]; then
       print "ts_online " on + 0; print "ts_total " n + 0
     }'
 fi
-
-# ---- third-party services (AdGuard Home, media): bin/ext keeps their API answers here, refreshed every minute ----
-cat /tmp/keendash/x.* 2>/dev/null
 
 # ---- system ----
 read l1 rest < /proc/loadavg
