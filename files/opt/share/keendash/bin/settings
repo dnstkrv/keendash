@@ -61,10 +61,10 @@ function cut(s, k) { while (k > 0 && substr(s, k + 1, 1) ~ cont) k--; return sub
 function bad(r) { if (err == "") err = "строка " FNR ": " cut(r, 120) }
 function okid(s) { return s ~ /^[a-z0-9-]+$/ && length(s) <= 32 }
 function okname(s) { return s ~ /^[A-Za-z0-9._-]+$/ && length(s) <= 64 }
-# "label=path[:fmt]" pairs split by ";": 1-4, label 1-32 characters without | = ;, path [A-Za-z0-9_.-]{1,128}, fmt n b bs p s
+# "label=path[:fmt]" pairs split by ";": 1-8, label 1-32 characters without | = ;, path [A-Za-z0-9_.-]{1,128}, fmt n b bs p s
 function okmap(v,  n, a, i, p, e, l, k, b, c) {
   n = split(v, a, ";")
-  if (n > 4) { bad("неверное поле map: " a[5]); return }
+  if (n > 8) { bad("неверное поле map: " a[9]); return }
   for (i = 1; i <= n; i++) {
     p = a[i]; gsub(/^ +| +$/, "", p); e = index(p, "="); l = substr(p, 1, e - 1); c = l; gsub(cont, "", c)
     k = split(substr(p, e + 1), b, ":")

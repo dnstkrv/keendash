@@ -370,10 +370,10 @@
   }
   /* hidden in the settings: where is "page" or "main", name a tab, chip's service or instance id */
   function hidden(d, where, name) { return (((d.cfg || {}).hide || {})[where] || []).indexOf(name) >= 0; }
-  /* generic view: up to 4 tiles from x.t = [[label, value, format n|b|bs|p|s|text]] */
+  /* generic view: up to 8 tiles from x.t = [[label, value, format n|b|bs|p|s|text]] */
   function tiles(x) {
     var h = "";
-    (x.t || []).slice(0, 4).forEach(function (r) {
+    (x.t || []).slice(0, 8).forEach(function (r) {
       var v = r[1], f = r[2], s;
       if (v == null || v === "" || (/^(b|bs|s)$/.test(f) && isNaN(+v))) s = "—";
       else if (f === "n") s = esc(fmtN(v));
@@ -964,7 +964,7 @@
   /* bin/settings okmap: "label=path[:fmt]" pairs split by ";", ASCII spaces around a pair trimmed, the label counts characters */
   function okmap(v) {
     var a = v.split(";");
-    return a.length <= 4 && a.every(function (p) {
+    return a.length <= 8 && a.every(function (p) {
       var e, l, b;
       p = p.replace(/^ +| +$/g, ""); e = p.indexOf("="); l = p.slice(0, e); b = p.slice(e + 1).split(":");
       return e > 0 && l.replace(/[\ud800-\udbff][\udc00-\udfff]/g, "x").length <= 32 && l.indexOf("|") < 0 && b.length <= 2 &&
@@ -977,7 +977,7 @@
     if (/[\x00-\x1f\x7f]/.test(v)) return "Недопустимый символ в значении";
     if (unescape(encodeURIComponent(v)).length > 512) return "Не длиннее 512 байт";
     if (f === "name" && v.replace(/[\ud800-\udbff][\udc00-\udfff]/g, "x").length > 64) return "Не длиннее 64 символов";
-    if (f === "map") return okmap(v) ? "" : "Формат: Подпись=путь[:формат]; до 4 пар";
+    if (f === "map") return okmap(v) ? "" : "Формат: Подпись=путь[:формат]; до 8 пар";
     if (PLAIN.test(f) && v.indexOf("|") >= 0) return "Символ | недопустим";
     if (f === "url" && !/^https?:\/\//.test(v)) return "Адрес должен начинаться с http:// или https://";
     return "";

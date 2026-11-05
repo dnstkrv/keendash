@@ -109,6 +109,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Медиа");
     ok("tiles: markup in n and p is text, a non-number in bs is a dash", vals(m) === "<b>x</b>|<b>y</b>%|—" && !m.querySelector(".us-val b"), vals(m));
   });
+  await run(zz({ ok: 1, t: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ["T" + n, n, "n"]) }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("tiles: up to 8", vals(m) === "1|2|3|4|5|6|7|8", vals(m));
+  });
   await run(zz({ ok: 1 }), (w, m) => {
     gclick(w, m, "Медиа");
     ok("tiles: no rows, no blocks", !m.querySelector(".us-blk"));
@@ -374,7 +378,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/settings apply: map", mconf === MC + "MAP='" + MAPOK + "'\n" && back === MAPOK && r.rd("tmp/settings.state") === "rev m1\nerr \n", JSON.stringify([mconf, back, r.rd("tmp/settings.state")]));
     r.rm();
     // [value, the pair the error names]; the error is cut at 120 bytes, so a long pair is compared by its start
-    const badmap = [["a|b=x", "a|b=x"], ["a=x; b=$y", "b=$y"], ["a=x:zz", "a=x:zz"], ["a=1;b=2;c=3;d=4;e=5", "e=5"], ["=x", "=x"], ["a=", "a="], ["a", "a"], ["a=x;", ""], ["a=x y", "a=x y"],
+    const badmap = [["a|b=x", "a|b=x"], ["a=x; b=$y", "b=$y"], ["a=x:zz", "a=x:zz"], ["a=1;b=2;c=3;d=4;e=5;f=6;g=7;h=8;i=9", "i=9"], ["=x", "=x"], ["a=", "a="], ["a", "a"], ["a=x;", ""], ["a=x y", "a=x y"],
       ["я".repeat(33) + "=x", "я".repeat(33) + "=x"], ["a=" + "x".repeat(129), "a=" + "x".repeat(129)], ["a=b=c", "a=b=c"], ["a=x:b:n", "a=x:b:n"]];
     const mfails = [], PFX = "rev m2\nerr строка 2: неверное поле map: ";
     badmap.forEach(([v, pair]) => {
@@ -401,8 +405,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const hl = r.out.split("\n").find(l => l.startsWith("type|hh|")).split("|")[5];
     ok("bin/settings types: hint cut to 200 characters", hl === "я".repeat(200) && !r.out.includes("�"), hl.length + " " + JSON.stringify(hl.slice(-3)));
     r.rm();
-    r = settingsRun(Object.assign({ "var/inbox/m3.txt": msg("m3", ["set c map " + "я".repeat(32) + "=x.y:n;b=c:p; d=e:s ; f=g"]) }, mbase), "apply");
-    ok("bin/settings apply: map limits (32 characters, 4 pairs, spaces)", /^rev m3\nerr \n$/.test(r.rd("tmp/settings.state")) && /^MAP=/m.test(r.rd("etc/services/c.conf")), r.rd("tmp/settings.state"));
+    r = settingsRun(Object.assign({ "var/inbox/m3.txt": msg("m3", ["set c map " + "я".repeat(32) + "=x.y:n;b=c:p; d=e:s ; f=g;h=i;j=k;l=m;n=o"]) }, mbase), "apply");
+    ok("bin/settings apply: map limits (32 characters, 8 pairs, spaces)", /^rev m3\nerr \n$/.test(r.rd("tmp/settings.state")) && /^MAP=/m.test(r.rd("etc/services/c.conf")), r.rd("tmp/settings.state"));
     r.rm();
     r = settingsRun({ "ext.d/mp": MP, "etc/services/c.conf": MC + "MAP='A=x.y'\n", "etc/services/d.conf": MC }, "list");
     ok("bin/settings list: map", /\ninst\|c\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|A=x.y\n/.test(r.out) && /\ninst\|d\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|\n/.test(r.out), JSON.stringify(r.out));
@@ -579,9 +583,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/custom: user and pass -> Basic", / --header Authorization: Basic dTpw /.test(lg), lg);
       [l, lg] = run(M);
       ok("ext.d/custom: no credentials -> no auth header", l[0] === "ok 1" && lg.startsWith("custom ") && !/Authorization|X-Api-Key|--header/.test(lg), lg);
-      // up to 4 pairs; the others fail the collector's own check: shell syntax in the path, "|" label, 2 colons, no "=", empty path; the label with " and \ is data
+      // up to 8 pairs; the others fail the collector's own check: shell syntax in the path, "|" label, 2 colons, no "=", empty path; the label with " and \ is data
       [l] = run("MAP='T=txt; X=$(touch " + unix(sd) + "/pwn); Q\"\\x=speed; Y=queue.total:zz; |=speed; Z=speed:n:n; W=a b; V=; U=queue.total; T5=speed; T6=speed'");
-      ok("ext.d/custom: bad pairs skipped, values and labels are data, nothing executed", l.join("\n") === "ok 1\nt|T|x$(id)`y|\nt|Q\"\\x|2048|\nt|U|7|\nt|T5|2048|" && !fs.existsSync(path.join(sd, "pwn")), l.join(" / "));
+      ok("ext.d/custom: bad pairs skipped, values and labels are data, nothing executed", l.join("\n") === "ok 1\nt|T|x$(id)`y|\nt|Q\"\\x|2048|\nt|U|7|\nt|T5|2048|\nt|T6|2048|" && !fs.existsSync(path.join(sd, "pwn")), l.join(" / "));
+      [l] = run("MAP='" + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "P" + n + "=speed").join("; ") + "'");
+      ok("ext.d/custom: 9 pairs -> 8 tiles", l.join("\n") === "ok 1\n" + [1, 2, 3, 4, 5, 6, 7, 8].map(n => "t|P" + n + "|2048|").join("\n"), l.join(" / "));
       [l, lg] = run(M + "PASS=p");
       ok("ext.d/custom: pass without user -> no auth header", !/Authorization/.test(lg), lg);
       [l] = run("MAP='Y=a`touch " + unix(sd) + "/pwn`; T=txt'");
@@ -1062,7 +1068,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("settings: Cyrillic name, size in UTF-8 bytes", body.size === new w.Blob([msg]).size && body.size === Buffer.byteLength(msg) && body.size > msg.length && post(fcalls, /\/fui$/)[0][1].body.get("Filedata").size === body.size, body.size + " " + msg.length);
   }, fm(fcalls, {}), URL0);
   // the type's hint (text, never markup) and the map field: checked like the router does, sent only when changed
-  const MAPERR = "Формат: Подпись=путь[:формат]; до 4 пар";
+  const MAPERR = "Формат: Подпись=путь[:формат]; до 8 пар";
   const cust = hint => Object.assign({}, full, { types: [["custom", "Свой API", "Другое", ["url", "map"], hint], ["plain", "Простой", "Другое", ["url"], ""]],
     inst: [["cu", "custom", "Свой", "http://h:1", "", [], null, "A=x"]] });
   // /rci/put and /fui answer, everything else is the status with the custom type
@@ -1094,8 +1100,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     q('.kd-dlg-i[data-id="cu"] .kd-dlg-hd').click();
     ok("dialog: empty hint, no tip; unchanged map, no save bar", !q(".kd-dlg-tip") && !q(".kd-dlg-save"));
     const wrong = v => { typeIn(w, mp(), v); return mh() === MAPERR; };
-    ok("dialog: map rule accepts", [" A=x ; B=y:s ", "A=x;B=y;C=z;D=p:p", "Ж=a.b-c_d:n", "A=x:"," A=x","\u00a0A=x", "\u{1F600}".repeat(32) + "=x", "a=" + "x".repeat(128)].every(v => !wrong(v)));
-    ok("dialog: map rule refuses", ["A", "=x", "A=", "A=x:q", "A=x:n:n", "A=b=c", "A;B=c", "A=x;B=y;C=z;D=p;E=q","A=x\u00a0", "A\u00a0=x\u00a0", "A=x ; B", "A;=x", ";",
+    ok("dialog: map rule accepts", [" A=x ; B=y:s ", "A=x;B=y;C=z;D=p:p;E=q;F=r;G=s;H=t", "Ж=a.b-c_d:n", "A=x:"," A=x","\u00a0A=x", "\u{1F600}".repeat(32) + "=x", "a=" + "x".repeat(128)].every(v => !wrong(v)));
+    ok("dialog: map rule refuses", ["A", "=x", "A=", "A=x:q", "A=x:n:n", "A=b=c", "A;B=c", "A=x;B=y;C=z;D=p;E=q;F=r;G=s;H=t;I=u","A=x\u00a0", "A\u00a0=x\u00a0", "A=x ; B", "A;=x", ";",
       "\u{1F600}".repeat(33) + "=x", "a=" + "x".repeat(129), "A=x:bs ;", "A b=x y"].every(wrong));
     typeIn(w, mp(), "A=x; B=y:bs");
     q(".kd-dlg-save").click(); await wait(100);
