@@ -1,0 +1,1 @@
+{"result":{"eventtime":1000.5,"status":{"print_stats":{"filename":"","total_duration":0.0,"print_duration":0.0,"state":"standby"},"display_status":{"progress":0.0,"message":null},"extruder":{"temperature":24.3,"target":0.0},"heater_bed":{"temperature":23.8,"target":0.0}}}}

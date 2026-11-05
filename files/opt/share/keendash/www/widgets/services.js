@@ -102,6 +102,7 @@
     return '<div class="us-blk"><div class="us-bh"><span class="us-lbl">' + label + '</span><b class="us-val">' + value + "</b></div>" +
       (vals === null ? "" : spark(vals, color || ACC)) + "</div>";
   }
+  function bar(pct, color) { return '<div class="us-bar"><i style="width:' + Math.min(100, Math.max(0, +pct || 0)) + '%;background:' + color + '"></i></div>'; }
   function note(text) { return '<div class="us-note">' + text + "</div>"; }
   function sec(text) { return '<div class="us-sec">' + text + "</div>"; }
   function dot(c) { return '<i class="us-dot" style="background:' + c + '"></i>'; }
@@ -372,6 +373,15 @@
       return h;
     }
   };
+  /* x.state: Klipper print state; file, pct, el (s), left (s, -1 unknown), ext/ext_t and bed/bed_t in degrees */
+  VIEW.moonraker = function (x, ser) {
+    var S = { printing: ["Печатает", ACC], paused: ["Пауза", WARN], complete: ["Готово", OK], cancelled: ["Отменено", OFF], error: ["Ошибка", BAD], standby: ["Ожидание", OFF] };
+    var s = S[x.state] || [esc(x.state), OFF], busy = x.state === "printing" || x.state === "paused";
+    var t = function (a, b) { return (+a || 0) + (+b > 0 ? " / " + +b : "") + " °C"; };
+    var h = line(s[1], s[0], x.file ? esc(x.file) : "");
+    if (busy) h += bar(x.pct, s[1]) + note("Прошло <b>" + fmtDur(x.el) + "</b> · Осталось <b>" + (x.left >= 0 ? fmtDur(x.left) : "—") + "</b>");
+    return h + '<div class="us-grid">' + blk("Сопло", t(x.ext, x.ext_t), ser("ext"), WARN) + blk("Стол", t(x.bed, x.bed_t), ser("bed"), ACC) + "</div>";
+  };
   VIEW.jellyfin = VIEW.plex; VIEW.jellyseerr = VIEW.overseerr;
   function instOf(d) {
     return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "", hosts: a[8] || "", every: a[9] || "" }; });
@@ -597,6 +607,7 @@
       ".us-spark{width:100%;height:44px;display:block}.us-empty{font-size:12px;opacity:.5;line-height:44px}" +
       ".us-sec{font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.5;margin-top:2px}" +
       ".us-row{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.us-dim{opacity:.55}" +
+      ".us-bar{height:6px;border-radius:3px;background:rgba(128,128,128,.25);overflow:hidden}.us-bar i{display:block;height:100%}" +
       ".us-hist{display:flex;gap:2px;height:6px}.us-hist i{flex:1 1 0;max-width:12px;border-radius:1px}.us-hu{background:" + OK + "}.us-hd{background:" + BAD + "}" +
       ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +

@@ -79,6 +79,8 @@ case "$u" in
   */api/v1/indexerstatus) f=media/prowlarr_status ;;
   */api/v1/indexerstats*) f=media/prowlarr_stats ;;
   */api/v1/request/count) f=media/overseerr_count ;;
+  *//moonraker.test/idle/printer/*) f=media/moonraker_idle ;;
+  *//moonraker.test/printer/*) f=media/moonraker_printing ;;
   *//jellyfin.test/Sessions*) f=media/jellyfin_sessions ;;
   *//jellyfin.test/evil/Items/Counts) f=media/jellyfin_counts_evil ;;
   *//jellyfin.test/Items/Counts) f=media/jellyfin_counts ;;

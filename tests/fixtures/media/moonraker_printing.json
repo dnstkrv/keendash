@@ -1,0 +1,1 @@
+{"result":{"eventtime":1000.5,"status":{"print_stats":{"filename":"benchy.gcode","total_duration":1300.2,"print_duration":1200.5,"state":"printing"},"display_status":{"progress":0.4,"message":null},"extruder":{"temperature":209.64,"target":215.0},"heater_bed":{"temperature":59.9,"target":60.0}}}}

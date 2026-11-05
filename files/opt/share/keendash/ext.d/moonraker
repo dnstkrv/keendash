@@ -1,0 +1,16 @@
+#!/bin/sh
+# name: Moonraker
+# group: Дом
+# fields: url
+# hint: Адрес Moonraker (порт 7125); роутер должен быть в trusted_clients
+# Klipper printer: state, progress, estimate, nozzle and bed temperatures
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+J "${URL%/}/printer/objects/query?print_stats&display_status&extruder&heater_bed" | awk "$LOAD"'END {
+  p = "result.status."
+  if (!((p "print_stats.state") in V)) { print "ok 0"; exit }
+  pr = V[p "display_status.progress"] + 0; el = V[p "print_stats.print_duration"] + 0; pc = int(pr * 100)
+  print "ok 1"; print "state " V[p "print_stats.state"]
+  if (V[p "print_stats.filename"] != "") print "file " V[p "print_stats.filename"]
+  print "pct " pc; print "el " int(el); print "left " (pc > 0 ? int(el / pr - el) : -1)
+  print "~ext " int(V[p "extruder.temperature"] + 0); print "ext_t " int(V[p "extruder.target"] + 0)
+  print "~bed " int(V[p "heater_bed.temperature"] + 0); print "bed_t " int(V[p "heater_bed.target"] + 0) }'

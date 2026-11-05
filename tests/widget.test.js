@@ -143,6 +143,24 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Доступность");
     ok("check: ok 0 -> the settings hint", /API Сайты недоступен · проверьте настройки/.test(m.textContent) && !m.querySelector(".us-hist"), m.textContent);
   });
+  // moonraker: state line with colour, file, bar at pct%, elapsed · left, nozzle and bed blocks with targets
+  const mr = (x) => one("moonraker", "Принтер", "Дом", "http://10.0.0.5:7125", x);
+  await run(mr({ ok: 1, state: "printing", file: "benchy.gcode", pct: 40, el: 1200, left: 1800, ext: 209, ext_t: 215, bed: 59, bed_t: 60 }), (w, m) => {
+    gclick(w, m, "Дом");
+    const r = m.querySelector(".us-row"), bf = m.querySelector(".us-bar i");
+    ok("moonraker printing: state, colour, file", r.querySelector(".us-nm").textContent === "Печатает" && r.querySelector(".us-r").textContent === "benchy.gcode" && r.innerHTML.includes("#4da3ff"), r.outerHTML);
+    ok("moonraker printing: bar width = pct%", !!bf && bf.style.width === "40%", m.innerHTML);
+    ok("moonraker printing: elapsed · left", m.querySelector(".us-note").textContent === "Прошло 20м · Осталось 30м", m.querySelector(".us-note").textContent);
+    ok("moonraker printing: nozzle and bed blocks with targets", vals(m) === "209 / 215 °C|59 / 60 °C" && /Сопло/.test(m.textContent) && /Стол/.test(m.textContent), vals(m));
+  });
+  await run(mr({ ok: 1, state: "standby", pct: 0, el: 0, left: -1, ext: 24, ext_t: 0, bed: 23, bed_t: 0 }), (w, m) => {
+    gclick(w, m, "Дом");
+    ok("moonraker standby: Ожидание, no bar, no times, temps without target", m.querySelector(".us-row .us-nm").textContent === "Ожидание" && !m.querySelector(".us-bar") && !m.querySelector(".us-note") && /^24 °C|23 °C$/.test(vals(m)), m.innerHTML);
+  });
+  await run(mr({ ok: 1, state: "paused", file: "<img src=x>", pct: 5, el: 60, left: -1, ext: 1, ext_t: 1, bed: 1, bed_t: 1 }), (w, m) => {
+    gclick(w, m, "Дом");
+    ok("moonraker paused: Пауза, file is text, left unknown", m.querySelector(".us-nm").textContent === "Пауза" && !m.querySelector("img") && /Осталось —/.test(m.textContent), m.innerHTML);
+  });
   // media tab: one sub-tab per configured service
   await run(full, (w, m) => {
     const click = (sel) => m.querySelector(sel).dispatchEvent(new w.Event("click", { bubbles: true }));
@@ -578,7 +596,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const env = {
       qb: "URL=http://qb.test:8080 USER=admin PASS='p&s=s' ", plex: "URL=http://plex.test:32400/ TOKEN=testkey ", sonarr: "URL=http://sonarr.test KEY=testkey ",
       radarr: "URL=http://radarr.test KEY=testkey ", prowlarr: "URL=http://prowlarr.test KEY=testkey ", overseerr: "URL=http://overseerr.test KEY=testkey ", immich: "URL=http://immich.test KEY=testkey ",
-      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ",
+      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ", moonraker: "URL=http://moonraker.test ",
       lidarr: "URL=http://lidarr.test KEY=testkey ", bazarr: "URL=http://bazarr.test KEY=testkey ", tautulli: "URL=http://tautulli.test KEY=testkey ",
       sabnzbd: "URL=http://sabnzbd.test KEY=testkey ", nzbget: "URL=http://nzbget.test USER=u PASS=p ",
       transmission: "URL=http://transmission.test USER= PASS= ", deluge: "URL=http://deluge.test PASS='p\"a\\ss' "
@@ -590,6 +608,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       radarr: ["ok 1", "queue 1", "list|Example Movie|75|7200", "missing 3"],
       prowlarr: ["ok 1", "list|Tracker Two", "all 3", "on 2", "bad 1", "q 50", "g 4", "fail 5"],
       overseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
+      moonraker: ["ok 1", "state printing", "file benchy.gcode", "pct 40", "el 1200", "left 1800", "~ext 209", "ext_t 215", "~bed 59", "bed_t 60"],
       jellyfin: ["ok 1", "list|alice|Example Show · Pilot|50|paused", "list|bob|Example Movie|10|playing", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23", "libs|Эпизоды|episode|500", "libs|Музыка|music|12"],
       jellyseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
       lidarr: ["ok 1", "t|В очереди|3|n", "t|Не скачано альбомов|14|n"],
@@ -606,6 +625,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const extra = s === "radarr" ? /^cal\|\d+\|Soon Movie\|d$/.test(lines[lines.length - 1]) && lines.length === 5 : lines.length === want[s].length;
       ok("ext.d/" + s, !miss.length && extra, miss.join(" / ") + " || " + lines.join(" / "));
     });
+    ok("ext.d/moonraker: standby, progress 0 -> left -1, no file", collect("ext.d/moonraker", "", "", { env: "URL=http://moonraker.test/idle " }).trim() === ["ok 1", "state standby", "pct 0", "el 0", "left -1", "~ext 24", "ext_t 0", "~bed 23", "bed_t 0"].join(String.fromCharCode(10)));
+    ok("ext.d/moonraker: no result.status -> ok 0", collect("ext.d/moonraker", "", "", { env: "URL=http://moonraker.test/nope " }).trim() === "ok 0");
     ok("ext.d/jellyfin: string counts become numbers, zero counts skipped", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test/evil KEY=testkey " }).trim() === ["ok 1", "streams 0", "libs|Фильмы|movie|1"].join("\n"));
     ok("ext.d/sabnzbd: D:HH:MM:SS", /^t\|Осталось времени\|93784\|s$/m.test(collect("ext.d/sabnzbd", "", "", { env: "URL=http://sabnzbd.test/days KEY=testkey " })));
     ok("ext.d/jellyfin: wrong key -> ok 0", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test KEY=bad " }).trim() === "ok 0");
