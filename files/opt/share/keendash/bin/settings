@@ -20,11 +20,13 @@ OPT=${KEENDASH_OPT:-/opt}
 types() {
   set -- "$EXTD"/*
   [ -e "$1" ] || return 0
-  awk 'function out() { if (t ~ /^[a-z0-9-]+$/) print "type|" t "|" n "|" g "|" f "|" h }
+  LC_ALL=C awk 'function chars(s, k,  i, c, m) { m = length(s); for (i = 1; i <= m; i++) if (substr(s, i, 1) !~ cont && ++c > k) return substr(s, 1, i - 1); return s }
+    BEGIN { cont = "[" sprintf("%c", 128) "-" sprintf("%c", 191) "]" }
+    function out() { if (t ~ /^[a-z0-9-]+$/) print "type|" t "|" n "|" g "|" f "|" h }
     FNR == 1 { out(); t = FILENAME; sub(/.*\//, "", t); n = t; g = ""; f = ""; h = "" }
     FNR <= 20 && /^# name: / { n = substr($0, 9) }
     FNR <= 20 && /^# group: / { g = substr($0, 10) }
-    FNR <= 20 && /^# hint: / { h = substr($0, 9); gsub("[|]", "", h); h = substr(h, 1, 200) }
+    FNR <= 20 && /^# hint: / { h = substr($0, 9); gsub("[|]", "", h); h = chars(h, 200) }
     FNR <= 20 && /^# fields: / { f = ""; k = split(substr($0, 11), a, " "); for (i = 1; i <= k; i++) if (a[i] ~ /^(url|user|pass|key|token|map)$/) f = f (f == "" ? "" : ",") a[i] }
     END { out() }' "$@"
 }
@@ -54,7 +56,9 @@ list() {
 # check a message against the types, the instances and ui.conf; print "E <error>" or what to move into place:
 # "N <id>" (new: drop any cache and history of that id), "M <id>" ($W/<id>.conf -> services), "R <id>" (remove, cache too),
 # "U" ($W/ui.conf)
-CHECK='function bad(r) { if (err == "") err = "строка " FNR ": " substr(r, 1, 120) }
+CHECK='# cut to k bytes, not inside a UTF-8 character
+function cut(s, k) { while (k > 0 && substr(s, k + 1, 1) ~ cont) k--; return substr(s, 1, k) }
+function bad(r) { if (err == "") err = "строка " FNR ": " cut(r, 120) }
 function okid(s) { return s ~ /^[a-z0-9-]+$/ && length(s) <= 32 }
 function okname(s) { return s ~ /^[A-Za-z0-9._-]+$/ && length(s) <= 64 }
 # "label=path[:fmt]" pairs split by ";": 1-4, label 1-32 characters without | = ;, path [A-Za-z0-9_.-]{1,128}, fmt n b bs p s

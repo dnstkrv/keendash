@@ -361,16 +361,34 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const back = mconf && cp.execFileSync("sh", ["-c", '. ./c.conf; printf %s "$MAP"'], { cwd: path.join(r.tmp, "etc", "services"), encoding: "utf8" });
     ok("bin/settings apply: map", mconf === MC + "MAP='" + MAPOK + "'\n" && back === MAPOK && r.rd("tmp/settings.state") === "rev m1\nerr \n", JSON.stringify([mconf, back, r.rd("tmp/settings.state")]));
     r.rm();
-    const badmap = [["set c map a|b=x"], ["set c map a=x; b=$y"], ["set c map a=x:zz"], ["set c map a=1;b=2;c=3;d=4;e=5"], ["set c map =x"], ["set c map a="], ["set c map a"], ["set c map a=x;"],
-      ["set c map " + "я".repeat(33) + "=x"], ["set c map a=" + "x".repeat(129)], ["set c map a=b=c"], ["set c map a=x:b:n"], ["set qb-2 map a=x"]];
-    const mfails = [];
-    badmap.forEach(l => {
-      r = settingsRun(Object.assign({ "var/inbox/m2.txt": msg("m2", l) }, mbase, base), "apply");
+    // [value, the pair the error names]; the error is cut at 120 bytes, so a long pair is compared by its start
+    const badmap = [["a|b=x", "a|b=x"], ["a=x; b=$y", "b=$y"], ["a=x:zz", "a=x:zz"], ["a=1;b=2;c=3;d=4;e=5", "e=5"], ["=x", "=x"], ["a=", "a="], ["a", "a"], ["a=x;", ""], ["a=x y", "a=x y"],
+      ["я".repeat(33) + "=x", "я".repeat(33) + "=x"], ["a=" + "x".repeat(129), "a=" + "x".repeat(129)], ["a=b=c", "a=b=c"], ["a=x:b:n", "a=x:b:n"]];
+    const mfails = [], PFX = "rev m2\nerr строка 2: неверное поле map: ";
+    badmap.forEach(([v, pair]) => {
+      r = settingsRun(Object.assign({ "var/inbox/m2.txt": msg("m2", ["set c map " + v]) }, mbase, base), "apply");
       const st = r.rd("tmp/settings.state") || "";
-      if (!/^rev m2\nerr строка 2: (неверное поле map: |неизвестное поле map)/.test(st) || r.rd("etc/services/c.conf") !== MC || r.rd("etc/services/qb-2.conf") !== QB || r.ls("var/inbox").length) mfails.push(l[0].slice(0, 40) + " -> " + st);
+      if (!(Buffer.byteLength(PFX + pair) < 120 ? st === PFX + pair + "\n" : st.startsWith(PFX + pair.slice(0, 40))) || r.rd("etc/services/c.conf") !== MC || r.rd("etc/services/qb-2.conf") !== QB || r.ls("var/inbox").length) mfails.push(v.slice(0, 40) + " -> " + st);
       r.rm();
     });
-    ok("bin/settings apply: bad map rejected, nothing changes", !mfails.length, mfails.join("; "));
+    r = settingsRun(Object.assign({ "var/inbox/m2.txt": msg("m2", ["set qb-2 map a=x"]) }, mbase, base), "apply");
+    if (r.rd("tmp/settings.state") !== "rev m2\nerr строка 2: неизвестное поле map\n" || r.rd("etc/services/qb-2.conf") !== QB) mfails.push("qb-2 -> " + r.rd("tmp/settings.state"));
+    r.rm();
+    ok("bin/settings apply: bad map rejected, names the pair, nothing changes", !mfails.length, mfails.join("; "));
+    // the 120-byte cut of the error does not leave half a Cyrillic character
+    r = settingsRun(Object.assign({ "var/inbox/m4.txt": msg("m4", ["set c map " + "я".repeat(60) + "=x"]) }, mbase), "apply");
+    const stb = fs.readFileSync(path.join(r.tmp, "tmp", "settings.state"));
+    ok("bin/settings apply: long error cut at a character", Buffer.from(stb.toString("utf8"), "utf8").equals(stb) && !stb.toString("utf8").includes("�") && stb.toString("utf8").startsWith(PFX.replace("m2", "m4") + "яя"), JSON.stringify(stb.toString("utf8")));
+    r.rm();
+    // an empty value clears the map
+    r = settingsRun({ "var/inbox/m5.txt": msg("m5", ["set c map"]), "ext.d/mp": MP, "etc/services/c.conf": MC + "MAP='A=x.y'\n" }, "apply");
+    ok("bin/settings apply: empty map clears", r.rd("etc/services/c.conf") === MC && r.rd("tmp/settings.state") === "rev m5\nerr \n", JSON.stringify([r.rd("etc/services/c.conf"), r.rd("tmp/settings.state")]));
+    r.rm();
+    // the hint is cut to 200 characters, not bytes
+    r = settingsRun({ "ext.d/hh": "#!/bin/sh\n# name: HH\n# group: G\n# hint: " + "я".repeat(250) + "\n# fields: url\n" }, "list");
+    const hl = r.out.split("\n").find(l => l.startsWith("type|hh|")).split("|")[5];
+    ok("bin/settings types: hint cut to 200 characters", hl === "я".repeat(200) && !r.out.includes("�"), hl.length + " " + JSON.stringify(hl.slice(-3)));
+    r.rm();
     r = settingsRun(Object.assign({ "var/inbox/m3.txt": msg("m3", ["set c map " + "я".repeat(32) + "=x.y:n;b=c:p; d=e:s ; f=g"]) }, mbase), "apply");
     ok("bin/settings apply: map limits (32 characters, 4 pairs, spaces)", /^rev m3\nerr \n$/.test(r.rd("tmp/settings.state")) && /^MAP=/m.test(r.rd("etc/services/c.conf")), r.rd("tmp/settings.state"));
     r.rm();
