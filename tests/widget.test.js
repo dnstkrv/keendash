@@ -680,7 +680,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       spoolman: "URL=http://spoolman.test ", grafana: "URL=http://grafana.test TOKEN=testkey ", glances: "URL=http://glances.test USER= PASS= ",
       portainer: "URL=http://portainer.test KEY=testkey ", truenas: "URL=http://truenas.test KEY=testkey ",
       proxmox: "URL=http://proxmox.test USER='root@pam!kd' KEY=testkey ", omv: "URL=http://omv.test USER=admin PASS='p\"a\\ss' ",
-      pihole: "URL=http://pihole.test PASS='p\"a\\ss' ", transmission: "URL=http://transmission.test USER= PASS= ", deluge: "URL=http://deluge.test PASS='p\"a\\ss' "
+      pihole: "URL=http://pihole.test PASS='p\"a\\ss' ", nextdns: "URL=http://nextdns.test USER=abc123 KEY=testkey ", transmission: "URL=http://transmission.test USER= PASS= ", deluge: "URL=http://deluge.test PASS='p\"a\\ss' "
     };
     const want = {
       qb: ["ok 1", "~dl 5242880", "~up 524288", "list|Example.Show.S01E01.1080p.mkv|420|4194304|600", 'list|Big   Pipe "Quoted" Movie 2160p|900|1048576|3600', "list|Stalled.Thing|100|0|8640000", "n 3"],
@@ -695,6 +695,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
         "sq 75,111,147,183,219,255,291,327,363,399,435,471,507,543,579,615,651,687,723,759,795,831,867,903", "sb 10,11,12,13,14,10,11,12,13,14,10,11,12,13,14,10,11,12,13,14,10,11,12,13",
         "top|ads.example.com|812", "top|tracker.example.net|455", "top|<b>x</b>.example.org|301", "top|telemetry.example.org|120", "top|pixel.example.com|64",
         "cl|laptop|192.168.1.20|5321", "cl|phone|192.168.1.31|2210", "cl|vpn laptop|10.8.0.2|900", "cl||192.168.1.99|10"],
+      nextdns: ["ok 1", "t|Запросов за сутки|9334|n", "t|Заблокировано|1234|n", "t|Блокировок|13.2|p"],
       ha: ["ok 1", "e|Temp|23.5|°C", "e|Hall|on|", "e|Gone||", "e|Odd|a b c| %"],
       jellyfin: ["ok 1", "list|alice|Example Show · Pilot|50|paused", "list|bob|Example Movie|10|playing", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23", "libs|Эпизоды|episode|500", "libs|Музыка|music|12"],
       jellyseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
@@ -798,6 +799,18 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/pihole: summary fails after the login -> ok 0 and one DELETE", run("URL=http://pihole.test/s500 " + pw) === "ok 0" && dels().length === 1 && ll().length === 3, lg());
       ok("ext.d/pihole: password for a Pi-hole without one (sid null) -> normal output, no header, no DELETE", run("URL=http://pihole.test/nopw " + pw) === all && ll().length === 5 && !/X-FTL-SID|DELETE/.test(lg()), lg());
       ok("ext.d/pihole: URL with /admin or /admin/ -> the API paths without it", ["/admin", "/admin/"].every(a => run("URL=http://pihole.test" + a + " " + pw) === all && ll().length === 6 && !/\/admin/.test(lg())), lg());
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
+    // nextdns: the profile ID is a path segment, so anything but [A-Za-z0-9]{1,32} is refused before the request
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-n-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";
+      const run = (e) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/nextdns", "", "", { state: sd, env: e }).trim(); };
+      const pwn = unix(path.join(sd, "pwn"));
+      const odd = ["../x", "a/b", "$(touch " + pwn + ")", "a b", "", "a".repeat(33)];
+      ok("ext.d/nextdns: odd profile IDs -> ok 0, no request, nothing executed", odd.every(u => run("URL=http://nextdns.test KEY=testkey USER='" + u + "' ") === "ok 0" && lg() === "") && !fs.existsSync(path.join(sd, "pwn")), lg());
+      ok("ext.d/nextdns: 32 chars is fine; the profile is in the path with from=-1d, the key in the header", run("URL=http://nextdns.test KEY=testkey USER=" + "a".repeat(32) + " ").startsWith("ok 1") && lg().split("\n").filter(Boolean).length === 1 && / --header X-Api-Key: testkey http:\/\/nextdns\.test\/profiles\/a{32}\/analytics\/status\?from=-1d \n$/.test(lg()), lg());
+      ok("ext.d/nextdns: wrong key -> ok 0", run("URL=http://nextdns.test KEY=bad USER=abc123 ") === "ok 0");
+      ok("ext.d/nextdns: key not printed", !/testkey/.test(run("URL=http://nextdns.test KEY=testkey USER=abc123 ")));
       fs.rmSync(sd, { recursive: true, force: true });
     }
     // proxmox: token header and --no-check-certificate (only here); omv: JSON-escaped login body, then the session cookie

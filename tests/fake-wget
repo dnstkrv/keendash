@@ -77,6 +77,8 @@ case "$u" in
       */open/* | */nopw/*) ;;
       *) need "X-FTL-SID: S1D-test" ;;
     esac ;;
+  # NextDNS: X-Api-Key testkey; requests go to $LOG
+  *//nextdns.test/*) echo "nextdns$a" >> "${LOG:-/dev/null}"; need "X-Api-Key: testkey" ;;
   # Home Assistant: Bearer token only; every request goes to $LOG, an entity without a fixture is a 404
   *//ha.test/*) echo "ha$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
@@ -157,6 +159,7 @@ case "$u" in
   *//pihole.test/*api/history) f=net/pihole_history ;;
   *//pihole.test/*api/stats/top_domains*) f=net/pihole_top_domains ;;
   *//pihole.test/*api/stats/top_clients*) f=net/pihole_top_clients ;;
+  *//nextdns.test/*) f=net/nextdns_status ;;
   */rci/show/interface) f=rci/interface ;;
   */rci/show/ip/http/proxy) f=rci/proxy ;;
   */rci/) f=rci/system_name ;;
