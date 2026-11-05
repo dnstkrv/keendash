@@ -27,7 +27,7 @@ refresh() {
   inst "$1" > "$TMP/x/$1.new" || { rm -f "$TMP/x/$1.new" "$TMP/x/$1"; return; }
   [ -s "$TMP/x/$1.new" ] || echo "ok 0" > "$TMP/x/$1.new"
   sed -n 's/^~\([a-z0-9_]*\) \(.*\)/\1 \2/p' "$TMP/x/$1.new" | while read -r k v; do
-    f="$TMP/s.$1.$k"; { tail -n 179 "$f" 2>/dev/null; echo "$v"; } > "$f.t" && mv "$f.t" "$f"
+    f="$TMP/s.$1.$k"; { tail -n 179 "$f" 2>/dev/null; echo "$v"; } > "$TMP/.s.$1.$k.t" && mv "$TMP/.s.$1.$k.t" "$f"
   done
   mv "$TMP/x/$1.new" "$TMP/x/$1"
 }

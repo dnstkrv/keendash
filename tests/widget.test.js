@@ -210,7 +210,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   // keendashd built with the host C compiler; its tests are skipped where there is none (Windows), CI has gcc
   const kd = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kdd-")), "keendashd"), haveCc = !cp.spawnSync("cc", ["--version"]).error;
   if (haveCc) {
-    const b = cp.spawnSync("cc", ["-std=c99", "-O2", "-Wall", "-o", kd, path.join(__dirname, "..", "src", "keendashd.c")], { encoding: "utf8" });
+    const b = cp.spawnSync("cc", ["-std=c99", "-O2", "-Wall", "-Wextra", "-Werror", "-o", kd, path.join(__dirname, "..", "src", "keendashd.c")], { encoding: "utf8" });
     ok("keendashd builds", b.status === 0, b.stderr);
   } else res.push("SKIP keendashd and bin/ext tests: no C compiler (cc)");
   // bin/stats firc groups: its awk on a groups.yaml with one interface, a block list and a flow list; names from ifnames
@@ -377,6 +377,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     r = settingsRun({ "etc/keendash.conf": short }, "migrate");
     ok("settings migrate: short comment removed", r.rd("etc/keendash.conf") === "GEO=1\n\nLINKS=\"\n\"\n", JSON.stringify(r.rd("etc/keendash.conf")));
     r.rm();
+    // a backslash in a value stays as it is; export and indented lines are migrated and removed like the plain ones
+    r = settingsRun({ "etc/keendash.conf": "export QBIT_URL=\"http://h:1\"\n  QBIT_USER=u\n\tQBIT_PASS=\"a\\b\"\nGEO=1\n" }, "migrate");
+    ok("settings migrate: backslash, export and indented keys", r.rd("etc/services/qb.conf") === "TYPE='qb'\nNAME='qBittorrent'\nURL='http://h:1'\nUSER='u'\nPASS='a\\b'\n" && r.rd("etc/keendash.conf") === "GEO=1\n",
+      JSON.stringify([r.rd("etc/services/qb.conf"), r.rd("etc/keendash.conf")]));
+    r.rm();
     // a type without a collector header: its keys stay in the conf
     const nohdr = set.replace("#SONARR_URL=", "SONARR_URL=");
     r = settingsRun({ "etc/keendash.conf": nohdr }, "migrate");
@@ -456,7 +461,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     // a collector that exits non-zero keeps its cache file
     fs.writeFileSync(path.join(d, "x", "boom"), "ok 1\n");
     collect("ext", "", "", { state: d, files: { "ext.d/boom": "#!/bin/sh\nexit 1\n", "etc/services/boom.conf": "TYPE='boom'\n" } });
-    ok("bin/ext: collector exit status 1 -> cache kept", rd(d, "x/boom") !== null, ls(d));
+    ok("bin/ext: collector exit status 1 -> x/<id> not deleted", rd(d, "x/boom") !== null, ls(d));
     fs.rmSync(d, { recursive: true, force: true });
     const one = collect("ext", "sonarr-1", "", { files: { "etc/services/sonarr-1.conf": "TYPE='sonarr'\nURL='http://sonarr.test'\nKEY='bad'\n" } });
     ok("bin/ext: wrong key -> ok 0", one === "ok 0\n", one);
@@ -548,7 +553,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       "inst|pl|plex|Plex|http://p||token\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n");
     fs.mkdirSync(path.join(sd, "x"));
     fs.writeFileSync(path.join(sd, "x", "qb-2"), "ok 1\n~dl 5\nlist|a|1\n");
-    fs.writeFileSync(path.join(sd, "s.qb-2.dl"), "4\n5\n"); fs.writeFileSync(path.join(sd, "s.qb-2.dl.t"), "9\n");
+    fs.writeFileSync(path.join(sd, "s.qb-2.dl"), "4\n5\n"); fs.writeFileSync(path.join(sd, "s.qb-2.t"), "7\n"); fs.writeFileSync(path.join(sd, ".s.qb-2.dl.t"), "9\n");
     const env = Object.assign({}, process.env, { KEENDASH_STATS: "cat '" + sd + "/stats'", KEENDASH_SERVICES: "cat '" + sd + "/services'",
       KEENDASH_SETTINGS: "cat '" + sd + "/settings'", KEENDASH_TMP: sd });
     let s = null;
@@ -568,7 +573,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"]]]), JSON.stringify(s.types));
       ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }],
         ["pl", "plex", "Plex", "http://p", "", ["token"], null]]), JSON.stringify(s.inst));
-      ok("keendashd status: instance series, no temp files, no old third-party keys", eq(s.series["qb-2.dl"], [4, 5]) && !("qb-2.dl.t" in s.series) && !("agh" in s) && !("media" in s) && !("qb_dl" in s.series), JSON.stringify(s.series));
+      ok("keendashd status: instance series (a key named t too), no old third-party keys", eq(s.series["qb-2.dl"], [4, 5]) && eq(s.series["qb-2.t"], [7]) && !("agh" in s) && !("media" in s) && !("qb_dl" in s.series), JSON.stringify(s.series));
     }
 
     // keendashd serve: static files, CGI, the built-in status; the daemon prints its pid

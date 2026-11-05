@@ -193,17 +193,17 @@ migrate() {
       eval "u=\${${p}_URL:-}"
       [ -n "$u" ] || exit 0
       [ -n "$name" ] || exit 1
-      {
-        echo "TYPE=$(sq "$t")"; echo "NAME=$(sq "$name")"
-        for f in $(echo "$fl" | tr , ' '); do
-          k=$(echo "$f" | tr a-z A-Z); eval "v=\${${p}_$k:-}"
-          if [ -n "$v" ]; then echo "$k=$(sq "$v")"; fi
-        done
-      } > "$o.new" && mv "$o.new" "$o"
-    ) || rc=1
+      # one printf, so the exit status is the write's (echo would also eat backslashes in a value)
+      x=$(printf 'TYPE=%s\nNAME=%s' "$(sq "$t")" "$(sq "$name")")
+      for f in $(echo "$fl" | tr , ' '); do
+        k=$(echo "$f" | tr a-z A-Z); eval "v=\${${p}_$k:-}"
+        [ -z "$v" ] || x=$x$(printf '\n%s=%s' "$k" "$(sq "$v")")
+      done
+      printf '%s\n' "$x" > "$o.new" && mv "$o.new" "$o"
+    ) || { rm -f "$o.new"; rc=1; }
   done
   [ $rc = 0 ] || return 1
-  sed -E -e '/^#?(ADGUARD|QBIT|PLEX|SONARR|RADARR|PROWLARR|OVERSEERR|IMMICH)_[A-Z]+=/d' \
+  sed -E -e '/^[[:space:]]*(export[[:space:]]+)?#?[[:space:]]*(ADGUARD|QBIT|PLEX|SONARR|RADARR|PROWLARR|OVERSEERR|IMMICH)_[A-Z]+=/d' \
     -e '/^# Third-party services: a tab appears/d' -e '/^# within a minute, no restart needed/d' -e '/^# The file then holds passwords/d' \
     -e '/^# AdGuard Home: web UI address/d' -e '/^# qBittorrent: web UI address/d' -e '/^# Plex: address and X-Plex-Token/d' \
     -e '/^# Sonarr, Radarr, Prowlarr, Overseerr: address and API key/d' -e '/^# Immich: address and an admin API key/d' \

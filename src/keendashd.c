@@ -231,7 +231,7 @@ static void kvjson(buf *o, const char *text) {
   bs(o, "}");
   free(t); free(L.l);
 }
-static int ends(const char *s, const char *x) { size_t a = strlen(s), b = strlen(x); return a >= b && !strcmp(s + a - b, x); }
+
 /* graph history: the first word of each line of <tmp>/<key> */
 static void series(buf *b, const char *dir, const char *k) {
   char p[512], l[128], out[64]; int first = 1;
@@ -277,7 +277,7 @@ static void insts(buf *o, lines *L, const char *tmp) {
 static void status(buf *o) {
   buf sb = { 0 }, vb = { 0 };
   lines S = cmd("KEENDASH_STATS", SHARE "/bin/stats", &sb), V = cmd("KEENDASH_SERVICES", SHARE "/bin/services", &vb);
-  const char *tmp = getenv("KEENDASH_TMP"), *v; size_t n;
+  const char *tmp = getenv("KEENDASH_TMP");
   if (!tmp || !*tmp) tmp = "/tmp/keendash";
 
   bf(o, "{\"now\":%ld,\"tabs\":[", (long)time(NULL)); rows(o, &S, "tab", "=s");
@@ -309,7 +309,7 @@ static void status(buf *o) {
   /* s.<id>.<key>: graph history of the services' "~key" values (bin/ext) */
   DIR *dd = opendir(tmp);
   for (struct dirent *de; dd && (de = readdir(dd)); )
-    if (!strncmp(de->d_name, "s.", 2) && de->d_name[2] && !ends(de->d_name, ".t")) { bs(o, ","); jstr(o, de->d_name + 2, strlen(de->d_name + 2)); bs(o, ":["); series(o, tmp, de->d_name); bs(o, "]"); }
+    if (!strncmp(de->d_name, "s.", 2) && de->d_name[2]) { bs(o, ","); jstr(o, de->d_name + 2, strlen(de->d_name + 2)); bs(o, ":["); series(o, tmp, de->d_name); bs(o, "]"); }
   if (dd) closedir(dd);
 
   /* bin/settings list: the web UI's settings, the services' types and instances */
