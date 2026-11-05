@@ -1,0 +1,19 @@
+#!/bin/sh
+# name: qBittorrent
+# group: Медиа
+# fields: url user pass
+# qBittorrent Web API v2: session cookie from the login, then transfer and torrents
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "Referer: $B"
+if [ -n "${USER:-}" ]; then
+  # session cookie: SID, or QBT_SID_<port> in newer versions
+  sid=$(dl -S -O /dev/null --header "Referer: $B" --post-data "username=$(enc "$USER")&password=$(enc "${PASS:-}")" "$B/api/v2/auth/login" 2>&1 |
+    sed -n 's/.*[Ss]et-[Cc]ookie: *\([^=;]*SID[^=;]*=[^;]*\).*/\1/p' | head -n 1)
+  set -- "$@" --header "Cookie: $sid"
+fi
+t=$(J "$@" "$B/api/v2/transfer/info")
+case "$t" in *dl_info_speed*) echo "ok 1" ;; *) echo "ok 0"; exit ;; esac
+printf '%s\n' "$t" | awk "$LOAD"'END { print "~dl " V["dl_info_speed"] + 0; print "~up " V["up_info_speed"] + 0 }'
+J "$@" "$B/api/v2/torrents/info?filter=downloading&sort=dlspeed&reverse=true" | awk "$LOAD"'END {
+  for (n = 0; (n ".hash") in V; n++) if (n < 5) print "list|" V[n ".name"] "|" int(V[n ".progress"] * 1000) "|" V[n ".dlspeed"] + 0 "|" V[n ".eta"] + 0
+  print "n " n }'

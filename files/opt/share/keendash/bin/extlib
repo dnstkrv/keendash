@@ -1,0 +1,23 @@
+# Helpers for the collectors in ext.d: a collector sets BIN (the dir with this file and keendashd) and sources it.
+PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+# wget with our own deadline: busybox wget may have no -T, GNU wget waits 15 minutes by default
+dl() {
+  wget "$@" & p=$!
+  ( sleep 4; kill $p ) >/dev/null 2>&1 & k=$!
+  wait $p; r=$?; kill $k 2>/dev/null; return $r
+}
+# JSON from the API flattened to "path<TAB>value" lines: records.0.series.title<TAB>Silo
+# shortcut: \uXXXX escapes stay as they are (keendashd json); the APIs used here send UTF-8 as is
+J() { dl -qO- "$@" 2>/dev/null | "$BIN/keendashd" json; }
+# awk prologue for the flattened lines: V[path] = value
+LOAD='BEGIN { FS = "\t" } { V[$1] = $2 }
+function pct(s, l) { return s > 0 ? int((s - l) * 100 / s) : 0 }
+function tl(t,  a, dd) { if (t == "") return -1; dd = 0; if (t ~ /^[0-9]+\./) { dd = int(t); sub(/^[0-9]+\./, "", t) }; split(t, a, ":"); return dd * 86400 + a[1] * 3600 + a[2] * 60 + int(a[3]) }
+function ep(s,  y, m, dd) { if (s == "") return 0; y = substr(s, 1, 4) + 0; m = substr(s, 6, 2) + 0; dd = substr(s, 9, 2) + 0; if (m < 3) { y--; m += 12 }
+  return (365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + dd - 719469) * 86400 + substr(s, 12, 2) * 3600 + substr(s, 15, 2) * 60 + substr(s, 18, 2) }
+'
+# percent-encode every byte (form data); busybox od has only -b here
+enc() { printf '%s' "$1" | od -b | awk '{ for (i = 2; i <= NF; i++) { n = 0; for (j = 1; j <= 3; j++) n = n * 8 + substr($i, j, 1); printf "%%%02x", n } }'; }
+# ISO time N days from now
+day() { date -u -d "@$(( $(date +%s) + $1 * 86400 ))" +%Y-%m-%dT%H:%M:%SZ; }

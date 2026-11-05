@@ -1,0 +1,16 @@
+#!/bin/sh
+# name: Sonarr
+# group: Медиа
+# fields: url key
+# Sonarr v3: queue, missing episodes, week calendar
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "X-Api-Key: ${KEY:-}"
+q=$(J "$@" "$B/api/v3/queue?pageSize=5&includeSeries=true&includeEpisode=true")
+case "$q" in *totalRecords*) echo "ok 1" ;; *) echo "ok 0"; exit ;; esac
+printf '%s\n' "$q" | awk "$LOAD"'END { print "queue " V["totalRecords"] + 0
+  for (i = 0; ("records." i ".id") in V; i++) { r = "records." i "."
+    print "list|" V[r "series.title"] sprintf(" S%02dE%02d", V[r "episode.seasonNumber"], V[r "episode.episodeNumber"]) "|" pct(V[r "size"], V[r "sizeleft"]) "|" tl(V[r "timeleft"]) } }'
+J "$@" "$B/api/v3/wanted/missing?pageSize=1&monitored=true" | awk "$LOAD"'END { if ("totalRecords" in V) print "missing " V["totalRecords"] }'
+J "$@" "$B/api/v3/calendar?start=$(day 0)&end=$(day 7)&includeSeries=true" | awk "$LOAD"'END {
+  for (i = 0; (i ".id") in V && i < 6; i++)
+    print "cal|" ep(V[i ".airDateUtc"]) "|" V[i ".series.title"] "|" sprintf("S%02dE%02d", V[i ".seasonNumber"], V[i ".episodeNumber"]) "|" (V[i ".hasFile"] == "true") }'

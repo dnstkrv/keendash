@@ -1,0 +1,18 @@
+#!/bin/sh
+# name: Plex
+# group: Медиа
+# fields: url token
+# Plex Media Server: sessions and library sizes
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "Accept: application/json" --header "X-Plex-Token: ${TOKEN:-}"
+s=$(J "$@" "$B/status/sessions")
+case "$s" in MediaContainer*) echo "ok 1" ;; *) echo "ok 0"; exit ;; esac
+printf '%s\n' "$s" | awk "$LOAD"'END { m = "MediaContainer.Metadata."
+  for (n = 0; (m n ".type") in V; n++) {
+    t = V[m n ".grandparentTitle"] != "" ? V[m n ".grandparentTitle"] " · " V[m n ".title"] : V[m n ".title"]
+    print "list|" V[m n ".User.title"] "|" t "|" pct(V[m n ".duration"], V[m n ".duration"] - V[m n ".viewOffset"]) "|" V[m n ".Player.state"] }
+  print "streams " n }'
+J "$@" "$B/library/sections" | awk "$LOAD"'END { m = "MediaContainer.Directory."; for (n = 0; (m n ".key") in V; n++) print V[m n ".key"] "|" V[m n ".type"] "|" V[m n ".title"] }' |
+while IFS='|' read -r k ty ti; do
+  echo "libs|$ti|$ty|$(J "$@" "$B/library/sections/$k/all?X-Plex-Container-Start=0&X-Plex-Container-Size=0" | awk "$LOAD"'END { print V["MediaContainer.totalSize"] + 0 }')"
+done

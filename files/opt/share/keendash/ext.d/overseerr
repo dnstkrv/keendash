@@ -1,0 +1,9 @@
+#!/bin/sh
+# name: Overseerr
+# group: Медиа
+# fields: url key
+# Overseerr: request counts
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+J --header "X-Api-Key: ${KEY:-}" "${URL%/}/api/v1/request/count" | awk "$LOAD"'END {
+  if (!("total" in V)) { print "ok 0"; exit }
+  print "ok 1"; print "pending " V["pending"] + 0; print "processing " V["processing"] + 0; print "available " V["available"] + 0; print "total " V["total"] + 0 }'

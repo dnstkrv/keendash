@@ -1,0 +1,10 @@
+#!/bin/sh
+# name: Immich
+# group: Медиа
+# fields: url key
+# Immich: library statistics
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+J --header "x-api-key: ${KEY:-}" "${URL%/}/api/server/statistics" | awk "$LOAD"'END {
+  if (!("photos" in V)) { print "ok 0"; exit }
+  print "ok 1"; print "photos " V["photos"] + 0; print "videos " V["videos"] + 0; print "usage " V["usage"] + 0
+  for (i = 0; ("usageByUser." i ".userName") in V; i++) { u = "usageByUser." i "."; print "list|" V[u "userName"] "|" V[u "photos"] + 0 "|" V[u "videos"] + 0 "|" V[u "usage"] + 0 } }'

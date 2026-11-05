@@ -19,7 +19,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           files="scripts/*.sh ipk/postinst ipk/prerm ipk/postrm
-                 files/opt/share/keendash/bin/* files/opt/etc/init.d/*
+                 files/opt/share/keendash/bin/* files/opt/share/keendash/ext.d/* files/opt/etc/init.d/*
                  files/opt/share/keendash/www/cgi-bin/*"
           for f in $files; do sh -n "$f"; done
           # warnings only: the scripts target busybox ash on routers

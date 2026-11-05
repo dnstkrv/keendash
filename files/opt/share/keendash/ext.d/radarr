@@ -1,0 +1,16 @@
+#!/bin/sh
+# name: Radarr
+# group: Медиа
+# fields: url key
+# Radarr v3: queue, missing movies, week calendar
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "X-Api-Key: ${KEY:-}"
+q=$(J "$@" "$B/api/v3/queue?pageSize=5&includeMovie=true")
+case "$q" in *totalRecords*) echo "ok 1" ;; *) echo "ok 0"; exit ;; esac
+printf '%s\n' "$q" | awk "$LOAD"'END { print "queue " V["totalRecords"] + 0
+  for (i = 0; ("records." i ".id") in V; i++) { r = "records." i "."; print "list|" V[r "movie.title"] "|" pct(V[r "size"], V[r "sizeleft"]) "|" tl(V[r "timeleft"]) } }'
+# no wanted/missing in older Radarr: missing stays unknown
+J "$@" "$B/api/v3/wanted/missing?pageSize=1&monitored=true" | awk "$LOAD"'END { if ("totalRecords" in V) print "missing " V["totalRecords"] }'
+J "$@" "$B/api/v3/calendar?start=$(day 0)&end=$(day 7)" | awk -v now="$(date +%s)" "$LOAD"'END {
+  split("inCinemas c digitalRelease d physicalRelease p", f, " ")
+  for (i = 0; (i ".id") in V && n < 6; i++) for (j = 1; j < 6; j += 2) { t = ep(V[i "." f[j]]); if (t >= now - 86400 && t <= now + 7 * 86400) { print "cal|" t "|" V[i ".title"] "|" f[j + 1]; n++ } } }'

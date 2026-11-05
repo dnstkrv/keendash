@@ -312,7 +312,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   }
   // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers) and tests/fake-ndmc.
   // o.state: the dir for /tmp/keendash (the RCI token) and the fakes' request log; o.edit(script, dir): paths for the test;
-  // o.files: more files next to the script; o.env: "NAME=value " for the fakes
+  // o.files: more files next to the script (etc/services/<id>.conf for bin/ext); o.env: "NAME=value " for the fakes.
+  // bin/ext and ext.d/<type> get the layout of the install: ext.d/ next to bin/ (extlib, keendashd)
   function collect(script, args, conf, o) {
     o = o || {};
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kd-")), t = unix(tmp), st = unix(o.state || tmp);
@@ -321,51 +322,67 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(tmp, "conf"), conf);
     Object.keys(o.files || {}).forEach(n => { fs.mkdirSync(path.dirname(path.join(tmp, n)), { recursive: true }); fs.writeFileSync(path.join(tmp, n), o.files[n], { mode: 0o755 }); });
     // the scripts pin PATH; drop that line so the fakes come first. They find keendashd and bin/rci next to themselves
-    const src = s => fs.readFileSync(s.includes("/") ? path.join(__dirname, "..", s) : path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", s), "utf8").replace(/^PATH=.*$/m, ":");
-    const name = path.basename(script);
+    const sh = path.join(__dirname, "..", "files", "opt", "share", "keendash");
+    const src = s => fs.readFileSync(s.includes("/") && !s.startsWith("ext.d/") ? path.join(__dirname, "..", s) : path.join(sh, s.startsWith("ext.d/") ? "" : "bin", s), "utf8").replace(/^PATH=.*$/m, ":");
+    const name = path.basename(script), ext = script === "ext" || script.startsWith("ext.d/");
     fs.writeFileSync(path.join(tmp, "rci"), src("rci"), { mode: 0o755 });
-    fs.writeFileSync(path.join(tmp, name), (o.edit || (s => s))(src(script), t), { mode: 0o755 });
-    const out = cp.execFileSync("sh", ["-c", 'PATH="' + t + ':$PATH" KEENDASH_CONF="' + t + '/conf" KEENDASH_TMP="' + st + '" LOG="' + st + '/log" ' + (o.env || "") +
-      'FIX="' + unix(path.join(__dirname, "fixtures")) + '" sh "' + t + "/" + name + '" ' + args], { encoding: "utf8" });
+    if (ext) {
+      fs.mkdirSync(path.join(tmp, "bin")); fs.mkdirSync(path.join(tmp, "ext.d"));
+      fs.writeFileSync(path.join(tmp, "bin", "extlib"), src("extlib"));
+      if (haveCc) fs.copyFileSync(kd, path.join(tmp, "bin", "keendashd")), fs.chmodSync(path.join(tmp, "bin", "keendashd"), 0o755);
+      fs.readdirSync(path.join(sh, "ext.d")).forEach(n => fs.writeFileSync(path.join(tmp, "ext.d", n), src("ext.d/" + n)));
+    }
+    const rel = script.startsWith("ext.d/") ? script : name;
+    fs.writeFileSync(path.join(tmp, rel), (o.edit || (s => s))(src(script), t), { mode: 0o755 });
+    const out = cp.execFileSync("sh", ["-c", 'PATH="' + t + ':$PATH" KEENDASH_CONF="' + t + '/conf" KEENDASH_TMP="' + st + '" LOG="' + st + '/log" ' + (o.env || "") + (ext ? 'KEENDASH_EXTD="' + t + '/ext.d" KEENDASH_ETC="' + t + '/etc" ' : "") +
+      'FIX="' + unix(path.join(__dirname, "fixtures")) + '" sh "' + t + "/" + rel + '" ' + args], { encoding: "utf8" });
     fs.rmSync(tmp, { recursive: true, force: true });
     return out;
   }
   {
-    const out = collect("agh", "", 'ADGUARD_URL="http://192.168.1.10:3000/"\nADGUARD_USER=u\nADGUARD_PASS=p\n');
-    const want = ["agh_ok 1", "agh_q 52310", "agh_b 7840", "agh_ms 18", "agh_days 0", "ab|ads.example.com|812", "ab|pixel.example.com|64",
-      "ac|Ноутбук|192.168.1.20|5321", "ac|Телефон|192.168.1.31|2210", "ac|vpn-laptop|10.8.0.2|900", "ac||192.168.1.99|10",
-      "agh_fon 3", "agh_fall 4", "agh_rules 368606", "agh_upd 1793531511", "al|1793541000|ads.example.com|Ноутбук", "al|1793540467|tracker.example.net|192.168.1.99"];
+    const out = collect("ext.d/agh", "", "", { env: "URL=http://192.168.1.10:3000/ USER=u PASS=p " });
+    const want = ["ok 1", "q 52310", "b 7840", "ms 18", "days 0", "top|ads.example.com|812", "top|pixel.example.com|64",
+      "cl|Ноутбук|192.168.1.20|5321", "cl|Телефон|192.168.1.31|2210", "cl|vpn-laptop|10.8.0.2|900", "cl||192.168.1.99|10",
+      "fon 3", "fall 4", "rules 368606", "upd 1793531511", "last|1793541000|ads.example.com|Ноутбук", "last|1793540467|tracker.example.net|192.168.1.99"];
     const lines = out.split("\n"), miss = want.filter(l => lines.indexOf(l) < 0);
-    ok("bin/agh: parses stats, clients, filters, query log", !miss.length && lines.filter(l => l.startsWith("ab|")).length === 5 && /^agh_sq 2200,(\d+,){22}2491$/m.test(out), miss.join(" / ") || out);
+    ok("ext.d/agh: parses stats, clients, filters, query log", !miss.length && lines.filter(l => l.startsWith("top|")).length === 5 && /^sq 2200,(\d+,){22}2491$/m.test(out), miss.join(" / ") || out);
   }
   if (haveCc) {
-    const conf = "QBIT_URL=http://qb.test:8080\nQBIT_USER=admin\nQBIT_PASS='p&s=s'\nPLEX_URL=http://plex.test:32400/\nPLEX_TOKEN=testkey\n" +
-      "SONARR_URL=http://sonarr.test\nSONARR_KEY=testkey\nRADARR_URL=http://radarr.test\nRADARR_KEY=testkey\nPROWLARR_URL=http://prowlarr.test\nPROWLARR_KEY=testkey\n" +
-      "OVERSEERR_URL=http://overseerr.test\nOVERSEERR_KEY=testkey\nIMMICH_URL=http://immich.test\nIMMICH_KEY=testkey\n";
+    const env = {
+      qb: "URL=http://qb.test:8080 USER=admin PASS='p&s=s' ", plex: "URL=http://plex.test:32400/ TOKEN=testkey ", sonarr: "URL=http://sonarr.test KEY=testkey ",
+      radarr: "URL=http://radarr.test KEY=testkey ", prowlarr: "URL=http://prowlarr.test KEY=testkey ", overseerr: "URL=http://overseerr.test KEY=testkey ", immich: "URL=http://immich.test KEY=testkey "
+    };
     const want = {
-      qb: ["qb_ok 1", "qb_dl 5242880", "qb_up 524288", "qbt|Example.Show.S01E01.1080p.mkv|420|4194304|600", 'qbt|Big   Pipe "Quoted" Movie 2160p|900|1048576|3600', "qbt|Stalled.Thing|100|0|8640000", "qb_n 3"],
-      plex: ["pl_ok 1", "pls|alice|Example Show · Pilot|50|playing", "pls|bob|Example Movie|10|paused", "pl_streams 2", "pll|Фильмы|movie|40", "pll|Сериалы|show|23"],
-      sonarr: ["sn_ok 1", "sn_queue 7", "snq|Example Show S02E05|75|750", "snq|Other S01E12|0|93784", "sn_missing 129", "snc|1793667600|Example Show|S02E06|0", "snc|1793910600|New Show|S01E01|1"],
-      radarr: ["rd_ok 1", "rd_queue 1", "rdq|Example Movie|75|7200", "rd_missing 3"],
-      prowlarr: ["pw_ok 1", "pwb|Tracker Two", "pw_all 3", "pw_on 2", "pw_bad 1", "pw_q 50", "pw_g 4", "pw_fail 5"],
-      overseerr: ["ov_ok 1", "ov_pending 2", "ov_processing 3", "ov_available 6", "ov_total 12"],
-      immich: ["im_ok 1", "im_photos 18230", "im_videos 1204", "im_usage 442381631488", "imu|Alice|15000|1000|400000000000", "imu|Bob|3230|204|42381631488"]
+      qb: ["ok 1", "~dl 5242880", "~up 524288", "list|Example.Show.S01E01.1080p.mkv|420|4194304|600", 'list|Big   Pipe "Quoted" Movie 2160p|900|1048576|3600', "list|Stalled.Thing|100|0|8640000", "n 3"],
+      plex: ["ok 1", "list|alice|Example Show · Pilot|50|playing", "list|bob|Example Movie|10|paused", "streams 2", "libs|Фильмы|movie|40", "libs|Сериалы|show|23"],
+      sonarr: ["ok 1", "queue 7", "list|Example Show S02E05|75|750", "list|Other S01E12|0|93784", "missing 129", "cal|1793667600|Example Show|S02E06|0", "cal|1793910600|New Show|S01E01|1"],
+      radarr: ["ok 1", "queue 1", "list|Example Movie|75|7200", "missing 3"],
+      prowlarr: ["ok 1", "list|Tracker Two", "all 3", "on 2", "bad 1", "q 50", "g 4", "fail 5"],
+      overseerr: ["ok 1", "pending 2", "processing 3", "available 6", "total 12"],
+      immich: ["ok 1", "photos 18230", "videos 1204", "usage 442381631488", "list|Alice|15000|1000|400000000000", "list|Bob|3230|204|42381631488"]
     };
     Object.keys(want).forEach(s => {
-      const lines = collect("ext", s, conf).trim().split("\n"), miss = want[s].filter(l => lines.indexOf(l) < 0);
-      const extra = s === "radarr" ? /^rdc\|\d+\|Soon Movie\|d$/.test(lines[lines.length - 1]) && lines.length === 5 : lines.length === want[s].length;
-      ok("bin/ext " + s, !miss.length && extra, miss.join(" / ") + " || " + lines.join(" / "));
+      const lines = collect("ext.d/" + s, "", "", { env: env[s] }).trim().split("\n"), miss = want[s].filter(l => lines.indexOf(l) < 0);
+      const extra = s === "radarr" ? /^cal\|\d+\|Soon Movie\|d$/.test(lines[lines.length - 1]) && lines.length === 5 : lines.length === want[s].length;
+      ok("ext.d/" + s, !miss.length && extra, miss.join(" / ") + " || " + lines.join(" / "));
     });
-    // refresh mode (bin/tick): every configured service lands in its own x.<name> cache file, a dropped key removes it
-    const cache = fs.mkdtempSync(path.join(os.tmpdir(), "kd-cache-")), cu = cache.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase());
-    fs.writeFileSync(path.join(cache, "x.agh"), "agh_ok 1\n");
-    collect("ext", "", conf + 'KEENDASH_TMP="' + cu + '"\n');
-    const files = fs.readdirSync(cache).sort().join(" ");
-    ok("bin/ext: cache files per service", files === "x.immich x.overseerr x.plex x.prowlarr x.qb x.radarr x.sonarr" &&
-      fs.readFileSync(path.join(cache, "x.plex"), "utf8").split("\n").indexOf("pll|Сериалы|show|23") >= 0, files);
-    fs.rmSync(cache, { recursive: true, force: true });
-    ok("bin/ext: wrong key -> service down", collect("ext", "sonarr", "SONARR_URL=http://sonarr.test\nSONARR_KEY=bad\n").trim() === "sn_ok 0");
-    ok("bin/ext: wrong qBittorrent password -> down", collect("ext", "qb", "QBIT_URL=http://qb.test\nQBIT_USER=admin\nQBIT_PASS=x\n").trim() === "qb_ok 0");
+    ok("ext.d/sonarr: wrong key -> ok 0", collect("ext.d/sonarr", "", "", { env: "URL=http://sonarr.test KEY=bad " }).trim() === "ok 0");
+    ok("ext.d/qb: wrong password -> ok 0", collect("ext.d/qb", "", "", { env: "URL=http://qb.test USER=admin PASS=x " }).trim() === "ok 0");
+    // bin/ext: every etc/services/<id>.conf is one run of its type's collector, cached in x/<id>; "~key" lines grow s.<id>.<key>
+    const QB = "TYPE='qb'\nNAME='qBittorrent'\nURL='http://qb.test:8080'\nUSER='admin'\nPASS='p&s=s'\n", rd = (d, n) => fs.existsSync(path.join(d, n)) ? fs.readFileSync(path.join(d, n), "utf8") : null;
+    const ls = d => fs.readdirSync(d).concat(fs.readdirSync(path.join(d, "x"))).join(" ");
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "kd-x-"));
+    fs.mkdirSync(path.join(d, "x")); fs.writeFileSync(path.join(d, "x.agh"), "agh_ok 1\n");
+    collect("ext", "", "", { state: d, files: { "etc/services/qb.conf": QB, "etc/services/qb-2.conf": QB.replace("p&s=s", "bad"),
+      "etc/services/bad.conf": "TYPE='nosuch'\nURL='http://x.test'\n", "etc/services/Up.conf": QB } });
+    ok("bin/ext: two qBittorrent instances", /^ok 1\n/.test(rd(d, "x/qb")) && rd(d, "x/qb-2") === "ok 0\n" && rd(d, "s.qb.dl") === "5242880\n" && rd(d, "s.qb.up") === "524288\n" &&
+      rd(d, "s.qb-2.dl") === null && rd(d, "x/bad") === null && rd(d, "x/Up") === null && rd(d, "x.agh") === null && ls(d).split(" ").every(n => !/\.new$/.test(n)), ls(d));
+    fs.writeFileSync(path.join(d, "x", "old"), "ok 1\n"); fs.writeFileSync(path.join(d, "s.old.dl"), "1\n");
+    collect("ext", "", "", { state: d, files: { "etc/services/qb.conf": QB } });
+    ok("bin/ext: removed instance -> cache gone", rd(d, "x/old") === null && rd(d, "s.old.dl") === null && rd(d, "x/qb-2") === null && rd(d, "s.qb.dl") === "5242880\n5242880\n" && /^ok 1\n/.test(rd(d, "x/qb")), ls(d));
+    fs.rmSync(d, { recursive: true, force: true });
+    const one = collect("ext", "sonarr-1", "", { files: { "etc/services/sonarr-1.conf": "TYPE='sonarr'\nURL='http://sonarr.test'\nKEY='bad'\n" } });
+    ok("bin/ext: wrong key -> ok 0", one === "ok 0\n", one);
   }
   if (haveCc) {
     // bin/rci: NDMS over RCI with keendash's own token, issued through ndmc (tests/fake-ndmc); the log lists ndmc and RCI calls in order

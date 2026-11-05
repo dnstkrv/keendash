@@ -1,0 +1,18 @@
+#!/bin/sh
+# name: Prowlarr
+# group: Медиа
+# fields: url key
+# Prowlarr v1: indexers, their failures and 24 h query stats
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --header "X-Api-Key: ${KEY:-}"
+ix=$(J "$@" "$B/api/v1/indexer")
+case "$ix" in *.id*) echo "ok 1" ;; *) echo "ok 0"; exit ;; esac
+{ printf '%s\n' "$ix" | sed 's/^/i./'
+  J "$@" "$B/api/v1/indexerstatus" | sed 's/^/s./'
+  J "$@" "$B/api/v1/indexerstats?startDate=$(day -1)&endDate=$(day 0)" | sed 's/^/t./'
+} | awk -v now="$(date +%s)" "$LOAD"'END {
+  for (i = 0; ("i." i ".id") in V; i++) { all++; if (V["i." i ".enable"] == "true") on++; N[V["i." i ".id"]] = V["i." i ".name"] }
+  # indexers Prowlarr has switched off after failures, until disabledTill
+  for (i = 0; ("s." i ".indexerId") in V; i++) if (ep(V["s." i ".disabledTill"]) > now) { bad++; print "list|" N[V["s." i ".indexerId"]] }
+  for (i = 0; ("t.indexers." i ".indexerId") in V; i++) { q += V["t.indexers." i ".numberOfQueries"]; g += V["t.indexers." i ".numberOfGrabs"]; e += V["t.indexers." i ".numberOfFailedQueries"] }
+  print "all " all + 0; print "on " on + 0; print "bad " bad + 0; print "q " q + 0; print "g " g + 0; print "fail " e + 0 }'
