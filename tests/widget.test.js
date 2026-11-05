@@ -196,6 +196,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const rows = Array.from(m.querySelectorAll(".us-row")), tx = rows.map(r => r.textContent);
     ok("ha: state and unit, on/off in words", tx[0] === "Температура23.5 °C" && tx[1] === "СветВключено" && tx[2] === "РозеткаВыключено", tx.join(" / "));
     ok("ha: unavailable and unknown -> недоступно, grey", tx[3] === "Датчикнедоступно" && tx[4] === "Дверьнедоступно" && rows[3].innerHTML.includes("#7b8798") && rows[3].className.includes("us-dim") && rows[4].className.includes("us-dim") && !rows[1].className.includes("us-dim"), m.innerHTML);
+    ok("ha: dots: value and on green, off grey", rows[0].innerHTML.includes("#3ecf8e") && rows[1].innerHTML.includes("#3ecf8e") && rows[2].innerHTML.includes("#7b8798"), rows[0].innerHTML + rows[2].innerHTML);
     ok("ha: no state -> a dash", tx[5] === "Нет—", tx[5]);
     ok("ha: markup in label, state and unit is text", !m.querySelector(".us-row img, .us-row b, .us-row .us-nm *, .us-row .us-r *") && tx[6] === "<img src=x onerror=alert(1)><b>x</b> <i>", tx[6]);
   });
@@ -725,6 +726,12 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const pw = unix(sd) + "/pwn";
       let [o, lg] = run("MAP='A=Sensor.temp; B=sensor.temp x; C=$(touch " + pw + "); D=sensor.$(touch " + pw + "); E=a`touch " + pw + "`.b; F=../api.x; G=-x.y; H=sensor; I=sensor.temp.x; |=sensor.temp; J=sensor.temp; K=; =sensor.temp'");
       ok("ha: invalid entity ids are skipped and never requested, nothing executed", o === "ok 1\ne|J|23.5|°C" && lg.length === 1 && lg[0].endsWith(" Authorization: Bearer testkey http://ha.test/api/states/sensor.temp ") && !fs.existsSync(path.join(sd, "pwn")), o + " || " + lg.join(" / "));
+      [o] = run("MAP='$(touch " + pw + ")=sensor.temp; a`touch " + pw + "`=light.hall'");
+      ok("ha: labels are data too, shown verbatim, nothing executed", o === "ok 1\ne|$(touch " + pw + ")|23.5|°C\ne|a`touch " + pw + "`|on|" && !fs.existsSync(path.join(sd, "pwn")), o);
+      [o] = run("URL=http://ha.test/html MAP='T=sensor.temp'");
+      ok("ha: an HTML 200 instead of an entity -> ok 0", o === "ok 0", o);
+      [o] = run("URL=http://ha.test/html MAP=''");
+      ok("ha: an HTML 200 instead of /api/ -> ok 0", o === "ok 0", o);
       [o, lg] = run("MAP='" + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "P" + n + "=sensor.temp").join("; ") + "'");
       ok("ha: 9 pairs -> 8 requests", o.split("\n").length === 9 && lg.length === 8, o);
       [o, lg] = run("MAP=''");

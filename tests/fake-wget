@@ -65,6 +65,7 @@ case "$u" in
   *//sonarr.test/* | *//radarr.test/* | *//prowlarr.test/* | *//overseerr.test/*) need "X-Api-Key: testkey" ;;
 esac
 case "$u" in
+  *//ha.test/html/*) echo "<html>login</html>"; exit 0 ;;
   *//custom.test/html) echo "<html>not json</html>"; exit 0 ;;
   *//custom.test/page) echo "<style>a{b:1}</style>"; exit 0 ;;
   *//custom.test/*) f=media/custom ;;
