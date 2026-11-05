@@ -161,6 +161,21 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Дом");
     ok("moonraker paused: Пауза, file is text, left unknown", m.querySelector(".us-nm").textContent === "Пауза" && !m.querySelector("img") && /Осталось —/.test(m.textContent), m.innerHTML);
   });
+  // kuma: tiles up / down (red when > 0), a dot per monitor, name, "N мс" or "нет ответа", "и ещё N" past the 20 listed
+  const km = (x) => one("kuma", "Kuma", "Серверы", "http://10.0.0.5:3001", x);
+  const kl = [["Zulu", 0, 0], ["Beta", 2, 0], ["Gamma", 3, 0], ["Host 01", 1, 101]].concat(Array.from({ length: 16 }, (_, i) => ["Host " + (i + 2), 1, 102 + i]));
+  await run(km({ ok: 1, up: 19, down: 1, list: kl, n: 23 }), (w, m) => {
+    gclick(w, m, "Серверы");
+    const rows = Array.from(m.querySelectorAll(".us-row")), tx = rows.map(r => r.textContent);
+    ok("kuma: tiles В работе 19, Упало 1 in red", vals(m) === "19|1" && /#ff6b6b/.test(m.querySelectorAll(".us-val")[1].innerHTML) && !/#ff6b6b/.test(m.querySelectorAll(".us-val")[0].innerHTML), m.querySelector(".us-grid").innerHTML);
+    ok("kuma: 20 rows, down -> нет ответа, up -> ms", rows.length === 20 && tx[0] === "Zuluнет ответа" && tx[3] === "Host 01101 мс", tx.slice(0, 4).join(" / "));
+    ok("kuma: dots red, yellow, blue for maintenance, green", rows[0].innerHTML.includes("#ff6b6b") && rows[1].innerHTML.includes("#f5a623") && rows[2].innerHTML.includes("#4da3ff") && rows[3].innerHTML.includes("#3ecf8e"), rows.slice(0, 4).map(r => r.querySelector(".us-dot").style.background).join());
+    ok("kuma: и ещё 3", m.querySelector(".us-note").textContent === "и ещё 3", m.textContent);
+  });
+  await run(km({ ok: 1, up: 0, down: 1, list: [["<img src=x onerror=alert(1)>", 0, 0]], n: 1 }), (w, m) => {
+    gclick(w, m, "Серверы");
+    ok("kuma: a name with markup is text, no note for a short list", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>" && !m.querySelector(".us-note"), m.innerHTML);
+  });
   // media tab: one sub-tab per configured service
   await run(full, (w, m) => {
     const click = (sel) => m.querySelector(sel).dispatchEvent(new w.Event("click", { bubbles: true }));
@@ -596,7 +611,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const env = {
       qb: "URL=http://qb.test:8080 USER=admin PASS='p&s=s' ", plex: "URL=http://plex.test:32400/ TOKEN=testkey ", sonarr: "URL=http://sonarr.test KEY=testkey ",
       radarr: "URL=http://radarr.test KEY=testkey ", prowlarr: "URL=http://prowlarr.test KEY=testkey ", overseerr: "URL=http://overseerr.test KEY=testkey ", immich: "URL=http://immich.test KEY=testkey ",
-      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ", moonraker: "URL=http://moonraker.test ",
+      jellyfin: "URL=http://jellyfin.test KEY=testkey ", jellyseerr: "URL=http://jellyseerr.test KEY=testkey ", moonraker: "URL=http://moonraker.test ", kuma: "URL=http://kuma.test KEY=testkey ",
       lidarr: "URL=http://lidarr.test KEY=testkey ", bazarr: "URL=http://bazarr.test KEY=testkey ", tautulli: "URL=http://tautulli.test KEY=testkey ",
       sabnzbd: "URL=http://sabnzbd.test KEY=testkey ", nzbget: "URL=http://nzbget.test USER=u PASS=p ",
       spoolman: "URL=http://spoolman.test ", grafana: "URL=http://grafana.test TOKEN=testkey ", glances: "URL=http://glances.test USER= PASS= ",
@@ -634,6 +649,14 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     });
     ok("ext.d/moonraker: standby, progress 0 -> left -1, no file", collect("ext.d/moonraker", "", "", { env: "URL=http://moonraker.test/idle " }).trim() === ["ok 1", "state standby", "pct 0", "el 0", "left -1", "~ext 24", "ext_t 0", "~bed 23", "bed_t 0"].join(String.fromCharCode(10)));
     ok("ext.d/moonraker: no result.status -> ok 0", collect("ext.d/moonraker", "", "", { env: "URL=http://moonraker.test/nope " }).trim() === "ok 0");
+    {
+      const kl = ["ok 1", "up 19", "down 2", "list|A \"q\" \\ b c|0|0", "list|Zulu Mail|0|0", "list|Beta Pending|2|0", "list|Gamma Maint|3|0"];
+      for (let i = 1; i <= 16; i++) kl.push("list|Host " + String(i).padStart(2, "0") + "|1|" + (100 + i));
+      kl.push("n 23");
+      const ko = collect("ext.d/kuma", "", "", { env: env.kuma });
+      ok("ext.d/kuma: down first, then pending, maintenance, up by name; 20 rows; the name unescaped, | -> space", ko.trim() === kl.join(String.fromCharCode(10)), ko);
+      ok("ext.d/kuma: key not printed, wrong key and no monitor_status -> ok 0", !/testkey/.test(ko) && collect("ext.d/kuma", "", "", { env: "URL=http://kuma.test KEY=bad " }).trim() === "ok 0" && collect("ext.d/kuma", "", "", { env: "URL=http://kuma.test/empty KEY=testkey " }).trim() === "ok 0");
+    }
     ok("ext.d/jellyfin: string counts become numbers, zero counts skipped", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test/evil KEY=testkey " }).trim() === ["ok 1", "streams 0", "libs|Фильмы|movie|1"].join("\n"));
     ok("ext.d/sabnzbd: D:HH:MM:SS", /^t\|Осталось времени\|93784\|s$/m.test(collect("ext.d/sabnzbd", "", "", { env: "URL=http://sabnzbd.test/days KEY=testkey " })));
     ok("ext.d/jellyfin: wrong key -> ok 0", collect("ext.d/jellyfin", "", "", { env: "URL=http://jellyfin.test KEY=bad " }).trim() === "ok 0");

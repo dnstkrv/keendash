@@ -1,0 +1,49 @@
+# HELP monitor_status Monitor Status (1 = UP, 0 = DOWN, 2 = PENDING, 3 = MAINTENANCE)
+# TYPE monitor_status gauge
+monitor_status{monitor_name="A \"q\" \\ b|c",monitor_type="http",monitor_url="https://x.test/a b} 9",monitor_hostname="null",monitor_port="null"} 0
+monitor_status{monitor_name="Zulu Mail",monitor_type="port",monitor_url="https://example.test",monitor_hostname="mail.test",monitor_port="25"} 0
+monitor_status{monitor_name="Beta Pending",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 2
+monitor_status{monitor_name="Gamma Maint",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 3
+monitor_status{monitor_name="Host 01",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 02",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 03",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 04",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 05",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 06",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 07",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 08",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 09",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 10",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 11",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 12",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 13",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 14",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 15",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 16",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 17",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 18",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Host 19",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+# HELP monitor_response_time Monitor Response Time (ms)
+# TYPE monitor_response_time gauge
+monitor_response_time{monitor_name="Zulu Mail",monitor_type="port",monitor_url="https://example.test",monitor_hostname="mail.test",monitor_port="25"} -1
+monitor_response_time{monitor_name="Beta Pending",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 0
+monitor_response_time{monitor_name="Host 01",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 101
+monitor_response_time{monitor_name="Host 02",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 102
+monitor_response_time{monitor_name="Host 03",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 103
+monitor_response_time{monitor_name="Host 04",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 104
+monitor_response_time{monitor_name="Host 05",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 105
+monitor_response_time{monitor_name="Host 06",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 106
+monitor_response_time{monitor_name="Host 07",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 107
+monitor_response_time{monitor_name="Host 08",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 108
+monitor_response_time{monitor_name="Host 09",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 109
+monitor_response_time{monitor_name="Host 10",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 110
+monitor_response_time{monitor_name="Host 11",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 111
+monitor_response_time{monitor_name="Host 12",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 112
+monitor_response_time{monitor_name="Host 13",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 113
+monitor_response_time{monitor_name="Host 14",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 114
+monitor_response_time{monitor_name="Host 15",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 115
+monitor_response_time{monitor_name="Host 16",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 116
+monitor_response_time{monitor_name="Host 17",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 117
+monitor_response_time{monitor_name="Host 18",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 118
+monitor_response_time{monitor_name="Host 19",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 119
+monitor_cert_days_remaining{monitor_name="Host 01",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 80

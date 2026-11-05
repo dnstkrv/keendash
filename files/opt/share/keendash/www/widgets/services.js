@@ -382,6 +382,13 @@
     if (busy) h += bar(x.pct, s[1]) + note("Прошло <b>" + fmtDur(x.el) + "</b> · Осталось <b>" + (x.left >= 0 ? fmtDur(x.left) : "—") + "</b>");
     return h + '<div class="us-grid">' + blk("Сопло", t(x.ext, x.ext_t), ser("ext"), WARN) + blk("Стол", t(x.bed, x.bed_t), ser("bed"), ACC) + "</div>";
   };
+  /* x.up, x.down: monitor counts; x.list = [[name, status 0 down|1 up|2 pending|3 maintenance, ms]] (20 at most); x.n: all monitors */
+  VIEW.kuma = function (x) {
+    var S = { 0: [BAD, "нет ответа"], 2: [WARN, "ожидание"], 3: [ACC, "обслуживание"] }, list = x.list || [];
+    var h = '<div class="us-grid">' + blk("В работе", +x.up || 0, null) + blk("Упало", +x.down > 0 ? '<span style="color:' + BAD + '">' + +x.down + "</span>" : 0, null) + "</div>";
+    list.forEach(function (m) { var t = S[m[1]]; h += line(t ? t[0] : OK, esc(m[0]), t ? t[1] : (+m[2] || 0) + " мс"); });
+    return x.n > list.length ? h + note("и ещё " + (x.n - list.length)) : h;
+  };
   VIEW.jellyfin = VIEW.plex; VIEW.jellyseerr = VIEW.overseerr;
   function instOf(d) {
     return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "", hosts: a[8] || "", every: a[9] || "" }; });

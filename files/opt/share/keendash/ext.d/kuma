@@ -1,0 +1,36 @@
+#!/bin/sh
+# name: Uptime Kuma
+# group: Серверы
+# fields: url key
+# hint: Ключ: Settings → API Keys
+# Uptime Kuma: monitors from /metrics (Prometheus text, parsed here; names are user text), failed first, 20 rows
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+dl -qO- --header "Authorization: Basic $(printf ':%s' "${KEY:-}" | base64 | tr -d '\n')" "${URL%/}/metrics" 2>/dev/null | awk '
+# label value after monitor_name=": \ -> \, \" -> ", \n -> space; the | of the list line and control characters -> space
+function nm(s,  i, c, d, o) {
+  for (i = 1; i <= length(s); i++) {
+    c = substr(s, i, 1)
+    if (c == "\"") break
+    if (c == "\\") { d = substr(s, ++i, 1); c = (d == "n" ? " " : d) }
+    o = o c
+  }
+  gsub(/[[:cntrl:]|]/, " ", o); return o
+}
+function rk(i) { return S[i] == 0 ? 0 : S[i] == 2 ? 1 : S[i] == 3 ? 2 : 3 }
+{ sub(/\r$/, "") }
+/^monitor_(status|response_time)\{monitor_name="/ {
+  v = $NF; if (v !~ /^-?[0-9]+([.][0-9]+)?$/) next
+  n = nm(substr($0, index($0, "=\"") + 2)); v += 0
+  if ($0 ~ /^monitor_status/) { if (v >= 0 && v <= 3) { c++; N[c] = n; S[c] = int(v) } }
+  else R[n] = v < 0 ? 0 : int(v)
+}
+END {
+  if (!c) { print "ok 0"; exit }
+  for (i = 1; i <= c; i++) {
+    if (S[i] == 1) u++; else if (S[i] == 0) d++
+    for (j = i - 1; j > 0 && (rk(O[j]) > rk(i) || (rk(O[j]) == rk(i) && N[O[j]] > N[i])); j--) O[j + 1] = O[j]
+    O[j + 1] = i
+  }
+  print "ok 1"; print "up " u + 0; print "down " d + 0
+  for (i = 1; i <= c && i <= 20; i++) print "list|" N[O[i]] "|" S[O[i]] "|" R[N[O[i]]] + 0
+  print "n " c }'

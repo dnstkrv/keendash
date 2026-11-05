@@ -31,6 +31,8 @@ case "$u" in
   *//grafana.test/*) need "Authorization: Bearer testkey" ;;
   *//portainer.test/*) need "X-API-Key: testkey" ;;
   *//truenas.test/*) need "Authorization: Bearer testkey" ;;
+  # Basic base64(":testkey")
+  *//kuma.test/*) need "Authorization: Basic OnRlc3RrZXk=" ;;
   # cookie only for admin / p&s=s, percent-encoded
   */api/v2/auth/login) need "username=%61%64%6d%69%6e&password=%70%26%73%3d%73"; echo "  Set-Cookie: SID=test123; HttpOnly; path=/" >&2; exit 0 ;;
   */api/v2/*) need "Cookie: SID=test123" ;;
@@ -98,6 +100,8 @@ case "$u" in
   *//truenas.test/api/v2.0/system/info) f=home/truenas_info ;;
   *//truenas.test/api/v2.0/pool) f=home/truenas_pool ;;
   *//truenas.test/api/v2.0/alert/list) f=home/truenas_alerts ;;
+  *//kuma.test/empty/metrics) f=home/kuma_empty.txt ;;
+  *//kuma.test/metrics) f=home/kuma_metrics.txt ;;
   *//moonraker.test/idle/printer/*) f=media/moonraker_idle ;;
   *//moonraker.test/printer/*) f=media/moonraker_printing ;;
   *//jellyfin.test/Sessions*) f=media/jellyfin_sessions ;;
@@ -112,4 +116,5 @@ case "$u" in
   *) exit 8 ;;
 esac
 # release dates relative to now, so the "next 7 days" filters have something to keep
+case $f in *.txt) cat "$F/$f"; exit ;; esac
 sed "s/@SOON@/$(date -u -d "@$(( $(date +%s) + 172800 ))" +%Y-%m-%dT%H:%M:%SZ)/" "$F/$f.json"
