@@ -523,7 +523,7 @@
   }
 
   function update() {
-    fetch(API, { cache: "no-store" })
+    return fetch(API, { cache: "no-store" })
       .then(function (r) { if (!r.ok) throw r.status; return r.json(); })
       .then(function (d) {
         lastData = d; watchUpdate(d.upd); render(); renderPage();
@@ -579,13 +579,32 @@
       ".us-upd-go:disabled{opacity:.6;cursor:default;background:#0097dc;border-color:#0097dc;color:#fff}" +
       ".us-upd-skip{background:none;border:0;padding:0;color:inherit;opacity:.6;font:inherit;font-size:12px;cursor:pointer}.us-upd-skip:hover{opacity:1;text-decoration:underline}" +
       /* the page, as the firmware's own pages (ndw-page-wrapper) and dashboard cards: their styles leave with them */
-      "[data-kd-hidden]{display:none!important}.kd-page{padding:0 32px 64px;box-sizing:border-box}.kd-ph{padding:32px 32px 0 0;margin:0 0 24px}" +
+      "[data-kd-hidden]{display:none!important}.kd-page{padding:0 32px 64px;box-sizing:border-box}.kd-ph{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:32px 32px 0 0;margin:0 0 24px}" +
       ".kd-ph h1{font-size:28px;font-weight:700;line-height:36px;margin:0}" +
       ".kd-cols{display:flex;gap:24px;align-items:flex-start}.kd-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:24px}" +
       ".kd-card{background:var(--dashboard-background);border:1px solid var(--dashboard-card-border);border-radius:8px;min-width:0}" +
       ".kd-ch{display:flex;align-items:center;margin-top:24px;padding:0 24px;min-height:24px}" +
       ".kd-ct{flex:1;min-width:0;font-size:16px;font-weight:700;line-height:24px;letter-spacing:1px;text-transform:uppercase}" +
-      "@media (max-width:599px){.kd-page{padding:0 16px 56px}.kd-ph{padding-right:0}.kd-ph h1{font-size:20px;line-height:28px}}";
+      "@media (max-width:599px){.kd-page{padding:0 16px 56px}.kd-ph{padding-right:0}.kd-ph h1{font-size:20px;line-height:28px}}" +
+      /* settings dialog: backdrop, 656 px panel the full height, scrolling body, bar with Save / Cancel at the bottom */
+      ".kd-btn{min-width:92px;padding:9px 20px;border:1px solid #0097dc;border-radius:4px;background:transparent;color:#0097dc;font:inherit;font-size:14px;cursor:pointer;outline:none;white-space:nowrap}" +
+      ".kd-btn:hover{background:rgba(0,151,220,.1)}.kd-btn-p{background:#0097dc;color:#fff}.kd-btn-p:hover{background:#1c6c9a;border-color:#1c6c9a}.kd-btn:disabled{opacity:.5;cursor:default}" +
+      ".kd-dlg-ov{position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,.25);display:flex;justify-content:center}" +
+      ".kd-dlg{width:656px;max-width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;background:var(--dashboard-background);border-radius:8px}" +
+      ".kd-dlg-top{display:flex;align-items:center;justify-content:space-between;padding:24px 24px 0}.kd-dlg-top h1{font-size:28px;font-weight:700;line-height:36px;margin:0}" +
+      ".kd-dlg-x{background:none;border:0;color:inherit;opacity:.7;font-size:28px;line-height:1;cursor:pointer}.kd-dlg-x:hover{opacity:1}" +
+      ".kd-dlg input[type=text],.kd-dlg input[type=password]{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid rgba(128,128,128,.4);border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:14px}" +
+      ".kd-dlg-q{margin:16px 24px 0;width:calc(100% - 48px)!important}.kd-dlg-body{flex:1;min-height:0;overflow-y:auto;padding:0 24px 24px}" +
+      ".kd-dlg-h{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.55;margin:20px 0 4px}" +
+      ".kd-dlg-r{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;width:100%;box-sizing:border-box;padding:10px 0;border:0;border-bottom:1px solid rgba(128,128,128,.2);background:none;color:inherit;font:inherit;font-size:14px;text-align:left}" +
+      ".kd-dlg-hd,.kd-dlg-add{cursor:pointer}.kd-dlg-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.kd-dlg-t{max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;opacity:.6}" +
+      ".kd-dlg-del{background:none;border:0;padding:2px;color:inherit;opacity:.6;cursor:pointer;line-height:0}.kd-dlg-del:hover{opacity:1;color:" + BAD + "}" +
+      ".kd-dlg-c{display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;cursor:pointer}" +
+      ".kd-dlg-form{display:flex;flex-direction:column;gap:12px;padding:8px 0 16px;border-bottom:1px solid rgba(128,128,128,.2)}" +
+      ".kd-dlg-f{display:flex;flex-direction:column;gap:4px;font-size:12px}.kd-dlg-f > span:first-child{opacity:.7}" +
+      ".kd-dlg-hint,.kd-dlg-err{color:" + BAD + ";font-size:12px}.kd-dlg-hint:empty{display:none}.kd-dlg-err{font-size:13px;flex:1 1 100%;margin-top:12px}" +
+      ".kd-dlg-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:16px 24px;border-top:1px solid rgba(128,128,128,.28)}.kd-dlg-bar:empty{display:none}.kd-dlg-bar .kd-dlg-err{margin:0}" +
+      "@media (max-width:599px){.kd-dlg{width:100%;border-radius:0}.kd-dlg-top h1{font-size:20px;line-height:28px}}";
     document.head.appendChild(st);
   }
 
@@ -792,7 +811,7 @@
     var main = page && page.parentNode, d = lastData;
     if (!main) return;
     var top = main.scrollTop, wrap = document.createElement("div"), cols = [];
-    page.innerHTML = '<div class="kd-ph"><h1>' + TITLE + "</h1></div>";
+    page.innerHTML = '<div class="kd-ph"><h1>' + TITLE + '</h1><button type="button" class="kd-btn kd-set">Настройки</button></div>';
     if (!d) { page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
     /* columns as on the dashboard, each card into the shortest one */
     wrap.className = "kd-cols"; page.appendChild(wrap);
@@ -805,6 +824,225 @@
     });
     main.scrollTop = top;
   }
+  /* ---------- settings dialog: edits pile up in a draft; "Сохранить" sends them as one message (bin/settings reads it) through
+   * the firmware file manager: /rci/put names the file in keendash's inbox, /fui takes its content; status.json confirms ---------- */
+  var FLD = { name: "Имя", url: "Адрес", user: "Пользователь", pass: "Пароль", token: "Токен", key: "Ключ API" };
+  var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user)$/, NOSAVE = "Не удалось сохранить";
+  var TRASH = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 9h12l-1 12H7L6 9z"/></svg>';
+  /* dlg: the backdrop; draft: {inst: [{id, type, name, url, user, vals}], del: [id], hide: {page, main}}; dopen: the instance
+   * whose form is open; dst: {busy} or {err} of the last save; dtried: Save was pressed, empty required fields are errors */
+  var dlg = null, draft = null, dq = "", dopen = "", dst = null, dtried = false;
+
+  /* the id for a new instance of a type: the type, then type-2, type-3…; taken: {id: 1} of the router's and the draft's */
+  function newId(type, taken) {
+    var n = 1, id = type;
+    while (taken[id]) id = type + "-" + (++n);
+    return id;
+  }
+  /* what the router would reject, said before sending: "" if the value is fine; req: empty is an error too */
+  function bad(f, v, req) {
+    if (!v) return req ? "Заполните поле" : "";
+    if (/[\x00-\x1f\x7f]/.test(v)) return "Недопустимый символ в значении";
+    if (unescape(encodeURIComponent(v)).length > 512) return "Не длиннее 512 байт";
+    if (f === "name" && v.length > 64) return "Не длиннее 64 символов";
+    if (PLAIN.test(f) && v.indexOf("|") >= 0) return "Символ | недопустим";
+    if (f === "url" && !/^https?:\/\//.test(v)) return "Адрес должен начинаться с http:// или https://";
+    return "";
+  }
+  function fresh(d) {
+    var h = (d.cfg || {}).hide || {};
+    return { inst: instOf(d).map(function (i) { return { id: i.id, type: i.type, name: i.name, url: i.url || "", user: i.user || "", vals: {} }; }),
+      del: [], hide: { page: (h.page || []).slice(), main: (h.main || []).slice() } };
+  }
+  function fv(e, f) { return PLAIN.test(f) ? e[f] : e.vals[f] || ""; }
+  /* [field, value, is new] to send for an instance of the draft: all fields of a new one, the changed ones and the typed secrets */
+  function sets(d, e) {
+    var o = instOf(d).filter(function (i) { return i.id === e.id; })[0], out = [];
+    ["name"].concat(typeOf(d, e.type).fields).forEach(function (f) {
+      var v = fv(e, f);
+      if (!o || (SECRET.test(f) ? v : v !== o[f])) out.push([f, v, !o]);
+    });
+    return out;
+  }
+  /* the message for bin/settings; "" if the draft changes nothing. Values are checked by bad() before it is sent */
+  function buildMsg(rev, d, dr) {
+    var L = [];
+    dr.del.forEach(function (id) { L.push("del " + id); });
+    dr.inst.forEach(function (e) {
+      if (dr.del.indexOf(e.id) >= 0) return;
+      var s = sets(d, e);
+      if (s[0] && s[0][2]) L.push("add " + e.id + " " + e.type);
+      s.forEach(function (x) { if (x[1] || !x[2]) L.push("set " + e.id + " " + x[0] + " " + x[1]); });
+    });
+    ["page", "main"].forEach(function (w) {
+      var was = ((d.cfg || {}).hide || {})[w] || [], now = dr.hide[w];
+      now.forEach(function (n) { if (was.indexOf(n) < 0) L.push("hide " + w + " " + n); });
+      was.forEach(function (n) { if (now.indexOf(n) < 0) L.push("show " + w + " " + n); });
+    });
+    return L.length ? "keendash 1 " + rev + "\n" + L.join("\n") + "\nend\n" : "";
+  }
+  window.__servicesWidget = { newId: newId, buildMsg: buildMsg }; // for the tests
+
+  /* the file lands in the inbox as <rev>.txt; a rejected promise carries the text to show */
+  function upload(text, rev) {
+    var blob = new Blob([text], { type: "text/plain" });
+    function chk(r) { if (r.status === 401) throw "Сессия истекла, войдите заново"; if (!r.ok) throw NOSAVE; return r; }
+    return fetch(location.origin + "/rci/put", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: ((lastData || {}).cfg || {}).vol + "/var/lib/keendash/inbox/" + rev + ".txt", size: blob.size }) })
+      .then(chk).then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.port || !j.port.port) throw NOSAVE;
+        var f = new FormData();
+        f.append("port", j.port.port); f.append("Filedata", blob, rev + ".txt");
+        return fetch(location.origin + "/fui", { method: "POST", credentials: "same-origin", body: f });
+      }).then(chk);
+  }
+  /* keendashd applies the inbox within ~5 s, over https status.json lags up to 15 s more: poll every 5 s */
+  function awaitRev(rev, ms) {
+    var t0 = Date.now();
+    return new Promise(function (ok, no) {
+      (function poll() {
+        update().then(function () {
+          var c = (lastData || {}).cfg || {};
+          if (c.rev === rev) { if (c.err) no(c.err); else ok(); return; }
+          if (Date.now() - t0 >= ms) { no(NOSAVE + ": нет подтверждения"); return; }
+          setTimeout(poll, 5000);
+        });
+      })();
+    });
+  }
+
+  function dirty() { return buildMsg("x", lastData || {}, draft) !== ""; }
+  function entry(id) { return draft.inst.filter(function (e) { return e.id === id; })[0]; }
+  /* [name, label, has a card] of what keendash found: the tabs with data, then the other init.d services */
+  function found(d) {
+    var have = d.tabs || ["sys"], out = [], seen = {};
+    TABS.forEach(function (t) { if (have.indexOf(t[0]) >= 0) { out.push([t[0], t[1], true]); seen[t[0]] = 1; } });
+    (d.svc || []).forEach(function (x) {
+      if (!seen[x[0]] && /^[A-Za-z0-9._-]{1,64}$/.test(x[0])) { out.push([x[0], x[0], false]); seen[x[0]] = 1; }
+    });
+    return out;
+  }
+  function chkbox(w, n) {
+    return '<label class="kd-dlg-c"><input type="checkbox" data-w="' + w + '" data-n="' + esc(n) + '"' + (draft.hide[w].indexOf(n) < 0 ? " checked" : "") + ">" +
+      (w === "page" ? "На странице" : "На главной") + "</label>";
+  }
+  /* a field of an instance's form; its value is put in by renderList (never into the markup), a set secret shows only "задан" */
+  function fld(e, f, isSet) {
+    var sec = SECRET.test(f);
+    return '<label class="kd-dlg-f"><span>' + FLD[f] + '</span><input type="' + (sec ? "password" : "text") + '" data-f="' + f + '" data-id="' + esc(e.id) +
+      '" autocomplete="' + (sec ? "new-password" : "off") + '"' + (isSet ? ' placeholder="задан"' : "") + '><span class="kd-dlg-hint"></span></label>';
+  }
+  function hint(inp) {
+    var f = inp.getAttribute("data-f"), s = sets(lastData || {}, entry(inp.getAttribute("data-id"))).filter(function (x) { return x[0] === f; })[0];
+    inp.nextSibling.textContent = s ? bad(f, s[1], dtried && (f === "name" || f === "url")) : "";
+  }
+  function renderList() {
+    if (!dlg) return;
+    var d = lastData || {}, was = {}, h = ((d.cfg || {}).vol ? "" : '<div class="kd-dlg-err">Не найден диск Entware</div>') + '<h2 class="kd-dlg-h">Добавленные</h2>';
+    function match(s) { return !dq || s.toLowerCase().indexOf(dq) >= 0; }
+    instOf(d).forEach(function (i) { was[i.id] = i; });
+    draft.inst.forEach(function (e) {
+      var t = typeOf(d, e.type);
+      if (draft.del.indexOf(e.id) >= 0 || !match(e.name + " " + t.name + " " + e.type)) return;
+      h += '<div class="kd-dlg-i" data-id="' + esc(e.id) + '"><div class="kd-dlg-r kd-dlg-hd"><span class="kd-dlg-n">' + esc(e.name) + '</span><span class="kd-dlg-t">' +
+        esc(t.name) + (e.url ? " · " + esc(e.url) : "") + '</span><button type="button" class="kd-dlg-del" aria-label="Удалить" title="Удалить">' + TRASH + "</button></div>";
+      if (dopen === e.id) h += '<div class="kd-dlg-form">' + ["name"].concat(t.fields).map(function (f) { return fld(e, f, ((was[e.id] || {}).set || []).indexOf(f) >= 0); }).join("") + "</div>";
+      h += "</div>";
+    });
+    h += '<h2 class="kd-dlg-h">Найденные автоматически</h2>';
+    found(d).forEach(function (x) {
+      if (match(x[1] + " " + x[0])) h += '<div class="kd-dlg-r kd-dlg-fr"><span class="kd-dlg-n">' + esc(x[1]) + "</span>" + (x[2] ? chkbox("page", x[0]) : "") + chkbox("main", x[0]) + "</div>";
+    });
+    h += '<h2 class="kd-dlg-h">Добавить сервис</h2>';
+    (d.types || []).forEach(function (t) {
+      if (match(t[1] + " " + t[0])) h += '<button type="button" class="kd-dlg-r kd-dlg-add" data-type="' + esc(t[0]) + '"><span class="kd-dlg-n">' + esc(t[1]) + '</span><span class="kd-dlg-t">' + esc(t[2]) + "</span></button>";
+    });
+    var list = dlg.querySelector(".kd-dlg-body");
+    list.innerHTML = h;
+    Array.prototype.forEach.call(list.querySelectorAll("[data-f]"), function (inp) {
+      inp.value = fv(entry(inp.getAttribute("data-id")), inp.getAttribute("data-f")); hint(inp);
+    });
+  }
+  function renderStrip() {
+    if (!dlg) return;
+    dlg.querySelector(".kd-dlg-bar").innerHTML = dst && dst.busy ? "<span>Сохранение…</span>" : !dirty() ? "" :
+      (dst && dst.err ? '<div class="kd-dlg-err">' + esc(dst.err) + "</div>" : "") +
+      '<button type="button" class="kd-btn kd-btn-p kd-dlg-save"' + (((lastData || {}).cfg || {}).vol ? "" : " disabled") + '>Сохранить</button><button type="button" class="kd-btn kd-dlg-cancel">Отменить</button>';
+  }
+  function addInst(type) {
+    var d = lastData || {}, taken = {}, id, n;
+    instOf(d).concat(draft.inst).forEach(function (i) { taken[i.id] = 1; });
+    id = newId(type, taken); n = id.slice(type.length + 1);
+    draft.inst.push({ id: id, type: type, name: typeOf(d, type).name + (n ? " " + n : ""), url: "", user: "", vals: {} });
+    dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; dopen = id; renderList(); renderStrip();
+    /* the form opens above the catalog the click was in */
+    var el = dlg.querySelector('.kd-dlg-i[data-id="' + id + '"]');
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+  }
+  function delInst(id) {
+    if (instOf(lastData || {}).some(function (i) { return i.id === id; })) draft.del.push(id);
+    else draft.inst = draft.inst.filter(function (e) { return e.id !== id; });
+    if (dopen === id) dopen = "";
+    renderList(); renderStrip();
+  }
+  function doSave() {
+    var d = lastData || {}, badId = "", my, rev = (Math.random().toString(36) + "000000000000").slice(2, 14);
+    draft.inst.forEach(function (e) {
+      if (!badId && draft.del.indexOf(e.id) < 0 && sets(d, e).some(function (s) { return bad(s[0], s[1], s[0] === "name" || s[0] === "url"); })) badId = e.id;
+    });
+    dtried = true;
+    if (badId) { dopen = badId; dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; renderList(); return; }
+    my = dst = { busy: true }; renderStrip();
+    upload(buildMsg(rev, d, draft), rev).then(function () { return awaitRev(rev, 45000); }).then(function () {
+      if (dst !== my) return;
+      draft = fresh(lastData || {}); dopen = ""; dst = null; dtried = false; renderList(); renderStrip();
+    }, function (e) {
+      if (dst !== my) return;
+      dst = { err: typeof e !== "string" ? NOSAVE : /^(Не удалось|Сессия)/.test(e) ? e : NOSAVE + ": " + e }; renderStrip();
+    });
+  }
+  function onKey(e) { if (e.key === "Escape") closeSettings(); }
+  function onClick(e) {
+    var t = e.target, c = function (s) { return t.closest ? t.closest(s) : null; }, i = c(".kd-dlg-i");
+    if (t === dlg || c(".kd-dlg-x")) closeSettings();
+    else if (c(".kd-dlg-save")) doSave();
+    else if (c(".kd-dlg-cancel")) { draft = fresh(lastData || {}); dopen = ""; dst = null; dtried = false; renderList(); renderStrip(); }
+    else if (c(".kd-dlg-add")) addInst(c(".kd-dlg-add").getAttribute("data-type"));
+    else if (c(".kd-dlg-del")) delInst(i.getAttribute("data-id"));
+    else if (c(".kd-dlg-hd")) { var id = i.getAttribute("data-id"); dopen = dopen === id ? "" : id; renderList(); }
+  }
+  function onInput(e) {
+    var t = e.target, f = t.getAttribute("data-f"), en;
+    if (t.classList.contains("kd-dlg-q")) { dq = t.value.trim().toLowerCase(); renderList(); }
+    else if (f) { en = entry(t.getAttribute("data-id")); if (PLAIN.test(f)) en[f] = t.value; else en.vals[f] = t.value; hint(t); renderStrip(); }
+  }
+  /* the boxes mean "shown": unchecked names go to the hide lists */
+  function onChange(e) {
+    var t = e.target, w = t.getAttribute("data-w"), n = t.getAttribute("data-n"), l = w && draft.hide[w], k = l ? l.indexOf(n) : 0;
+    if (!l) return;
+    if (t.checked && k >= 0) l.splice(k, 1); else if (!t.checked && k < 0) l.push(n);
+    renderStrip();
+  }
+  function openSettings() {
+    if (dlg || !lastData) return;
+    draft = fresh(lastData); dq = ""; dopen = ""; dst = null; dtried = false;
+    addStyle();
+    dlg = document.createElement("div");
+    dlg.className = "kd-dlg-ov";
+    dlg.innerHTML = '<div class="kd-dlg" role="dialog" aria-modal="true"><div class="kd-dlg-top"><h1>Настройки сервисов</h1><button type="button" class="kd-dlg-x" aria-label="Закрыть">×</button></div>' +
+      '<input type="text" class="kd-dlg-q" placeholder="Поиск" aria-label="Поиск"><div class="kd-dlg-body"></div><div class="kd-dlg-bar"></div></div>';
+    dlg.addEventListener("click", onClick); dlg.addEventListener("input", onInput); dlg.addEventListener("change", onChange);
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(dlg);
+    renderList(); renderStrip();
+  }
+  function closeSettings() {
+    if (!dlg || (dirty() && !confirm("Отменить изменения?"))) return;
+    document.removeEventListener("keydown", onKey);
+    dlg.parentNode.removeChild(dlg); dlg = draft = dst = null;
+  }
+
   /* Angular sets the title over and over: while the page is open, ours stays and Angular's latest is kept for later */
   var TD = Object.getOwnPropertyDescriptor(Document.prototype, "title");
   function holdTitle(on) {
@@ -826,6 +1064,7 @@
       Array.prototype.forEach.call(main.children, function (c) { if (c.tagName !== "ROUTER-OUTLET") c.setAttribute("data-kd-hidden", ""); });
       addStyle();
       page = main.appendChild(document.createElement("div")); page.className = "kd-page";
+      page.addEventListener("click", function (e) { if (e.target.closest(".kd-set")) openSettings(); });
     }
     if (location.pathname !== PAGE) history[replace ? "replaceState" : "pushState"]({ keendash: 1 }, "", PAGE);
     fold(); ensureMenu();

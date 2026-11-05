@@ -752,5 +752,113 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const p = d.querySelector(".kd-page"), t = Array.from(p.querySelectorAll(".kd-ct")).map(x => x.textContent).join(), qb = p.querySelector('[data-id="qb"]');
     ok("page: hidden on page, instance cards", !/AWG|AdGuard/.test(t) && /Торренты/.test(t) && qb && /5\.0 МБ\/с/.test(qb.textContent) && /Stalled\.Thing/.test(qb.textContent), t);
   }, null, "http://192.168.0.1/dashboard");
+  // settings dialog: the button on the page, search, secrets never shown, the message built from a draft, saving through the file manager
+  const URL0 = "http://192.168.0.1/dashboard", ev = (w, t) => new w.Event(t, { bubbles: true });
+  const openDlg = async w => {
+    const d = w.document; d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
+    d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+    d.querySelector(".kd-set").click();
+    return d.querySelector(".kd-dlg");
+  };
+  const typeIn = (w, el, v) => { el.value = v; el.dispatchEvent(ev(w, "input")); };
+  const esc = w => w.document.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await run(full, async w => {
+    const dlg = await openDlg(w), d = w.document; let asked = "", yes = false;
+    w.confirm = q => { asked = q; return yes; };
+    ok("settings: button opens the dialog, three sections", dlg && dlg.querySelector("h1").textContent === "Настройки сервисов" &&
+      Array.from(dlg.querySelectorAll("h2")).map(x => x.textContent).join() === "Добавленные,Найденные автоматически,Добавить сервис", dlg && dlg.textContent);
+    ok("settings: found services, page flag only on tabs", dlg.querySelectorAll('input[data-w="main"]').length > dlg.querySelectorAll('input[data-w="page"]').length &&
+      !!dlg.querySelector('input[data-w="page"][data-n="telemt"]') && !!dlg.querySelector('input[data-w="main"][data-n="cron"]') && !dlg.querySelector('input[data-w="page"][data-n="cron"]'));
+    dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
+    esc(w);
+    ok("settings: closing with changes asks first", asked === "Отменить изменения?" && !!d.querySelector(".kd-dlg"), asked);
+    yes = true; esc(w);
+    ok("settings: Esc closes", !d.querySelector(".kd-dlg"));
+    d.querySelector(".kd-set").click(); d.querySelector(".kd-dlg-ov").dispatchEvent(ev(w, "click"));
+    ok("settings: click on the backdrop closes", !d.querySelector(".kd-dlg"));
+  }, null, URL0);
+  await run(full, async w => {
+    const dlg = await openDlg(w);
+    typeIn(w, dlg.querySelector(".kd-dlg-q"), "qbit");
+    const added = Array.from(dlg.querySelectorAll(".kd-dlg-i")).map(x => x.textContent), cat = Array.from(dlg.querySelectorAll(".kd-dlg-add")).map(x => x.textContent);
+    ok("settings: search filters all sections", added.length === 1 && /Торренты/.test(added[0]) && cat.length === 1 && /qBittorrent/.test(cat[0]) && !dlg.querySelector(".kd-dlg-fr"), added.join() + "|" + cat.join());
+  }, null, URL0);
+  await run(full, async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('.kd-dlg-i[data-id="qb"] .kd-dlg-hd').click();
+    const p = dlg.querySelector('[data-id="qb"] input[data-f="pass"]'), u = dlg.querySelector('[data-id="qb"] input[data-f="user"]');
+    ok("settings: secrets never shown", p && p.value === "" && p.type === "password" && p.getAttribute("placeholder") === "задан" && u.value === "u" && !u.getAttribute("placeholder"), p && p.outerHTML);
+  }, null, URL0);
+  await run(full, (w, m) => {
+    const W = w.__servicesWidget, qb = { id: "qb", type: "qb", name: "Торренты", url: "http://localhost:8080", user: "u", vals: {} };
+    const dr = (inst, del, page, main) => ({ inst, del: del || [], hide: { page: page || [], main: main || [] } });
+    ok("buildMsg: nothing changed -> empty", W.buildMsg("r", full, dr([qb])) === "");
+    ok("buildMsg: newId skips taken ids", W.newId("qb", {}) === "qb" && W.newId("qb", { qb: 1 }) === "qb-2" && W.newId("qb", { qb: 1, "qb-2": 1 }) === "qb-3");
+    ok("buildMsg: add second qBittorrent", W.buildMsg("r", full, dr([qb, { id: "qb-2", type: "qb", name: "qBittorrent 2", url: "http://h:1", user: "", vals: { pass: "x" } }])) ===
+      "keendash 1 r\nadd qb-2 qb\nset qb-2 name qBittorrent 2\nset qb-2 url http://h:1\nset qb-2 pass x\nend\n");
+    ok("buildMsg: edit keeps empty secret", W.buildMsg("r", full, dr([Object.assign({}, qb, { url: "http://new:1", vals: { pass: "" } })])) === "keendash 1 r\nset qb url http://new:1\nend\n");
+    ok("buildMsg: new secret and cleared user", W.buildMsg("r", full, dr([Object.assign({}, qb, { user: "", vals: { pass: "p w" } })])) === "keendash 1 r\nset qb user \nset qb pass p w\nend\n");
+    ok("buildMsg: delete and re-add", W.buildMsg("r", full, dr([qb, { id: W.newId("qb", { qb: 1 }), type: "qb", name: "qBittorrent", url: "http://h:1", user: "", vals: {} }], ["qb"])) ===
+      "keendash 1 r\ndel qb\nadd qb-2 qb\nset qb-2 name qBittorrent\nset qb-2 url http://h:1\nend\n");
+    const hid = Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { hide: { page: ["awg"], main: [] } }) });
+    ok("buildMsg: hide both scopes, show for an unchecked box", W.buildMsg("r", hid, dr([qb], [], ["telemt"], ["cron"])) === "keendash 1 r\nhide page telemt\nshow page awg\nhide main cron\nend\n");
+  }, null, URL0);
+  // fetch stub of the firmware file manager: /rci/put -> port, /fui -> done; status shows the rev after the upload
+  const fm = (fcalls, o) => w => {
+    let rev = "", fui = false;
+    return (u, init) => {
+      fcalls.push([u, init || {}]);
+      const r = (ok, status, body) => Promise.resolve({ ok, status, json: () => Promise.resolve(body) });
+      if (/\/rci\/put$/.test(u)) { if (o.put) return r(false, o.put); rev = JSON.parse(init.body).filename.split("/").pop().replace(".txt", ""); return r(true, 200, { port: { port: "7" } }); }
+      if (/\/fui$/.test(u)) { fui = true; return r(true, 200, {}); }
+      return r(true, 200, fui ? Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { rev, err: o.err || "" }) }) : full);
+    };
+  };
+  const post = (fcalls, re) => fcalls.filter(c => re.test(c[0]));
+  let fcalls = [];
+  await run(full, async w => {
+    const dlg = await openDlg(w);
+    ok("settings: no save bar without changes", !dlg.querySelector(".kd-dlg-save"));
+    dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
+    ok("settings: save bar after a change", !!dlg.querySelector(".kd-dlg-save") && !dlg.querySelector(".kd-dlg-save").disabled);
+    dlg.querySelector(".kd-dlg-save").click(); await wait(200);
+    const put = post(fcalls, /\/rci\/put$/), fui = post(fcalls, /\/fui$/), body = put[0] && JSON.parse(put[0][1].body), rev = body && body.filename.split("/").pop().replace(".txt", "");
+    ok("settings: save -> /rci/put filename and size", put.length === 1 && /^[a-z0-9]{12}$/.test(rev) && body.filename === "v1:/var/lib/keendash/inbox/" + rev + ".txt" && body.size === ("keendash 1 " + rev + "\nhide main cron\nend\n").length, JSON.stringify(body));
+    ok("settings: save -> /fui form with port and file", fui.length === 1 && fui[0][1].body.get("port") === "7" && fui[0][1].body.get("Filedata").size === body.size, "");
+    ok("settings: confirmed by status -> save bar gone", !dlg.querySelector(".kd-dlg-save") && !/Не удалось|Сохранение/.test(dlg.textContent), dlg.textContent);
+  }, fm(fcalls, {}), URL0);
+  fcalls = [];
+  await run(full, async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('.kd-dlg-add[data-type="qb"]').click();
+    const url = dlg.querySelector('input[data-f="url"]');
+    ok("settings: new instance qb-2 named after its type, form open", !!dlg.querySelector('.kd-dlg-i[data-id="qb-2"]') && dlg.querySelector('[data-id="qb-2"] input[data-f="name"]').value === "qBittorrent 2");
+    typeIn(w, url, "http://h:1");
+    dlg.querySelector(".kd-dlg-save").click(); await wait(100);
+    ok("settings: session expired keeps the draft", /Сессия истекла, войдите заново/.test(dlg.textContent) && dlg.querySelector('input[data-f="url"]').value === "http://h:1" && !post(fcalls, /\/fui$/).length, dlg.textContent);
+  }, fm(fcalls, { put: 401 }), URL0);
+  fcalls = [];
+  await run(full, async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('.kd-dlg-add[data-type="qb"]').click();
+    const f = n => dlg.querySelector('input[data-f="' + n + '"]'), hint = n => f(n).parentNode.querySelector(".kd-dlg-hint").textContent;
+    typeIn(w, f("name"), "a|b"); typeIn(w, f("url"), "ftp://x"); typeIn(w, f("pass"), "a\tb");
+    ok("settings: hints for what the router would reject", /\|/.test(hint("name")) && /http/.test(hint("url")) && hint("pass") !== "", [hint("name"), hint("url"), hint("pass")].join("/"));
+    dlg.querySelector(".kd-dlg-save").click(); await wait(100);
+    ok("settings: invalid values are not sent", !fcalls.some(c => /\/rci\/put$/.test(c[0])));
+    typeIn(w, f("name"), "Mine"); typeIn(w, f("url"), "http://ok:1"); typeIn(w, f("pass"), "a b");
+    ok("settings: hints clear once fixed", hint("name") === "" && hint("url") === "" && hint("pass") === "");
+  }, fm(fcalls, {}), URL0);
+  await run(full, async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
+    dlg.querySelector(".kd-dlg-save").click(); await wait(200);
+    ok("settings: apply error shown, can retry", /строка 2: неверная строка hide/.test(dlg.textContent) && !!dlg.querySelector(".kd-dlg-save"), dlg.textContent);
+  }, fm([], { err: "строка 2: неверная строка hide" }), URL0);
+  await run(Object.assign({}, full, { cfg: { rev: "r1", err: "", hide: { page: [], main: [] }, cols: [] } }), async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
+    ok("settings: no volume", /Не найден диск Entware/.test(dlg.textContent) && dlg.querySelector(".kd-dlg-save").disabled, dlg.textContent);
+  }, null, URL0);
   console.log(res.join("\n")); process.exit(res.some(r => r.startsWith("FAIL")) ? 1 : 0);
 })();
