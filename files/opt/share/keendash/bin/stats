@@ -63,13 +63,23 @@ fi
 
 # ---- tunnels: awg-manager's own (kernel opkgtun, native WG nwg, sing-box t2s) + every Entware opkgtun* ----
 if [ $HAS_AWG = 1 ]; then
-  AP=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' /opt/etc/awg-manager/settings.json 2>/dev/null | head -1)
+  AS=/opt/etc/awg-manager/settings.json
+  AP=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' $AS 2>/dev/null | head -1)
   A="http://127.0.0.1:${AP:-2222}/api"
+  # with its login on, awg-manager takes its API key (made in its settings) instead; without one keendash doesn't ask:
+  # every refusal is a warning in its log
+  AK=$(sed -n 's/.*"apiKey"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' $AS 2>/dev/null | head -1)
+  AUTH=$(grep -c '"authEnabled"[[:space:]]*:[[:space:]]*true' $AS 2>/dev/null)
+  [ -z "$AK" ] && [ "${AUTH:-0}" != 0 ] && echo "awg_nokey 1"
+  aget() {
+    if [ -n "$AK" ]; then wget -qO- --header "Authorization: Bearer $AK" "$A$1"
+    elif [ "${AUTH:-0}" = 0 ]; then wget -qO- "$A$1"; fi 2>/dev/null
+  }
   # first "key":"string" / "key":number of a JSON chunk (string kept JSON-escaped)
   JF='function get(s, k) { return match(s, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"") ? substr(s, RSTART + length(k) + 4, RLENGTH - length(k) - 5) : "" }
     function num(s, k) { return match(s, "\"" k "\":-?[0-9]+") ? substr(s, RSTART + length(k) + 3, RLENGTH - length(k) - 3) : "" }'
   # "iface|NdmsName|name" lines; only the "tunnels" array of tunnels/all (its "system" list holds native WG servers)
-  tl=$( { wget -qO- "$A/tunnels/all" | sed -n 's/.*"tunnels":\[//p'; echo; wget -qO- "$A/singbox/tunnels"; echo; grep -o 'opkgtun[0-9]*' /proc/net/dev | sort -u; } 2>/dev/null | awk -F'|' "$JF"'
+  tl=$( { aget /tunnels/all | sed -n 's/.*"tunnels":\[//p'; echo; aget /singbox/tunnels; echo; grep -o 'opkgtun[0-9]*' /proc/net/dev | sort -u; } 2>/dev/null | awk -F'|' "$JF"'
     /^opkgtun[0-9]+$/ { n = $0; sub(/opkgtun/, "", n); if (!s[$0]++) print $0 "|OpkgTun" n "|"; next }
     { gsub(/\{"(id|tag)":/, "\n&"); m = split($0, o, "\n")
       for (i = 2; i <= m; i++) {
@@ -78,10 +88,12 @@ if [ $HAS_AWG = 1 ]; then
         d = get(o[i], "name"); if (d == "") d = get(o[i], "tag")
         if (f != "" && N != "" && !s[f]++) print f "|" N "|" d
       } }')
+  # every NDMS interface at once ("Name.field<TAB>value"), one RCI request per run
+  [ -n "$tl" ] && IF=$("${0%/*}/rci" show/interface)
   up=0; total=0; ifs=" "
   while IFS='|' read -r n N d; do
     [ -n "$n" ] || continue
-    o=$(ndmc -c "show interface $N" 2>/dev/null)
+    o=$(printf '%s\n' "$IF" | awk -F'\t' -v p="$N." 'index($1, p) == 1 { print substr($1, length(p) + 1) ": " $2 }')
     [ -n "$d" ] || d=$(printf '%s\n' "$o" | sed -n 's/^ *description: *//p' | head -1)
     c=$(printf '%s\n' "$o" | sed -n 's/^ *connected: *//p' | head -1)
     ut=$(printf '%s\n' "$o" | sed -n 's/^ *uptime: *//p' | head -1)
@@ -97,7 +109,7 @@ EOF
   echo "awg_up $up"
   echo "awg_total $total"
   # sharing instances (FreeTurn, WDTT servers): px|name|kind|running|uptime|clients|port; clients only where reported
-  wget -qO- "$A/proxyrt/instances" 2>/dev/null | awk "$JF"'
+  aget /proxyrt/instances | awk "$JF"'
     { gsub(/\{"key":/, "\n&"); m = split($0, o, "\n")
       for (i = 2; i <= m; i++) {
         k = get(o[i], "kind"); if (k == "") continue
@@ -113,6 +125,8 @@ if [ $HAS_FIRC = 1 ]; then
   echo "firc_enabled $(grep -c '^  enable: true' /opt/etc/firc/groups.yaml 2>/dev/null | d0)"
   # a group's interface is one name or a list of up to 4 (flow [a, b] or block "- a" lines), each shown by the name
   # people gave it (ifnames, from bin/tick 5) or else as is, joined with ", "
+  # a name is taken whole: a double-quoted one keeps its YAML escapes (firc writes emoji as \U0001F6D1) for the card
+  # to decode, other names get their backslashes doubled for it
   # busybox awk stops at a missing file: only the ones there
   IFN=/tmp/keendash/ifnames POOL=/tmp/firc/pool.state fl=""
   for f in $IFN $POOL; do [ -f "$f" ] && fl="$fl $f"; done
@@ -124,7 +138,10 @@ if [ $HAS_FIRC = 1 ]; then
     /^- id:/{ out(); id=$3; name=ifc=""; en=0; il=0; next }
     il && /^ *- /{ add($2); next }
     /^  [a-z]/{ il=0 }
-    /^  name:/{ name=$2; gsub(/["\47]/,"",name); next }
+    /^  name:/{ name=$0; sub(/^  name:[ \t]*/,"",name); q=substr(name,1,1); gsub(/[|]/," ",name)
+      if(q=="\"") name=substr(name,2,length(name)-2); else gsub(/\\/,"&&",name)
+      if(q=="\47"){ name=substr(name,2,length(name)-2); gsub(/\47\47/,"\47",name) }
+      next }
     /^  interface:/{ v=$0; sub(/^  interface:[ \t]*/,"",v); gsub(/[][]/,"",v); n=split(v,a,","); for(i=1;i<=n;i++) add(a[i]); il=(ifc==""); next }
     /^  enable:/{ en=($2=="true"); next }
     END{ out() }' $fl /opt/etc/firc/groups.yaml 2>/dev/null

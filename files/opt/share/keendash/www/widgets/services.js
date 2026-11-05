@@ -128,6 +128,7 @@
   }
   function tabAwg(d, s) {
     var a = d.awg || {}, ar = rates(s.awg_bytes || []), h = sec("Туннели");
+    if (a.nokey) h += note('<span style="color:' + BAD + '">В awg-manager включён вход по паролю</span> · чтобы keendash видел туннели, сгенерируйте API-ключ в настройках awg-manager');
     (a.tun || []).forEach(function (x) {
       h += line(x[1] ? OK : OFF, esc(x[0]), x[1] ? "↓ " + fmtBytes(x[2]) + " · ↑ " + fmtBytes(x[3]) + " · " + fmtDur(x[4]) : "выключен", !x[1]);
     });
@@ -143,12 +144,19 @@
     });
     return h;
   }
+  // escapes of a YAML double-quoted string: \U0001F6D1, é, \x41, \", \\
+  function yamlStr(v) {
+    return String(v).replace(/\\(U[0-9a-fA-F]{8}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)/g, function (m, e) {
+      if (e.length > 1) try { return String.fromCodePoint(parseInt(e.slice(1), 16)); } catch (x) { return m; }
+      return e === "n" || e === "t" ? " " : e;
+    });
+  }
   function tabFirc(d, s) {
     var f = d.firc || {}, list = (f.list || []).slice().sort(function (a, b) { return b[3] - a[3] || b[2] - a[2]; });
     var h = '<div class="us-grid">' + blk("Доменов в пуле", f.domains, s.firc_domains || [], ACC) +
       blk("Групп включено", f.enabled + " / " + f.groups, null) + "</div>" + sec("Группы по числу доменов");
     list.slice(0, 8).forEach(function (g) {
-      h += line(g[2] ? OK : OFF, esc(g[0]) + (g[1] ? ' <span class="us-tag">' + esc(g[1]) + "</span>" : ""), g[3], !g[2]);
+      h += line(g[2] ? OK : OFF, esc(yamlStr(g[0])) +(g[1] ? ' <span class="us-tag">' + esc(g[1]) + "</span>" : ""), g[3], !g[2]);
     });
     if (list.length > 8) h += note("и ещё " + (list.length - 8) + " групп");
     return h;

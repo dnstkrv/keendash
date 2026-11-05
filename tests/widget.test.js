@@ -11,7 +11,8 @@ const full = Object.assign({}, base, {
     prowlarr:{ok:1,all:3,on:2,bad:1,q:50,g:4,fail:5,list:["Tracker Two"]},
     overseerr:{ok:1,pending:2,processing:3,available:6,total:12},
     immich:{ok:1,photos:18230,videos:1204,usage:442381631488,list:[["Alice",15000,1000,400000000000],["Bob",3230,204,42381631488]]}},
-  svc: [["cron",1,""],["dropbear",1,""],["nfqws2",1,""],["lighttpd",1,"90"],["portal",1,"81"],["ascn",1,""],["awg-manager",1,"2222"],["firc",1,"666"],["haproxy",0,""],["telemt",2,""],["telemt-panel",1,"8083"],["foo",3,"http://example.org:99/x"],["hrweb",1,"2000"]]
+  svc: [["cron",1,""],["dropbear",1,""],["nfqws2",1,""],["lighttpd",1,"90"],["portal",1,"81"],["ascn",1,""],["awg-manager",1,"2222"],["firc",1,"666"],["haproxy",0,""],["telemt",2,""],["telemt-panel",1,"8083"],["foo",3,"http://example.org:99/x"],["hrweb",1,"2000"]],
+  firc: Object.assign({}, base.firc, { list: base.firc.list.concat([["\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" C:\\\\x \\u00e9", "nwg0", 1, 99]]) })
 });
 const mini = { tabs: ["sys"], svc: [["dropbear", 1, ""]], sys: { load: 10, mem: 30, memtotal: 256, temp: null, disk: 10, free: 100, up: 3600 }, series: {} };
 function run(data, tests, fetchFn, pageUrl) {
@@ -45,6 +46,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("wdtt: kind only, clients 0", /^WDTT/.test(px[1]) && /клиентов 0 · :56002/.test(px[1]), px[1]);
     ok("stopped sharing dimmed", /остановлен/.test(px[2]) && Array.from(m.querySelectorAll(".us-row.us-dim")).some(r => /other/.test(r.textContent)));
     click("firc"); ok("firc tab link 666", m.querySelector("a.us-open").href.endsWith(":666/"));
+    const fn = m.querySelector(".us-row .us-nm").textContent;
+    ok("firc group name: YAML escapes decoded", fn.startsWith("\u{1F6D1}\u26a0\ufe0f Block \"REST\" C:\\x \u00e9"), fn);
     click("ascn"); ok("ascn no link", !m.querySelector("a.us-open"));
 
     click("nfqws");
@@ -163,6 +166,15 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const hrefs = Array.from(m.querySelectorAll("a.us-lnk, a.us-open")).map(a => a.href).join(" ");
     ok("KeenDNS web apps: by address in the LAN", hrefs === "http://192.168.0.1:666/ http://192.168.0.1:2000/ http://10.0.0.5:3000/", hrefs);
   });
+  // awg-manager with its login on and no API key: a hint instead of an empty list
+  await run(Object.assign({}, mini, { tabs: ["awg", "sys"], awg: { up: 0, total: 0, nokey: 1, tun: [], px: [] } }), (w, m) => {
+    m.querySelector('[data-tab="awg"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+    ok("awg: no API key hint", /сгенерируйте API-ключ в настройках awg-manager/.test(m.textContent), m.textContent);
+  });
+  await run(Object.assign({}, mini, { tabs: ["awg", "sys"], awg: { up: 1, total: 1, nokey: 0, tun: [["wg", 1, 0, 0, 60]], px: [] } }), (w, m) => {
+    m.querySelector('[data-tab="awg"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+    ok("awg: no hint with the key", !/API-ключ/.test(m.textContent), m.textContent);
+  });
   await run(Object.assign({}, mini, { tabs: ["media", "sys"], media: { svc: [["immich", "http://10.0.0.5:2283"]], immich: { ok: null } } }), (w, m) => {
     m.querySelector('[data-tab="media"]').dispatchEvent(new w.Event("click", { bubbles: true }));
     ok("media before the first cron run: wait note", /появятся в течение минуты/.test(m.textContent));
@@ -185,10 +197,14 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(tmp, "names"), "opkgtun10|test_warp_1\nnwg1|Wireguard VPN\n");
     fs.writeFileSync(path.join(tmp, "groups"), "groups:\n- id: a1\n  name: one\n  interface: eth2.4\n  enable: true\n  rules:\n  - id: r1\n    rule: a.com\n" +
       "- id: b2\n  name: chat_gpt\n  interface:\n  - opkgtun10\n  - \"opkgtun11\"\n  enable: true\n  rules:\n  - id: r2\n    rule: b.com\n" +
-      "- id: c3\n  name: flow\n  interface: [nwg0, 'nwg1']\n  enable: false\n");
+      "- id: c3\n  name: flow\n  interface: [nwg0, 'nwg1']\n  enable: false\n" +
+      "- id: d4\n  name: \"\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" \"\n  interface: nwg0\n  enable: true\n" +
+      "- id: e5\n  name: 'it''s a | b'\n  interface: nwg0\n  enable: true\n- id: f6\n  name: C:\\x y\n  interface: nwg0\n  enable: true\n");
     const f = n => path.join(tmp, n);
     const g = cp.spawnSync("awk", ["-v", "nf=" + f("names"), "-v", "pf=" + f("pool"), prog, f("names"), f("pool"), f("groups")], { encoding: "utf8" }).stdout;
-    ok("bin/stats firc: interface lists, names", g === "g|one|eth2.4|1|1\ng|chat_gpt|test_warp_1, opkgtun11|1|2\ng|flow|nwg0, Wireguard VPN|0|0\n", JSON.stringify(g));
+    ok("bin/stats firc: interface lists, names", g.startsWith("g|one|eth2.4|1|1\ng|chat_gpt|test_warp_1, opkgtun11|1|2\ng|flow|nwg0, Wireguard VPN|0|0\n"), JSON.stringify(g));
+    ok("bin/stats firc: whole group names, escapes kept for the card", g.endsWith("g|\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" |nwg0|1|0\n" +
+      "g|it's a   b|nwg0|1|0\ng|C:\\\\x y|nwg0|1|0\n"), JSON.stringify(g));
     // no ifnames file yet (before the first bin/tick 5): kernel names
     const g2 = cp.spawnSync("awk", ["-v", "nf=" + f("nope"), "-v", "pf=" + f("pool"), prog, f("pool"), f("groups")], { encoding: "utf8" }).stdout;
     ok("bin/stats firc: no names yet", g2.split("\n")[1] === "g|chat_gpt|opkgtun10, opkgtun11|1|2", JSON.stringify(g2));
@@ -294,16 +310,23 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
     r.rm();
   }
-  // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers)
-  function collect(script, args, conf) {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kd-"));
-    fs.copyFileSync(path.join(__dirname, "fake-wget"), path.join(tmp, "wget")); fs.chmodSync(path.join(tmp, "wget"), 0o755);
+  // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers) and tests/fake-ndmc.
+  // o.state: the dir for /tmp/keendash (the RCI token) and the fakes' request log; o.edit(script, dir): paths for the test;
+  // o.files: more files next to the script; o.env: "NAME=value " for the fakes
+  function collect(script, args, conf, o) {
+    o = o || {};
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kd-")), t = unix(tmp), st = unix(o.state || tmp);
+    ["wget", "ndmc"].forEach(n => { fs.copyFileSync(path.join(__dirname, "fake-" + n), path.join(tmp, n)); fs.chmodSync(path.join(tmp, n), 0o755); });
     if (haveCc) { fs.copyFileSync(kd, path.join(tmp, "keendashd")); fs.chmodSync(path.join(tmp, "keendashd"), 0o755); }
     fs.writeFileSync(path.join(tmp, "conf"), conf);
-    // the scripts pin PATH; drop that line so the fake wget comes first. They find keendashd next to themselves
-    fs.writeFileSync(path.join(tmp, script), fs.readFileSync(path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", script), "utf8").replace(/^PATH=.*$/m, ":"));
-    const t = unix(tmp);
-    const out = cp.execFileSync("sh", ["-c", 'PATH="' + t + ':$PATH" KEENDASH_CONF="' + t + '/conf" FIX="' + unix(path.join(__dirname, "fixtures")) + '" sh "' + t + "/" + script + '" ' + args], { encoding: "utf8" });
+    Object.keys(o.files || {}).forEach(n => { fs.mkdirSync(path.dirname(path.join(tmp, n)), { recursive: true }); fs.writeFileSync(path.join(tmp, n), o.files[n], { mode: 0o755 }); });
+    // the scripts pin PATH; drop that line so the fakes come first. They find keendashd and bin/rci next to themselves
+    const src = s => fs.readFileSync(s.includes("/") ? path.join(__dirname, "..", s) : path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", s), "utf8").replace(/^PATH=.*$/m, ":");
+    const name = path.basename(script);
+    fs.writeFileSync(path.join(tmp, "rci"), src("rci"), { mode: 0o755 });
+    fs.writeFileSync(path.join(tmp, name), (o.edit || (s => s))(src(script), t), { mode: 0o755 });
+    const out = cp.execFileSync("sh", ["-c", 'PATH="' + t + ':$PATH" KEENDASH_CONF="' + t + '/conf" KEENDASH_TMP="' + st + '" LOG="' + st + '/log" ' + (o.env || "") +
+      'FIX="' + unix(path.join(__dirname, "fixtures")) + '" sh "' + t + "/" + name + '" ' + args], { encoding: "utf8" });
     fs.rmSync(tmp, { recursive: true, force: true });
     return out;
   }
@@ -345,6 +368,69 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/ext: wrong qBittorrent password -> down", collect("ext", "qb", "QBIT_URL=http://qb.test\nQBIT_USER=admin\nQBIT_PASS=x\n").trim() === "qb_ok 0");
   }
   if (haveCc) {
+    // bin/rci: NDMS over RCI with keendash's own token, issued through ndmc (tests/fake-ndmc); the log lists ndmc and RCI calls in order
+    const TK = "Tk0123456789abcdefghijklmnopqrstuvWXYZ", STALE = "Stale0123456789abcdefghijklmnopqrstuv", states = [];
+    const state = (token, tried) => {
+      const d = fs.mkdtempSync(path.join(os.tmpdir(), "kd-st-")); states.push(d);
+      if (token) fs.writeFileSync(path.join(d, "rci.token"), token + "\n");
+      if (tried) fs.writeFileSync(path.join(d, "rci.try"), Math.floor(Date.now() / 1000) + "\n");
+      return d;
+    };
+    const log = d => fs.existsSync(path.join(d, "log")) ? fs.readFileSync(path.join(d, "log"), "utf8").trim().split("\n") : [];
+    const tok = d => fs.existsSync(path.join(d, "rci.token")) ? fs.readFileSync(path.join(d, "rci.token"), "utf8").trim() : null;
+    const issue = ["ndmc show version", "ndmc authentication token generate keendash", "ndmc show authentication token", "ndmc authentication token delete 4"];
+    const proxy = d => collect("rci", "show/ip/http/proxy", "", { state: d });
+    let d = state(), out = proxy(d);
+    ok("bin/rci: RCI answer flattened", /^firc\.fqdn\tfirc\.r\.example\.net$/m.test(out) && /^adguard\.upstream\t10\.0\.0\.2:3000$/m.test(out), out);
+    ok("bin/rci: token issued, only older keendash ones deleted, sent as X-NDMA-TKN", log(d).join() === issue.concat("rci /show/ip/http/proxy " + TK).join(), log(d).join(" / "));
+    ok("bin/rci: token file 600", tok(d) === TK && (fs.statSync(path.join(d, "rci.token")).mode & 0o777) === 0o600, tok(d));
+    fs.rmSync(path.join(d, "log")); proxy(d);
+    ok("bin/rci: the token is kept, no more ndmc", log(d).join() === "rci /show/ip/http/proxy " + TK, log(d).join(" / "));
+    d = state(STALE); out = proxy(d);
+    ok("bin/rci: refused token (403 0x2312) -> a new one, one retry", /^firc\.fqdn/m.test(out) && tok(d) === TK &&
+      log(d).join() === ["rci /show/ip/http/proxy " + STALE].concat(issue, "rci /show/ip/http/proxy " + TK).join(), log(d).join(" / "));
+    d = state(STALE, true); out = proxy(d);
+    ok("bin/rci: a new token at most once a minute, none till then", /^firc\.fqdn/m.test(out) && tok(d) === null &&
+      log(d).join() === ["rci /show/ip/http/proxy " + STALE, "rci /show/ip/http/proxy -"].join(), log(d).join(" / "));
+    d = state(); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=old " }); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=old " });
+    ok("bin/rci: before 5.2 (5.01 release) no token commands at all", log(d).join() === ["ndmc show version", "rci /show/ip/http/proxy -", "rci /show/ip/http/proxy -"].join(), log(d).join(" / "));
+    d = state(); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=noversion " }); collect("rci", "show/ip/http/proxy", "", { state: d, env: "NDMC=noversion " });
+    ok("bin/rci: 5.1 argument parse error -> no token, tried once, nothing to delete", log(d).join() === ["ndmc show version", "ndmc authentication token generate keendash", "rci /show/ip/http/proxy -", "rci /show/ip/http/proxy -"].join(), log(d).join(" / "));
+    const prerm = { edit: (x, t) => x.replace("/opt/share/keendash/bin/", t + "/") };
+    d = state(TK); collect("ipk/prerm", "", "", Object.assign({ state: d }, prerm));
+    ok("prerm: deletes only keendash's tokens, the token file", tok(d) === null &&
+      log(d).join() === ["ndmc show authentication token", "ndmc authentication token delete 4", "ndmc authentication token delete 9"].join(), log(d).join(" / "));
+    d = state(TK); collect("ipk/prerm", "", "", Object.assign({ state: d, env: "PKG_UPGRADE=1 " }, prerm));
+    ok("prerm: upgrade keeps the token", tok(d) === TK && !log(d).length, log(d).join(" / "));
+
+    // the collectors: the same lines as from ndmc before, one RCI request for all interfaces
+    // only the awg provider, whatever the test machine has; awg-manager's settings.json from the test
+    const awg = (settings, env) => {
+      const s = state(), o = collect("stats", "", "", { state: s, env: env || "", files: { "awgm.json": settings || "{}" },
+        edit: (x, t) => x.replace(/^(HAS_\w+)=0;.*$/gm, (m, v) => v + "=" + (v === "HAS_AWG" ? 1 : 0)).replace(/^  AS=.*$/m, "  AS=" + t + "/awgm.json") });
+      return { tun: o.split("\n").filter(l => /^(tun\||awg_up |awg_total |awg_nokey )/.test(l)).join("\n"), log: log(s) };
+    };
+    const tuns = "tun|Warp|1|0|0|431836\ntun|Home WG|0|0|0|0\ntun|mihomo|1|0|0|1234\nawg_up 2\nawg_total 3";
+    let a = awg('{\n  "port": 2222,\n  "authEnabled": false\n}\n');
+    ok("bin/stats: tunnels from RCI", a.tun === tuns && a.log.filter(l => l.startsWith("rci ")).join() === "rci /show/interface " + TK, a.tun + " || " + a.log.join(" / "));
+    a = awg('{\n  "apiKey": "k-123",\n  "server": { "port": 2222 },\n  "authEnabled": true\n}\n', "AWG_KEY=k-123 ");
+    ok("bin/stats: awg-manager login on -> its API key", a.tun === tuns, a.tun + " || " + a.log.join(" / "));
+    a = awg('{\n  "port": 2222,\n  "authEnabled": true\n}\n', "AWG_KEY=k-123 ");
+    ok("bin/stats: awg-manager login on, no API key -> not asked, awg_nokey", a.tun === "awg_nokey 1\nawg_up 0\nawg_total 0" && !a.log.some(l => l.startsWith("awg ")), a.tun + " || " + a.log.join(" / "));
+    d = state();
+    collect("tick", "5", "", { state: d, files: { services: "#!/bin/sh\n", update: "#!/bin/sh\n", "firc/groups.yaml": "groups:\n",
+      "firc/tunnels.yaml": 'tunnels:\n- id: t1\n  device: fw0\n  description: "Firc tunnel"\n' },
+      edit: (x, t) => x.replace(/^BIN=.*$/m, "BIN=" + t).replace(/^D=\/tmp\/keendash/m, 'D="$KEENDASH_TMP"').replace(/\/opt\/etc\/firc\//g, t + "/firc/") });
+    const batch = "[" + ["GigabitEthernet1", "Bridge0", "OpkgTun10", "OpkgTun11", "Proxy0", "Wireguard1"].map(n => '{"show":{"interface":{"system-name":{"name":"' + n + '"}}}}').join() + "]";
+    const ifn = fs.existsSync(path.join(d, "ifnames")) && fs.readFileSync(path.join(d, "ifnames"), "utf8");
+    ok("bin/tick 5: interface names from 2 RCI requests (interfaces, a batch of kernel names)", ifn === "eth3|Провайдер\nopkgtun10|Warp main\nopkgtun11|Home WG\nt2s0|mihomo\nnwg1|Wireguard VPN\nfw0|Firc tunnel\n" &&
+      log(d).filter(l => l.startsWith("rci ")).join("\n") === "rci /show/interface " + TK + "\nrci / " + TK + " " + batch, JSON.stringify(ifn) + " || " + log(d).join(" / "));
+    d = state(); fs.writeFileSync(path.join(d, "links"), "");
+    out = collect("services", "", "", { state: d, edit: x => x.replace(/^INITD=.*$/m, "INITD=/nonexistent").replace(/^D=\/tmp\/keendash;/m, 'D="$KEENDASH_TMP";') });
+    ok("bin/services: KeenDNS web apps from RCI", out === "ndp|firc.r.example.net|127.0.0.1|666|1\nndp|adguard.r.example.net|10.0.0.2|3000|0\n", out);
+    states.forEach(x => fs.rmSync(x, { recursive: true, force: true }));
+  }
+  if (haveCc) {
     // keendashd json: keys and indexes joined with ".", \" \/ \\ decoded, other escapes kept, tab and | -> space
     const j = cp.execFileSync(kd, ["json"], { encoding: "utf8", input: '{"a":[{"b":"x\\"y|z"},2],"c":{"d":null,"e":"\\/p\\\\q\\n"},"t":true,"u":"\\u00e9"}' });
     ok("keendashd json: paths, escapes", j === 'a.0.b\tx"y z\na.1\t2\nc.d\tnull\nc.e\t/p\\q\\n\nt\ttrue\nu\t\\u00e9\n', JSON.stringify(j));
@@ -359,7 +445,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
 
     // keendashd status: stats/services output -> the card's JSON; broken numbers become 0/null, strings are escaped
     const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));
-    fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "telemt_ok 1", "telemt_conn 12", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
+    fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "awg_nokey 1", "telemt_ok 1", "telemt_conn 12", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
       "agh_url http://10.0.0.5:3000", "agh_ok 1", "agh_sq 1,2,x,3", "al|1793540467|ads.example.com|tv", "ms|qb|http://q", "qb_ok 0", 'pwb|Tracker "One"',
       "sys_load 007", "sys_temp", "ts_running 1", "ts_online 1", "tss|Running|router|100.64.0.1|waw||0||", "tsp|pc|windows|1|1|1||0001-01-01T00:00:00Z|10|20|0|0|"].join("\n") + "\n");
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
@@ -377,7 +463,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     if (s) {
       const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       ok("keendashd status: tabs, services, links", eq(s.tabs, ["telemt", "sys"]) && eq(s.svc, [["cron", 1, ""]]) && eq(s.web, [["lighttpd", 8090, "nfqws2"]]) && eq(s.ndp, [["firc.r.example.net", "127.0.0.1", 666, 1]]), JSON.stringify([s.tabs, s.svc, s.web, s.ndp]));
-      ok("keendashd status: values, missing ones 0", s.telemt.ok === 1 && s.telemt.conn === 12 && s.telemt.users === 0 && s.sys.mem === 0, JSON.stringify(s.telemt));
+      ok("keendashd status: values, missing ones 0", s.telemt.ok === 1 && s.telemt.conn === 12 && s.telemt.users === 0 && s.sys.mem === 0 && s.awg.nokey === 1 && s.awg.up === 0, JSON.stringify(s.telemt) + JSON.stringify(s.awg));
       ok("keendashd status: strings escaped", eq(s.telemt.list, [['alice "a"\\b', 3, 100, 200]]) && eq(s.media.prowlarr.list, ['Tracker "One"']), JSON.stringify(s.telemt.list));
       ok("keendashd status: empty fields 0 / null", eq(s.awg.px, [["home", "freeturn-server", 1, 0, null, ""]]), JSON.stringify(s.awg.px));
       ok("keendashd status: AdGuard url, series, recent", s.agh.ok === 1 && s.agh.url === "http://10.0.0.5:3000" && eq(s.agh.sq, [1, 2, 3]) && eq(s.agh.sb, []) && eq(s.agh.last, [[1793540467, "ads.example.com", "tv"]]), JSON.stringify(s.agh));

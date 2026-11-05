@@ -1,4 +1,5 @@
 #!/bin/sh
-# keendash: restore the stock Keenetic UI and stop the web server
+# keendash: restore the stock Keenetic UI and stop the web server; on removal also delete its RCI tokens on the router
 /opt/etc/init.d/S81keendash stop >/dev/null 2>&1
+[ "$PKG_UPGRADE" = 1 ] || /opt/share/keendash/bin/rci --revoke
 exit 0
