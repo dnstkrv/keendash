@@ -344,9 +344,38 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     r.rm();
 
     r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\n" }), "list");
-    ok("settings list", r.out === "vol|v1:\nrev|r1\nerr|\ntype|plex|Plex|Медиа|url,token\ntype|qb|qBittorrent|Медиа|url,user,pass\n" +
-      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
+    ok("settings list", r.out === "vol|v1:\nrev|r1\nerr|\ntype|plex|Plex|Медиа|url,token|\ntype|qb|qBittorrent|Медиа|url,user,pass|\n" +
+      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token|\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
       !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
+    r.rm();
+
+    // # hint: header, the map field
+    const ZZ = "#!/bin/sh\n# name: ZZ\n# group: Медиа\n# hint: Ключ: Settings → API\n# fields: url key\n", MP = "#!/bin/sh\n# name: MP\n# group: Медиа\n# hint: a|b\n# fields: url map\n";
+    r = settingsRun({ "ext.d/zz": ZZ, "ext.d/mp": MP }, "list");
+    ok("bin/settings types: hint", r.out === "type|mp|MP|Медиа|url,map|ab\ntype|plex|Plex|Медиа|url,token|\ntype|qb|qBittorrent|Медиа|url,user,pass|\ntype|zz|ZZ|Медиа|url,key|Ключ: Settings → API\n", JSON.stringify(r.out));
+    r.rm();
+    const MC = "TYPE='mp'\nNAME='M'\nURL='http://10.0.0.7:1'\n", mbase = { "ext.d/mp": MP, "etc/services/c.conf": MC };
+    const MAPOK = "Задачи=queue.total; Скорость загрузки=a.b:bs";
+    r = settingsRun(Object.assign({ "var/inbox/m1.txt": msg("m1", ["set c map " + MAPOK]) }, mbase), "apply");
+    const mconf = r.rd("etc/services/c.conf");
+    const back = mconf && cp.execFileSync("sh", ["-c", '. ./c.conf; printf %s "$MAP"'], { cwd: path.join(r.tmp, "etc", "services"), encoding: "utf8" });
+    ok("bin/settings apply: map", mconf === MC + "MAP='" + MAPOK + "'\n" && back === MAPOK && r.rd("tmp/settings.state") === "rev m1\nerr \n", JSON.stringify([mconf, back, r.rd("tmp/settings.state")]));
+    r.rm();
+    const badmap = [["set c map a|b=x"], ["set c map a=x; b=$y"], ["set c map a=x:zz"], ["set c map a=1;b=2;c=3;d=4;e=5"], ["set c map =x"], ["set c map a="], ["set c map a"], ["set c map a=x;"],
+      ["set c map " + "я".repeat(33) + "=x"], ["set c map a=" + "x".repeat(129)], ["set c map a=b=c"], ["set c map a=x:b:n"], ["set qb-2 map a=x"]];
+    const mfails = [];
+    badmap.forEach(l => {
+      r = settingsRun(Object.assign({ "var/inbox/m2.txt": msg("m2", l) }, mbase, base), "apply");
+      const st = r.rd("tmp/settings.state") || "";
+      if (!/^rev m2\nerr строка 2: (неверное поле map: |неизвестное поле map)/.test(st) || r.rd("etc/services/c.conf") !== MC || r.rd("etc/services/qb-2.conf") !== QB || r.ls("var/inbox").length) mfails.push(l[0].slice(0, 40) + " -> " + st);
+      r.rm();
+    });
+    ok("bin/settings apply: bad map rejected, nothing changes", !mfails.length, mfails.join("; "));
+    r = settingsRun(Object.assign({ "var/inbox/m3.txt": msg("m3", ["set c map " + "я".repeat(32) + "=x.y:n;b=c:p; d=e:s ; f=g"]) }, mbase), "apply");
+    ok("bin/settings apply: map limits (32 characters, 4 pairs, spaces)", /^rev m3\nerr \n$/.test(r.rd("tmp/settings.state")) && /^MAP=/m.test(r.rd("etc/services/c.conf")), r.rd("tmp/settings.state"));
+    r.rm();
+    r = settingsRun({ "ext.d/mp": MP, "etc/services/c.conf": MC + "MAP='A=x.y'\n", "etc/services/d.conf": MC }, "list");
+    ok("bin/settings list: map", /\ninst\|c\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|A=x.y\n/.test(r.out) && /\ninst\|d\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|\n/.test(r.out), JSON.stringify(r.out));
     r.rm();
 
     // a deleted or newly added id starts without the cache and history of an earlier one with the same id
@@ -386,6 +415,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const again = settingsRun({ "etc/keendash.conf": c1 || "", "etc/services/qb.conf": qbc || "" }, "migrate");
     ok("settings migrate: second run changes nothing", again.rd("etc/keendash.conf") === c1 && again.rd("etc/services/qb.conf") === qbc && again.ls("etc/services").join() === "qb.conf", JSON.stringify(again.ls("etc/services")));
     again.rm(); r.rm();
+    // a # hint: line in the collector does not shift the fields column
+    r = settingsRun({ "etc/keendash.conf": set, "ext.d/qb": "#!/bin/sh\n# name: qBittorrent\n# group: Медиа\n# hint: Ключ: Settings → API\n# fields: url user pass\n" }, "migrate");
+    ok("bin/settings migrate: fields with hint", r.rd("etc/services/qb.conf") === qbc, JSON.stringify(r.rd("etc/services/qb.conf")));
+    r.rm();
     // the two-line comment of the later template goes too
     const short = "GEO=1\n\n# Third-party services (AdGuard Home, Plex) appear\n# once their keys are added here, e.g. ADGUARD_URL=... - see README.\n\nLINKS=\"\n\"\n";
     r = settingsRun({ "etc/keendash.conf": short }, "migrate");
@@ -563,8 +596,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
-    fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass\ninst|qb-2|qb|Торренты|http://q|admin|pass\n" +
-      "inst|pl|plex|Plex|http://p||token\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n");
+    fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b\n" +
+      "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n");
     fs.mkdirSync(path.join(sd, "x"));
     fs.writeFileSync(path.join(sd, "x", "qb-2"), "ok 1\n~dl 5\nlist|a|1\n");
     fs.writeFileSync(path.join(sd, "s.qb-2.dl"), "4\n5\n"); fs.writeFileSync(path.join(sd, "s.qb-2.t"), "7\n"); fs.writeFileSync(path.join(sd, ".s.qb-2.dl.t"), "9\n");
@@ -584,9 +617,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
         eq(s.ts.list, [["pc", "windows", 1, 1, 1, "", "0001-01-01T00:00:00Z", 10, 20, 0, 0, ""]]), JSON.stringify(s.ts));
       ok("keendashd status: newer version", s.upd.new === "9.9.9" && s.upd.busy === 0, JSON.stringify(s.upd));
       ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]] }), JSON.stringify(s.cfg));
-      ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"]]]), JSON.stringify(s.types));
-      ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }],
-        ["pl", "plex", "Plex", "http://p", "", ["token"], null]]), JSON.stringify(s.inst));
+      ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"], 'Ключ: "x"'], ["pl", "Plex", "Медиа", ["url", "token"], ""]]), JSON.stringify(s.types));
+      ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b"],
+        ["pl", "plex", "Plex", "http://p", "", ["token"], null, ""]]), JSON.stringify(s.inst));
       ok("keendashd status: instance series (a key named t too), no old third-party keys", eq(s.series["qb-2.dl"], [4, 5]) && eq(s.series["qb-2.t"], [7]) && !("agh" in s) && !("media" in s) && !("qb_dl" in s.series), JSON.stringify(s.series));
     }
 

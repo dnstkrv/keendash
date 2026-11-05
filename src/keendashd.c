@@ -254,7 +254,7 @@ static size_t line1(const char *path, char *t, size_t sz) {
   return n;
 }
 
-/* "inst|id|type|name|url|user|set,..." lines (bin/settings list) with the collector's data from <tmp>/x/<id>, null before its first run */
+/* "inst|id|type|name|url|user|set,...|map" lines (bin/settings list): the collector's data from <tmp>/x/<id> (null before its first run) goes before the map */
 static void insts(buf *o, lines *L, const char *tmp) {
   int first = 1;
   for (int i = 0; i < L->n; i++) {
@@ -267,10 +267,9 @@ static void insts(buf *o, lines *L, const char *tmp) {
     if (idn && idn < 64 && strspn(id, "abcdefghijklmnopqrstuvwxyz0123456789-") >= idn) {
       snprintf(p, sizeof p, "%s/x/%.*s", tmp, (int)idn, id); fd = open(p, O_RDONLY | O_CLOEXEC);
     }
-    if (fd < 0) { bs(o, ",null]"); continue; }
-    buf d = { 0 }; slurp(fd, &d, MAXOUT); close(fd);
-    bs(o, ","); kvjson(o, d.p); bs(o, "]");
-    free(d.p);
+    if (fd < 0) bs(o, ",null");
+    else { buf d = { 0 }; slurp(fd, &d, MAXOUT); close(fd); bs(o, ","); kvjson(o, d.p); free(d.p); }
+    bs(o, ","); fld(o, f, strcspn(f, "|\r"), 's'); bs(o, "]");
   }
 }
 
@@ -320,7 +319,7 @@ static void status(buf *o) {
   bs(o, ",\"hide\":{\"page\":["); rows(o, &C, "hide|page", "=s");
   bs(o, "],\"main\":["); rows(o, &C, "hide|main", "=s");
   bs(o, "]},\"cols\":["); rows(o, &C, "col", "=a");
-  bs(o, "]},\"types\":["); rows(o, &C, "type", "sssa");
+  bs(o, "]},\"types\":["); rows(o, &C, "type", "sssas");
   bs(o, "],\"inst\":["); insts(o, &C, tmp);
   bs(o, "]");
   free(cb.p); free(C.l);
