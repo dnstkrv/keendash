@@ -644,6 +644,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       sabnzbd: "URL=http://sabnzbd.test KEY=testkey ", nzbget: "URL=http://nzbget.test USER=u PASS=p ",
       spoolman: "URL=http://spoolman.test ", grafana: "URL=http://grafana.test TOKEN=testkey ", glances: "URL=http://glances.test USER= PASS= ",
       portainer: "URL=http://portainer.test KEY=testkey ", truenas: "URL=http://truenas.test KEY=testkey ",
+      proxmox: "URL=http://proxmox.test USER='root@pam!kd' KEY=testkey ", omv: "URL=http://omv.test USER=admin PASS='p\"a\\ss' ",
       transmission: "URL=http://transmission.test USER= PASS= ", deluge: "URL=http://deluge.test PASS='p\"a\\ss' "
     };
     const want = {
@@ -670,6 +671,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       glances: ["ok 1", "t|CPU|12|p", "t|Память|45|p", "t|Swap|3|p", "t|Нагрузка|0.52|t"],
       portainer: ["ok 1", "t|Запущено|3|n", "t|Остановлено|1|n", "t|Всего|4|n"],
       truenas: ["ok 1", "t|Пулы|1 из 2|t", "t|Предупреждений|2|n", "t|Нагрузка|0.25|t", "t|Работает|93784|s"],
+      proxmox: ["ok 1", "t|Узлов в сети|2 из 3|t", "t|ВМ|2 из 3|t", "t|LXC|1 из 2|t", "t|CPU|37|p"],
+      omv: ["ok 1", "t|Работает|93784|s", "t|Нагрузка|0.52|t", "t|Память|25|p"],
       immich: ["ok 1", "photos 18230", "videos 1204", "usage 442381631488", "list|Alice|15000|1000|400000000000", "list|Bob|3230|204|42381631488"]
     };
     Object.keys(want).forEach(s => {
@@ -714,6 +717,23 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/frigate: user -> JSON-escaped login, then stats with the cookie", lo === want.frigate.join("\n") && ll.length === 2 && ll[0].endsWith(' --post-data {"user":"admin","password":"p\\"a\\\\ss"} http://frigate.test:8971/api/login ') && / Cookie: frigate_token=abc /.test(ll[1]) && ll[1].endsWith(" http://frigate.test:8971/api/stats "), lg());
       ok("ext.d/frigate: password not printed", !/a\\+ss/.test(lo));
       ok("ext.d/frigate: wrong password and no answer -> ok 0", fr("URL=http://frigate.test:8971 USER=admin PASS=x ") === "ok 0" && fr("URL=http://nohost.test USER= PASS= ") === "ok 0");
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
+    // proxmox: token header and --no-check-certificate (only here); omv: JSON-escaped login body, then the session cookie
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-p-")), lg = () => fs.readFileSync(path.join(sd, "log"), "utf8"), rm = () => fs.rmSync(path.join(sd, "log"), { force: true });
+      const run = (s, e) => { rm(); return collect("ext.d/" + s, "", "", { state: sd, env: e }).trim(); };
+      const po = run("proxmox", env.proxmox);
+      ok("ext.d/proxmox: PVEAPIToken header and --no-check-certificate, one request", / --no-check-certificate /.test(lg()) && / Authorization: PVEAPIToken=root@pam!kd=testkey /.test(lg()) && lg().split("\n").filter(Boolean).length === 1, lg());
+      ok("ext.d/proxmox: key not printed, wrong key -> ok 0", !/testkey/.test(po) && run("proxmox", "URL=http://proxmox.test USER='root@pam!kd' KEY=bad ") === "ok 0");
+      run("glances", env.glances);
+      ok("ext.d/glances: certificate is checked (no --no-check-certificate)", !/no-check-certificate/.test(lg()), lg());
+      const oo = run("omv", env.omv), ol = lg().split("\n").filter(Boolean);
+      ok("ext.d/omv: JSON-escaped login, then getInformation with the session cookie", oo === want.omv.join("\n") && ol.length === 2 && ol[0].endsWith(' --post-data {"service":"Session","method":"login","params":{"username":"admin","password":"p\\"a\\\\ss"}} http://omv.test/rpc.php ') &&
+        / Cookie: X-OPENMEDIAVAULT-SESSIONID=abc /.test(ol[1]) && ol[1].endsWith(' --post-data {"service":"System","method":"getInformation","params":{}} http://omv.test/rpc.php '), ol.join(" / "));
+      ok("ext.d/omv: password not printed", !/a\\+ss/.test(oo));
+      ok("ext.d/omv: wrong password and no answer -> ok 0", run("omv", "URL=http://omv.test USER=admin PASS=x ") === "ok 0" && run("omv", "URL=http://nohost.test USER=admin PASS=x ") === "ok 0");
+      ok("ext.d/omv: uptime as a string, load as a string", run("omv", "URL=http://omv.test/str USER=admin PASS='p\"a\\ss' ") === ["ok 1", "t|Работает|93784|s", "t|Нагрузка|1.50|t", "t|Память|75|p"].join("\n"));
       fs.rmSync(sd, { recursive: true, force: true });
     }
     // ext.d/ha: each map path is an entity_id that goes into the URL; anything else is skipped, not requested, not executed

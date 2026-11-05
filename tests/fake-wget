@@ -31,6 +31,15 @@ case "$u" in
   *//grafana.test/*) need "Authorization: Bearer testkey" ;;
   *//portainer.test/*) need "X-API-Key: testkey" ;;
   *//truenas.test/*) need "Authorization: Bearer testkey" ;;
+  # Proxmox: the API token header and no certificate check are required; requests go to $LOG
+  *//proxmox.test/*) printf 'proxmox%s\n' "$a" >> "${LOG:-/dev/null}"; need "Authorization: PVEAPIToken=root@pam!kd=testkey"; need "--no-check-certificate" ;;
+  # OpenMediaVault JSON-RPC: login only for admin / p"a\ss (JSON-escaped in the body), then the cookie; without it an RPC error with status 200. Requests go to $LOG
+  *//omv.test/*) printf 'omv%s\n' "$a" >> "${LOG:-/dev/null}"
+    case "$a" in
+      *'"method":"login"'*) need '--post-data {"service":"Session","method":"login","params":{"username":"admin","password":"p\"a\\ss"}}'; echo "  Set-Cookie: X-OPENMEDIAVAULT-SESSIONID=abc; path=/; HttpOnly" >&2 ;;
+      *" Cookie: X-OPENMEDIAVAULT-SESSIONID=abc "*) ;;
+      *) echo '{"response":null,"error":{"code":5001,"message":"Session not authenticated."}}'; exit 0 ;;
+    esac ;;
   # Basic base64(":testkey")
   *//kuma.test/*) need "Authorization: Basic OnRlc3RrZXk=" ;;
   # cookie only for admin / p&s=s, percent-encoded
@@ -108,6 +117,8 @@ case "$u" in
   *//truenas.test/api/v2.0/system/info) f=home/truenas_info ;;
   *//truenas.test/api/v2.0/pool) f=home/truenas_pool ;;
   *//truenas.test/api/v2.0/alert/list) f=home/truenas_alerts ;;
+  *//proxmox.test/api2/json/cluster/resources) f=home/proxmox_resources ;;
+  *//omv.test/*) case "$a" in *'"method":"login"'*) f=home/omv_login ;; *) case "$u" in */str/*) f=home/omv_info_str ;; *) f=home/omv_info ;; esac ;; esac ;;
   *//kuma.test/empty/metrics) f=home/kuma_empty.txt ;;
   *//kuma.test/metrics) f=home/kuma_metrics.txt ;;
   *//moonraker.test/idle/printer/*) f=media/moonraker_idle ;;
