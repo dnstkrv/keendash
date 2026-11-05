@@ -480,9 +480,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
 
     // a deleted or newly added id starts without the cache and history of an earlier one with the same id
     r = settingsRun(Object.assign({ "var/inbox/r10.txt": msg("r10", ["del qb-2", "add z qb", "set z url http://h"]), "tmp/x/qb-2": "ok 1\n", "tmp/s.qb-2.dl": "1\n", "tmp/x/z": "ok 1\n", "tmp/s.z.dl": "1\n",
-      "tmp/x/pl": "ok 1\n", "tmp/s.pl.dl": "1\n" }, base), "apply");
+      "tmp/x/pl": "ok 1\n", "tmp/s.pl.dl": "1\n", "tmp/chk.qb-2.a.test": "1 1\n", "tmp/.chk.qb-2.a.test.now": "200 1 1\n", "tmp/chk.z.a.test": "1 1\n", "tmp/.chk.z.a.test.t": "1 1\n", "tmp/chk.pl.a.test": "1 1\n", "tmp/chk.qb-2b.a.test": "1 1\n" }, base), "apply");
     ok("settings apply: del and add drop the cache and history", r.rd("etc/services/z.conf") !== null && ["tmp/x/qb-2", "tmp/s.qb-2.dl", "tmp/x/z", "tmp/s.z.dl"].every(n => r.rd(n) === null) &&
       r.rd("tmp/x/pl") === "ok 1\n" && r.rd("tmp/s.pl.dl") === "1\n", JSON.stringify(r.ls("tmp")));
+    ok("settings apply: del and add drop the check history and its scratch files of that id only", ["tmp/chk.qb-2.a.test", "tmp/.chk.qb-2.a.test.now", "tmp/chk.z.a.test", "tmp/.chk.z.a.test.t"].every(n => r.rd(n) === null) &&
+      r.rd("tmp/chk.pl.a.test") !== null && r.rd("tmp/chk.qb-2b.a.test") !== null, JSON.stringify(r.ls("tmp")));
     r.rm();
   }
   {
@@ -752,6 +754,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/check: nothing valid -> ok 0", l.join("\n") === "ok 0", l.join(" / "));
       l = run("up.test", "", "A.b");
       ok("ext.d/check: a bad id -> ok 0", l.join("\n") === "ok 0" && chks().join() === "chk.other.up.test", l.join(" / "));
+      // all addresses at once: two answers of 1 s each take under 2 s
+      const t0 = Date.now();
+      l = run("slow.test slow.test:81");
+      const dt = Date.now() - t0;
+      ok("ext.d/check: addresses are asked in parallel", l.slice(0, 4).join("|").startsWith("ok 1|up 2|n 2|h|slow.test|200|") && dt < 2000, dt + " ms " + l.join(" / "));
       // the 21st element is not asked
       l = run(Array.from({ length: 25 }, (_, i) => "up.test:" + (1000 + i)).join(" "));
       ok("ext.d/check: at most 20 addresses", l[2] === "n 20" && l.length === 23, l.join(" / "));
