@@ -194,6 +194,78 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/stats firc: no names yet", g2.split("\n")[1] === "g|chat_gpt|opkgtun10, opkgtun11|1|2", JSON.stringify(g2));
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+  // bin/settings in a scratch etc/var/tmp/ext.d: files {"etc/services/qb.conf": "..."}, inbox files 10 s old unless ago {path: seconds}
+  function settingsRun(files, cmd, ago) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kdset-")), now = Date.now() / 1000;
+    ["etc/services", "var/inbox", "tmp", "ext.d"].forEach(d => fs.mkdirSync(path.join(tmp, d), { recursive: true }));
+    fs.writeFileSync(path.join(tmp, "ext.d", "qb"), "#!/bin/sh\n# name: qBittorrent\n# group: Медиа\n# fields: url user pass\n");
+    fs.writeFileSync(path.join(tmp, "ext.d", "plex"), "#!/bin/sh\n# name: Plex\n# group: Медиа\n# fields: url token\n");
+    Object.keys(files).forEach(f => {
+      fs.writeFileSync(path.join(tmp, f), files[f]);
+      const t = now - ((ago || {})[f] !== undefined ? ago[f] : f.startsWith("var/inbox/") ? 10 : 0);
+      fs.utimesSync(path.join(tmp, f), t, t);
+    });
+    const t = unix(tmp), bin = unix(path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", "settings"));
+    const out = cp.spawnSync("sh", ["-c", 'KEENDASH_ETC="' + t + '/etc" KEENDASH_VAR="' + t + '/var" KEENDASH_TMP="' + t + '/tmp" KEENDASH_EXTD="' + t + '/ext.d" sh "' + bin + '" ' + cmd], { encoding: "utf8" }).stdout;
+    const rd = f => { try { return fs.readFileSync(path.join(tmp, f), "utf8"); } catch (e) { return null; } };
+    return { tmp, out, rd, mode: f => fs.statSync(path.join(tmp, f)).mode & 0o777, ls: d => fs.readdirSync(path.join(tmp, d)), rm: () => fs.rmSync(tmp, { recursive: true, force: true }) };
+  }
+  {
+    const msg = (rev, l) => "keendash 1 " + rev + "\n" + l.join("\n") + "\nend\n";
+    const QB = "TYPE='qb'\nNAME='qBittorrent 2'\nURL='http://10.0.0.5:8080'\nUSER='admin'\nPASS='s3cret'\n", PL = "TYPE='plex'\nNAME='Plex '\\''A'\\'''\nURL='http://10.0.0.6:32400'\nTOKEN='t0ken'\n";
+    const UI = "hide page cron\nhide main telemt\n", base = { "etc/services/qb-2.conf": QB, "etc/services/pl.conf": PL, "etc/ui.conf": UI };
+    let r = settingsRun({ "var/inbox/r1.txt": msg("r1", ["add qb-2 qb", "set qb-2 name qBittorrent 2", "set qb-2 url http://10.0.0.5:8080", "set qb-2 user admin",
+      "set qb-2 pass p's $(x) `y` \\z", "hide page cron", "hide main telemt", "col 0 telemt awg", "col 1 qb-2"]) }, "apply");
+    const conf = r.rd("etc/services/qb-2.conf");
+    ok("settings apply: add, set, hide, col", conf === "TYPE='qb'\nNAME='qBittorrent 2'\nURL='http://10.0.0.5:8080'\nUSER='admin'\nPASS='p'\\''s $(x) `y` \\z'\n" &&
+      r.mode("etc/services/qb-2.conf") === 0o600 && r.rd("etc/ui.conf") === "hide page cron\nhide main telemt\ncol 0 telemt awg\ncol 1 qb-2\n" &&
+      r.rd("tmp/settings.state") === "rev r1\nerr \n" && !r.ls("var/inbox").length, JSON.stringify([conf, r.rd("etc/ui.conf"), r.rd("tmp/settings.state"), r.ls("var/inbox")]));
+    const pass = conf && cp.execFileSync("sh", ["-c", '. ./qb-2.conf; printf %s "$PASS"'], { cwd: path.join(r.tmp, "etc", "services"), encoding: "utf8" });
+    ok("settings apply: values are data", pass === "p's $(x) `y` \\z", JSON.stringify(pass));
+    r.rm();
+
+    const bad = [["set qb-2 foo x"], ["add QB qb"], ["add x nosuch"], ["set qb-2 url ftp://h"], ["set qb-2 user " + "a".repeat(513)], ["set qb-2 user a\x01b"],
+      ["set qb-2 name a|b"], ["set nope name x"], ["add y qb", "set y name Y"], ["bogus"]];
+    const fails = [];
+    bad.concat([null]).forEach(l => {
+      const f = Object.assign({ "var/inbox/r2.txt": l ? msg("r2", l) : "keendash 2 r2\nend\n" }, base);
+      r = settingsRun(f, "apply");
+      const st = r.rd("tmp/settings.state") || "";
+      if (!/^rev r2\nerr строка \d+: ./.test(st) || r.rd("etc/services/qb-2.conf") !== QB || r.rd("etc/services/pl.conf") !== PL || r.rd("etc/ui.conf") !== UI ||
+        r.ls("etc/services").length !== 2 || r.ls("var/inbox").length) fails.push((l || ["keendash 2"]).join(" / ").slice(0, 40) + " -> " + st);
+      r.rm();
+    });
+    ok("settings apply: rejects, nothing changes", !fails.length, fails.join("; "));
+
+    r = settingsRun(Object.assign({ "var/inbox/r3.txt": msg("r3", ["set qb-2 name Торренты дома", "set pl name " + "Т".repeat(64)]) }, base), "apply");
+    ok("settings apply: Cyrillic name", /^NAME='Торренты дома'$/m.test(r.rd("etc/services/qb-2.conf")) && r.rd("etc/services/pl.conf").indexOf("NAME='" + "Т".repeat(64) + "'") > 0 &&
+      r.rd("tmp/settings.state") === "rev r3\nerr \n", r.rd("tmp/settings.state"));
+    r.rm();
+
+    r = settingsRun(Object.assign({ "var/inbox/r4.txt": msg("r4", ["show page cron", "del qb-2", "set pl name X"]) }, base), "apply");
+    ok("settings apply: show, del, set name", r.rd("etc/ui.conf") === "hide main telemt\n" && r.rd("etc/services/qb-2.conf") === null &&
+      r.rd("etc/services/pl.conf") === "TYPE='plex'\nNAME='X'\nURL='http://10.0.0.6:32400'\nTOKEN='t0ken'\n", JSON.stringify([r.rd("etc/ui.conf"), r.rd("etc/services/pl.conf")]));
+    r.rm();
+
+    r = settingsRun(Object.assign({ "var/inbox/A.txt": msg("A", ["del qb-2"]), "var/inbox/B.txt": msg("B", ["set qb-2 name Z"]) }, base), "apply", { "var/inbox/A.txt": 20, "var/inbox/B.txt": 10 });
+    ok("settings apply: two files, second edits a deleted id", r.rd("etc/services/qb-2.conf") === null && /^rev B\nerr строка 2: ./.test(r.rd("tmp/settings.state")) && !r.ls("var/inbox").length,
+      JSON.stringify([r.rd("tmp/settings.state"), r.ls("var/inbox")]));
+    r.rm();
+
+    r = settingsRun(Object.assign({ "var/inbox/r5.txt": "keendash 1 r5\nadd z qb\n" }, base), "apply", { "var/inbox/r5.txt": 10 });
+    const waits = r.ls("var/inbox").length === 1 && r.rd("tmp/settings.state") === null;
+    r.rm();
+    r = settingsRun(Object.assign({ "var/inbox/r5.txt": "keendash 1 r5\nadd z qb\n" }, base), "apply", { "var/inbox/r5.txt": 60 });
+    ok("settings apply: upload in progress waits", waits && !r.ls("var/inbox").length && /^rev r5\nerr ./.test(r.rd("tmp/settings.state")) && r.rd("etc/services/z.conf") === null,
+      JSON.stringify([waits, r.rd("tmp/settings.state")]));
+    r.rm();
+
+    r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\n" }), "list");
+    ok("settings list", r.out === "vol|v1:\nrev|r1\nerr|\ntype|plex|Plex|Медиа|url,token\ntype|qb|qBittorrent|Медиа|url,user,pass\n" +
+      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
+      !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
+    r.rm();
+  }
   // collectors against fixture API answers through tests/fake-wget (it also checks the auth headers)
   function collect(script, args, conf) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kd-"));
