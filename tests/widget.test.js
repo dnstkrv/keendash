@@ -774,7 +774,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("settings: closing with changes asks first", asked === "Отменить изменения?" && !!d.querySelector(".kd-dlg"), asked);
     yes = true; esc(w);
     ok("settings: Esc closes", !d.querySelector(".kd-dlg"));
-    d.querySelector(".kd-set").click(); d.querySelector(".kd-dlg-ov").dispatchEvent(ev(w, "click"));
+    d.querySelector(".kd-set").click(); const ov = d.querySelector(".kd-dlg-ov");
+    ov.querySelector(".kd-dlg").dispatchEvent(ev(w, "mousedown")); ov.dispatchEvent(ev(w, "click"));
+    ok("settings: a drag from the panel ending on the backdrop keeps it open", !!d.querySelector(".kd-dlg"));
+    ov.dispatchEvent(ev(w, "mousedown")); ov.dispatchEvent(ev(w, "click"));
     ok("settings: click on the backdrop closes", !d.querySelector(".kd-dlg"));
   }, null, URL0);
   await run(full, async w => {
@@ -860,5 +863,55 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
     ok("settings: no volume", /Не найден диск Entware/.test(dlg.textContent) && dlg.querySelector(".kd-dlg-save").disabled, dlg.textContent);
   }, null, URL0);
+  // after a failed poll the dialog keeps working from the last good data; the draft stays and the session text is shown
+  let down = false;
+  await run(full, async w => {
+    const dlg = await openDlg(w), W = w.__servicesWidget, q = s => dlg.querySelector(s);
+    q('.kd-dlg-i[data-id="qb"] .kd-dlg-hd').click();
+    typeIn(w, q('[data-id="qb"] input[data-f="url"]'), "http://edited:1");
+    typeIn(w, q('[data-id="qb"] input[data-f="pass"]'), "s3cr3t-pw");
+    down = true; await W.update(); await wait(20);
+    typeIn(w, q(".kd-dlg-q"), "");
+    ok("settings: failed poll -> volume, catalog and draft intact, session text", !/Не найден диск/.test(dlg.textContent) && dlg.querySelectorAll(".kd-dlg-add").length === 8 &&
+      q('[data-id="qb"] input[data-f="url"]').value === "http://edited:1" && !!q(".kd-dlg-save") && !q(".kd-dlg-save").disabled && /Сессия истекла, войдите заново/.test(dlg.textContent), dlg.textContent);
+    ok("settings: a typed secret is never in the markup", !/s3cr3t-pw/.test(dlg.innerHTML) && q('[data-id="qb"] input[data-f="pass"]').value === "s3cr3t-pw");
+    down = false; await W.update(); await wait(20);
+    ok("settings: session text gone after a good poll", !/Сессия истекла/.test(dlg.textContent));
+  }, w => () => Promise.resolve(down ? { ok: false, status: 401 } : { ok: true, status: 200, json: () => Promise.resolve(full) }), URL0);
+  await run(full, async w => {
+    const r = await w.__servicesWidget.awaitRev("nope", 300).then(() => "resolved", e => e);
+    ok("settings: no confirmation -> timeout text", r === "Не удалось сохранить: нет подтверждения", r);
+  });
+  await run(full, async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('.kd-dlg-add[data-type="qb"]').click();
+    const f = n => dlg.querySelector('input[data-f="' + n + '"]'), hint = n => f(n).parentNode.querySelector(".kd-dlg-hint").textContent;
+    typeIn(w, f("name"), "\u{1F600}".repeat(40));
+    ok("settings: name length counts characters, not UTF-16 units", hint("name") === "", hint("name"));
+    typeIn(w, f("name"), "\u{1F600}".repeat(65));
+    ok("settings: name over 64 characters is refused", hint("name") !== "");
+    ok("settings: labels of the spec", Array.from(dlg.querySelectorAll(".kd-dlg-f > span:first-child")).map(x => x.textContent).join() === "Имя,Адрес,Логин,Пароль", dlg.textContent);
+  }, null, URL0);
+  fcalls = [];
+  await run(full, async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('.kd-dlg-add[data-type="qb"]').click();
+    typeIn(w, dlg.querySelector('input[data-f="name"]'), "Торренты 2"); typeIn(w, dlg.querySelector('input[data-f="url"]'), "http://h:1");
+    dlg.querySelector(".kd-dlg-save").click(); await wait(200);
+    const put = post(fcalls, /\/rci\/put$/)[0], body = JSON.parse(put[1].body), rev = body.filename.split("/").pop().replace(".txt", "");
+    const msg = "keendash 1 " + rev + "\nadd qb-2 qb\nset qb-2 name Торренты 2\nset qb-2 url http://h:1\nend\n";
+    ok("settings: Cyrillic name, size in UTF-8 bytes", body.size === new w.Blob([msg]).size && body.size === Buffer.byteLength(msg) && body.size > msg.length && post(fcalls, /\/fui$/)[0][1].body.get("Filedata").size === body.size, body.size + " " + msg.length);
+  }, fm(fcalls, {}), URL0);
+  await run(full, async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
+    dlg.querySelector(".kd-dlg-save").click(); await wait(50);
+    ok("settings: body locked while saving", /Сохранение…/.test(dlg.textContent) && Array.from(dlg.querySelectorAll(".kd-dlg-body input")).every(x => x.disabled) && dlg.querySelector(".kd-dlg-q").disabled, dlg.textContent);
+  }, w => u => /\/rci\/put$/.test(u) ? new Promise(() => {}) : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(full) }), URL0);
+  await run(full, async w => {
+    const d = w.document; d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
+    d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+    ok("settings: button disabled while there is no data", d.querySelector(".kd-set").disabled);
+  }, w => () => Promise.reject(new Error("down")), URL0);
   console.log(res.join("\n")); process.exit(res.some(r => r.startsWith("FAIL")) ? 1 : 0);
 })();
