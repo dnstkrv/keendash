@@ -33,6 +33,7 @@
 #define MAXCONN 16       /* parallel requests; more are dropped */
 #define MAXBODY 65536    /* POST body */
 #define MAXOUT (4 << 20) /* CGI output */
+#define INBOX "/opt/var/lib/keendash/inbox" /* settings messages from the web UI; tests: KEENDASH_INBOX */
 #define PUB "/tmp/mnt/.keendash" /* made by S81keendash; tests: KEENDASH_PUB */
 
 /* ---- growable string ---- */
@@ -633,6 +634,20 @@ static pid_t upgrade(void) {
   return p > 0 ? p : 0;
 }
 
+/* the web UI drops settings messages into the inbox: while it has files (ls skips dotfiles too), apply them */
+static pid_t settings(void) {
+  const char *d = getenv("KEENDASH_INBOX"), *a = getenv("KEENDASH_APPLY");
+  DIR *dd = opendir(d && *d ? d : INBOX);
+  struct dirent *e; int any = 0;
+  if (!dd) return 0;
+  while (!any && (e = readdir(dd))) any = e->d_name[0] != '.';
+  closedir(dd);
+  if (!any) return 0;
+  pid_t p = fork();
+  if (p == 0) { execl("/bin/sh", "sh", "-c", a && *a ? a : SHARE "/bin/settings apply", (char *)NULL); _exit(127); }
+  return p > 0 ? p : 0;
+}
+
 static int serve(const char *ip, const char *port, const char *www) {
   struct sockaddr_in a; memset(&a, 0, sizeof a);
   a.sin_family = AF_INET; a.sin_port = htons((unsigned short)atoi(port));
@@ -653,11 +668,11 @@ static int serve(const char *ip, const char *port, const char *www) {
   struct sigaction sa; memset(&sa, 0, sizeof sa);
   sa.sa_handler = woken; sigaction(SIGCHLD, &sa, NULL);
 
-  time_t next1 = 0, next5 = 0, nextp = 0, nextu = 0;
-  pid_t t1 = 0, t5 = 0, tp = 0, tu = 0; int conns = 0;
+  time_t next1 = 0, next5 = 0, nextp = 0, nextu = 0, nextt = 0;
+  pid_t t1 = 0, t5 = 0, tp = 0, tu = 0, ts = 0; int conns = 0;
   for (;;) {
     pid_t w;
-    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else if (w == tu) tu = 0; else conns--; }
+    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else if (w == tu) tu = 0; else if (w == ts) ts = 0; else conns--; }
     time_t now = mono();
     /* a run still going when the next one is due is skipped, not doubled */
     if (now >= next1) { if (!t1) t1 = tick("1"); next1 = now + 60; }
@@ -665,14 +680,16 @@ static int serve(const char *ip, const char *port, const char *www) {
     /* the card asks every 30 s: the JSON it gets is at most ~20 s old */
     if (now >= nextp) { if (!tp) tp = publish(); nextp = now + 15; }
     if (now >= nextu) { if (!tu) tu = upgrade(); nextu = now + 5; }
+    if (now >= nextt) { if (!ts) ts = settings(); nextt = now + 5; }
     time_t next = next1 < next5 ? next1 : next5;
     if (nextp < next) next = nextp;
     if (nextu < next) next = nextu;
+    if (nextt < next) next = nextt;
     struct pollfd pf = { l, POLLIN, 0 };
     if (poll(&pf, 1, (int)(next - now) * 1000) <= 0) continue;
     int c = accept4(l, NULL, NULL, SOCK_CLOEXEC);
     if (c < 0) continue;
-    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else if (w == tu) tu = 0; else conns--; }
+    while ((w = waitpid(-1, NULL, WNOHANG)) > 0) { if (w == t1) t1 = 0; else if (w == t5) t5 = 0; else if (w == tp) tp = 0; else if (w == tu) tu = 0; else if (w == ts) ts = 0; else conns--; }
     if (conns >= MAXCONN) { close(c); continue; }
     pid_t h = fork();
     if (h == 0) { signal(SIGCHLD, SIG_DFL); close(l); handle(c, www); close(c); _exit(0); }

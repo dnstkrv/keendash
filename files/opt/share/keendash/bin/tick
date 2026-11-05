@@ -18,6 +18,8 @@ case "$1" in
   ;;
 5)
   $BIN/services --discover
+  # the volume of /opt for the web UI's file upload
+  $BIN/settings vol > "$D/vol.t" && mv "$D/vol.t" "$D/vol" || rm -f "$D/vol.t" "$D/vol"
   # interface names as people gave them, for bin/stats: "kernel name|name" from the NDMS interface descriptions
   # (ndmc tells the kernel name of one interface at a time, too slow for every status) and firc's own tunnels
   if [ -f /opt/etc/firc/groups.yaml ]; then

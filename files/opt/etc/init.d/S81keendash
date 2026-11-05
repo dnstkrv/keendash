@@ -55,6 +55,8 @@ start() {
     # the dot hides it from the /storage/ listing; widgets.json is the widget list (the CGI's last line); update is not
     # empty: nginx sends an empty file without reading it, so its atime would not move
     mkdir -p "$PUB" && ln -sfn "$WWW/widgets" "$PUB/widgets" && "$WWW/cgi-bin/widgets.cgi" | tail -n 1 > "$PUB/widgets.json" && echo > "$PUB/update"
+    # the web UI uploads its settings messages here (bin/settings apply)
+    mkdir -p /opt/var/lib/keendash/inbox
     # keendashd goes to the background once the port is bound and prints its pid; a busy port fails here
     if "$BIN" serve "$ip" "$PORT" "$WWW" >/dev/null; then
         # no address here: keendash's own port serves only the card's data, users opened it and got lost

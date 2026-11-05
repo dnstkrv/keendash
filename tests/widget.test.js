@@ -210,6 +210,17 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const rd = f => { try { return fs.readFileSync(path.join(tmp, f), "utf8"); } catch (e) { return null; } };
     return { tmp, out, rd, mode: f => fs.statSync(path.join(tmp, f)).mode & 0o777, ls: d => fs.readdirSync(path.join(tmp, d)), rm: () => fs.rmSync(tmp, { recursive: true, force: true }) };
   }
+  // bin/settings vol: OPT is a volume root, a folder of one, or elsewhere
+  function volRun(opt) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kdvol-")), t = unix(tmp), bin = unix(path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", "settings"));
+    fs.mkdirSync(path.join(tmp, "mnt/v1/install"), { recursive: true }); fs.mkdirSync(path.join(tmp, "mnt/v2"), { recursive: true }); fs.mkdirSync(path.join(tmp, "other"));
+    const r = cp.spawnSync("sh", ["-c", 'KEENDASH_MNT="' + t + '/mnt" KEENDASH_OPT="' + t + "/" + opt + '" sh "' + bin + '" vol'], { encoding: "utf8" });
+    fs.rmSync(tmp, { recursive: true, force: true });
+    return r;
+  }
+  { let r = volRun("mnt/v1"); ok("settings vol: volume root", r.stdout === "v1:\n" && r.status === 0, JSON.stringify(r.stdout));
+    r = volRun("mnt/v1/install"); ok("settings vol: folder of a volume", r.stdout === "v1:/install\n" &&r.status === 0, JSON.stringify(r.stdout));
+    r = volRun("other"); ok("settings vol: none", r.stdout === "" && r.status === 1, r.status + JSON.stringify(r.stdout)); }
   {
     const msg = (rev, l) => "keendash 1 " + rev + "\n" + l.join("\n") + "\nend\n";
     const QB = "TYPE='qb'\nNAME='qBittorrent 2'\nURL='http://10.0.0.5:8080'\nUSER='admin'\nPASS='s3cret'\n", PL = "TYPE='plex'\nNAME='Plex '\\''A'\\'''\nURL='http://10.0.0.6:32400'\nTOKEN='t0ken'\n";
@@ -440,6 +451,14 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     await pubServe(5, 300); await until(() => fs.existsSync(ran));
     const us = fs.statSync(uf);
     ok("keendashd update file: read -> upgrade once, marked unread", fs.existsSync(ran) && fs.readFileSync(ran, "utf8") === "x\n" && us.atimeMs <= us.mtimeMs, fs.existsSync(ran) && fs.readFileSync(ran, "utf8"));
+    // the inbox: a file there runs the apply command once; no files, no run
+    const ib = path.join(pub, "inbox"), ran2 = path.join(pub, "ran2");
+    fs.mkdirSync(ib); fs.writeFileSync(path.join(ib, "a.txt"), "keendash 1 a\nend\n");
+    penv.KEENDASH_INBOX = ib; penv.KEENDASH_APPLY = "echo x >> '" + ran2 + "'; rm -f '" + ib + "'/*";
+    const ip = parseInt(cp.execFileSync(kd, ["serve", "127.0.0.1", String(port + 6), www], { env: penv, encoding: "utf8" }), 10);
+    await until(() => fs.existsSync(ran2)); await new Promise(r => setTimeout(r, 6000));
+    try { process.kill(ip); } catch (e) {}
+    ok("keendashd inbox: a file -> one apply run", fs.existsSync(ran2) && fs.readFileSync(ran2, "utf8") === "x\n", fs.existsSync(ran2) && fs.readFileSync(ran2, "utf8"));
     fs.rmSync(pub, { recursive: true, force: true });
     [sd, www].forEach(d => fs.rmSync(d, { recursive: true, force: true }));
   }

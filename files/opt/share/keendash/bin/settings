@@ -2,6 +2,7 @@
 # Settings from the web UI. The browser uploads a message to $VAR/inbox/<rev>.txt through the firmware's file manager
 # (/rci/put + /fui), keendashd runs "settings apply" every 5 s while the inbox has files.
 #   settings list    the settings for status.json (keendashd status): vol|, rev|, err|, type|, inst|, hide|, col| lines
+#   settings vol     the volume of /opt for the firmware file manager: "<name>:" or "<name>:/<folder>", exit 1 if not found
 #   settings apply   check and apply the inbox messages, oldest first; the last result goes to $TMP/settings.state
 # A message is "keendash 1 <rev>", then add/set/del/hide/show/col lines, then "end". One bad line rejects all of it.
 # Values from the browser are never run: services/<id>.conf has only KEY='value' lines, ids are [a-z0-9-].
@@ -11,6 +12,8 @@ ETC=${KEENDASH_ETC:-/opt/etc/keendash}
 VAR=${KEENDASH_VAR:-/opt/var/lib/keendash}
 TMP=${KEENDASH_TMP:-/tmp/keendash}
 EXTD=${KEENDASH_EXTD:-/opt/share/keendash/ext.d}
+MNT=${KEENDASH_MNT:-/tmp/mnt}
+OPT=${KEENDASH_OPT:-/opt}
 
 # "type|<type>|<name>|<group>|<f1,f2>" from the collectors' headers: "# name: ...", "# group: ...", "# fields: url user pass"
 types() {
@@ -105,6 +108,19 @@ END {
   }
 }'
 
+# /opt is a volume (mounted in $MNT/<name>) or a folder of one; -ef compares the device and inode
+vol() {
+  for d in "$MNT"/*/; do
+    d=${d%/}
+    [ "$d" -ef "$OPT" ] && { echo "${d##*/}:"; return 0; }
+    for s in "$d"/*/; do
+      s=${s%/}
+      [ "$s" -ef "$OPT" ] && { echo "${d##*/}:/${s##*/}"; return 0; }
+    done
+  done
+  return 1
+}
+
 apply() {
   umask 077
   # the work dir is on the same filesystem as the config, so mv is an atomic rename
@@ -113,7 +129,7 @@ apply() {
   # shortcut: mtime has 1 s resolution, two drops within a second may apply out of order; upgrade: time-prefixed rev
   ls -tr "$IN" | while IFS= read -r n; do
     f=$IN/$n
-    [ -f "$f" ] || { rm -rf "$f"; continue; }
+    [ -f "$f" ] || { [ -n "$n" ] && rm -rf "$f"; continue; }
     age=$(( $(date +%s) - $(date -r "$f" +%s) ))
     # still being uploaded
     [ $age -lt 2 ] && continue
@@ -153,6 +169,7 @@ apply() {
 
 case $1 in
   list) list ;;
+  vol) vol ;;
   apply) apply ;;
-  *) echo "usage: settings list | apply" >&2; exit 2 ;;
+  *) echo "usage: settings list | vol | apply" >&2; exit 2 ;;
 esac
