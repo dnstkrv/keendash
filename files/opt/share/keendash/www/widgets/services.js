@@ -362,7 +362,7 @@
   };
   VIEW.jellyfin = VIEW.plex; VIEW.jellyseerr = VIEW.overseerr;
   function instOf(d) {
-    return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "" }; });
+    return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "", hosts: a[8] || "", every: a[9] || "" }; });
   }
   function typeOf(d, type) {
     var t = (d.types || []).filter(function (e) { return e[0] === type; })[0] || [];
@@ -611,7 +611,8 @@
       ".kd-dlg{width:656px;max-width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;background:var(--dashboard-background);border-radius:8px}" +
       ".kd-dlg-top{display:flex;align-items:center;justify-content:space-between;padding:24px 24px 0}.kd-dlg-top h1{font-size:28px;font-weight:700;line-height:36px;margin:0}" +
       ".kd-dlg-x{background:none;border:0;color:inherit;opacity:.7;font-size:28px;line-height:1;cursor:pointer}.kd-dlg-x:hover{opacity:1}" +
-      ".kd-dlg input[type=text],.kd-dlg input[type=password]{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid rgba(128,128,128,.4);border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:14px}" +
+      ".kd-dlg input[type=text],.kd-dlg input[type=password],.kd-dlg select{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid rgba(128,128,128,.4);border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:14px}" + +
+      ".kd-dlg select option{background:var(--dashboard-background);color:inherit}" +
       ".kd-dlg-sess{margin:12px 24px 0;color:" + BAD + ";font-size:13px}.kd-dlg-sess:empty{display:none}.kd-dlg-q{margin:16px 24px 0;width:calc(100% - 48px)!important}.kd-dlg-body{flex:1;min-height:0;overflow-y:auto;padding:0 24px 24px}" +
       ".kd-dlg-h{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.55;margin:20px 0 4px}" +
       ".kd-dlg-r{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;width:100%;box-sizing:border-box;padding:10px 0;border:0;border-bottom:1px solid rgba(128,128,128,.2);background:none;color:inherit;font:inherit;font-size:14px;text-align:left}" +
@@ -947,8 +948,9 @@
   }
   /* ---------- settings dialog: edits pile up in a draft; "Сохранить" sends them as one message (bin/settings reads it) through
    * the firmware file manager: /rci/put names the file in keendash's inbox, /fui takes its content; status.json confirms ---------- */
-  var FLD = { name: "Имя", url: "Адрес", user: "Логин", pass: "Пароль", token: "Токен", key: "API-ключ", map: "Что показывать" };
-  var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user|map)$/, NOSAVE = "Не удалось сохранить";
+  var FLD = { name: "Имя", url: "Адрес", user: "Логин", pass: "Пароль", token: "Токен", key: "API-ключ", map: "Что показывать", hosts: "Адреса", every: "Интервал" };
+  var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user|map|hosts|every)$/, NOSAVE = "Не удалось сохранить";
+  var EVERY = [["1", "1 мин"], ["5", "5 мин"], ["15", "15 мин"], ["30", "30 мин"], ["60", "1 ч"]];
   var TRASH = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 9h12l-1 12H7L6 9z"/></svg>';
   /* dd: the status the dialog works from (taken when it opens, again after a save), so a failed poll changes nothing;
    * lost: the last poll got 401; down: where the mouse button went down. dlg: the backdrop; draft: {inst: [{id, type, name, url, user, vals}], del: [id], hide: {page, main}}; dopen: the instance
@@ -971,6 +973,13 @@
         /^[A-Za-z0-9_.-]{1,128}$/.test(b[0]) && /^(n|b|bs|p|s)?$/.test(b[1] || "");
     });
   }
+  /* bin/settings okhosts: 1-20 elements split by ASCII spaces and commas, a domain[:port] not starting with - or an http(s):// address */
+  function okhosts(v) {
+    var a = v.replace(/^[ ,]+|[ ,]+$/g, "").split(/[ ,]+/);
+    return a.length <= 20 && a.every(function (e) {
+      return /^https?:\/\/[^ |'"\\$`<>]+$/.test(e) || (/^[A-Za-z0-9.-]+(:[0-9]{1,5})?$/.test(e) && e.charAt(0) !== "-");
+    });
+  }
   /* what the router would reject, said before sending: "" if the value is fine; req: empty is an error too */
   function bad(f, v, req) {
     if (!v) return req ? "Заполните поле" : "";
@@ -978,13 +987,14 @@
     if (unescape(encodeURIComponent(v)).length > 512) return "Не длиннее 512 байт";
     if (f === "name" && v.replace(/[\ud800-\udbff][\udc00-\udfff]/g, "x").length > 64) return "Не длиннее 64 символов";
     if (f === "map") return okmap(v) ? "" : "Формат: Подпись=путь[:формат]; до 8 пар";
+    if (f === "hosts") return okhosts(v) ? "" : "Домен или http(s)://адрес, через пробел, до 20";
     if (PLAIN.test(f) && v.indexOf("|") >= 0) return "Символ | недопустим";
     if (f === "url" && !/^https?:\/\//.test(v)) return "Адрес должен начинаться с http:// или https://";
     return "";
   }
   function fresh(d) {
     var h = (d.cfg || {}).hide || {};
-    return { inst: instOf(d).map(function (i) { return { id: i.id, type: i.type, name: i.name, url: i.url || "", user: i.user || "", map: i.map, vals: {} }; }),
+    return { inst: instOf(d).map(function (i) { return { id: i.id, type: i.type, name: i.name, url: i.url || "", user: i.user || "", map: i.map, hosts: i.hosts, every: i.every, vals: {} }; }),
       del: [], hide: { page: (h.page || []).slice(), main: (h.main || []).slice() } };
   }
   function fv(e, f) { return PLAIN.test(f) ? e[f] : e.vals[f] || ""; }
@@ -1065,9 +1075,11 @@
   }
   /* a field of an instance's form; its value is put in by renderList (never into the markup), a set secret shows only "задан" */
   function fld(e, f, isSet) {
-    var sec = SECRET.test(f);
-    return '<label class="kd-dlg-f"><span>' + FLD[f] + '</span><input type="' + (sec ? "password" : "text") + '" data-f="' + f + '" data-id="' + esc(e.id) +
-      '" autocomplete="' + (sec ? "new-password" : "off") + '"' + (isSet ? ' placeholder="задан"' : "") + '><span class="kd-dlg-hint"></span></label>';
+    var sec = SECRET.test(f), at = ' data-f="' + f + '" data-id="' + esc(e.id) + '"';
+    return '<label class="kd-dlg-f"><span>' + FLD[f] + "</span>" + (f === "every" ?
+      "<select" + at + ">" + EVERY.map(function (o) { return '<option value="' + o[0] + '">' + o[1] + "</option>"; }).join("") + "</select>" :
+      '<input type="' + (sec ? "password" : "text") + '"' + at + ' autocomplete="' + (sec ? "new-password" : "off") + '"' + (isSet ? ' placeholder="задан"' : "") + ">") +
+      '<span class="kd-dlg-hint"></span></label>';
   }
   function hint(inp) {
     var f = inp.getAttribute("data-f"), s = sets(dd, entry(inp.getAttribute("data-id"))).filter(function (x) { return x[0] === f; })[0];
@@ -1103,7 +1115,7 @@
   function renderStrip() {
     if (!dlg) return;
     /* nothing is edited while a save is on its way: the result would drop it */
-    Array.prototype.forEach.call(dlg.querySelectorAll(".kd-dlg-q,.kd-dlg-body input,.kd-dlg-body button"), function (x) { x.disabled = !!(dst && dst.busy); });
+    Array.prototype.forEach.call(dlg.querySelectorAll(".kd-dlg-q,.kd-dlg-body input,.kd-dlg-body select,.kd-dlg-body button"), function (x) { x.disabled = !!(dst && dst.busy); });
     dlg.querySelector(".kd-dlg-bar").innerHTML = dst && dst.busy ? "<span>Сохранение…</span>" : !dirty() ? "" :
       (dst && dst.err ? '<div class="kd-dlg-err">' + esc(dst.err) + "</div>" : "") +
       '<button type="button" class="kd-btn kd-btn-p kd-dlg-save"' + (((lastData || dd).cfg || {}).vol ? "" : " disabled") + '>Сохранить</button><button type="button" class="kd-btn kd-dlg-cancel">Отменить</button>';
@@ -1112,7 +1124,7 @@
     var d = dd, taken = {}, id, n;
     instOf(d).concat(draft.inst).forEach(function (i) { taken[i.id] = 1; });
     id = newId(type, taken); n = id.slice(type.length + 1);
-    draft.inst.push({ id: id, type: type, name: typeOf(d, type).name + (n ? " " + n : ""), url: "", user: "", map: "", vals: {} });
+    draft.inst.push({ id: id, type: type, name: typeOf(d, type).name + (n ? " " + n : ""), url: "", user: "", map: "", hosts: "", every: "5", vals: {} });
     dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; dopen = id; renderList(); renderStrip();
     /* the form opens above the catalog the click was in */
     var el = dlg.querySelector('.kd-dlg-i[data-id="' + id + '"]');

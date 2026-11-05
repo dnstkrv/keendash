@@ -254,7 +254,7 @@ static size_t line1(const char *path, char *t, size_t sz) {
   return n;
 }
 
-/* "inst|id|type|name|url|user|set,...|map" lines (bin/settings list): the collector's data from <tmp>/x/<id> (null before its first run) goes before the map */
+/* "inst|id|type|name|url|user|set,...|map|hosts|every" lines (bin/settings list): the collector's data from <tmp>/x/<id> (null before its first run) goes before the map */
 static void insts(buf *o, lines *L, const char *tmp) {
   int first = 1;
   for (int i = 0; i < L->n; i++) {
@@ -269,7 +269,8 @@ static void insts(buf *o, lines *L, const char *tmp) {
     }
     if (fd < 0) bs(o, ",null");
     else { buf d = { 0 }; slurp(fd, &d, MAXOUT); close(fd); bs(o, ","); kvjson(o, d.p); free(d.p); }
-    bs(o, ","); fld(o, f, strcspn(f, "|\r"), 's'); bs(o, "]");
+    for (int j = 0; j < 3; j++) { size_t n = strcspn(f, "|\r"); bs(o, ","); fld(o, f, n, 's'); f += n; if (*f == '|') f++; }
+    bs(o, "]");
   }
 }
 

@@ -361,7 +361,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
 
     r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\n" }), "list");
     ok("settings list", r.out === "vol|v1:\nrev|r1\nerr|\ntype|plex|Plex|Медиа|url,token|\ntype|qb|qBittorrent|Медиа|url,user,pass|\n" +
-      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token|\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
+      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token|||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass|||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
       !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
     r.rm();
 
@@ -409,7 +409,47 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/settings apply: map limits (32 characters, 8 pairs, spaces)", /^rev m3\nerr \n$/.test(r.rd("tmp/settings.state")) && /^MAP=/m.test(r.rd("etc/services/c.conf")), r.rd("tmp/settings.state"));
     r.rm();
     r = settingsRun({ "ext.d/mp": MP, "etc/services/c.conf": MC + "MAP='A=x.y'\n", "etc/services/d.conf": MC }, "list");
-    ok("bin/settings list: map", /\ninst\|c\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|A=x.y\n/.test(r.out) && /\ninst\|d\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|\n/.test(r.out), JSON.stringify(r.out));
+    ok("bin/settings list: map", /\ninst\|c\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|A=x.y\|\|\n/.test(r.out) && /\ninst\|d\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|\|\|\n/.test(r.out), JSON.stringify(r.out));
+    r.rm();
+
+    // hosts and every (the check type): types() keeps the fields, apply checks them like the browser does, list prints them last
+    const CK = "#!/bin/sh\n# name: CK\n# group: Доступность\n# fields: hosts every\n", KC = "TYPE='ck'\nNAME='K'\n", kbase = { "ext.d/ck": CK, "etc/services/k.conf": KC };
+    r = settingsRun({ "ext.d/ck": CK, "etc/services/k.conf": KC + "HOSTS='a.test b.test:81'\nEVERY='15'\n" }, "list");
+    ok("bin/settings types and list: hosts, every", r.out.startsWith("type|ck|CK|Доступность|hosts,every|\n") && r.out.includes("\ninst|k|ck|K|||||a.test b.test:81|15\n"), JSON.stringify(r.out));
+    r.rm();
+    const HOK = "a.test b.test:8443,https://c.test/x?y=1&z=%20 http://d.test:8080", hfail = [];
+    [HOK, "  a.test  ", "a.test,", ["a.test", "b-c.test", "1.2.3.4:80"].concat(Array.from({ length: 17 }, (_, i) => "h" + i + ".test")).join(" ")].forEach(v => {
+      r = settingsRun(Object.assign({ "var/inbox/h1.txt": msg("h1", ["set k hosts " + v]) }, kbase), "apply");
+      if (r.rd("tmp/settings.state") !== "rev h1\nerr \n" || r.rd("etc/services/k.conf") !== KC + "HOSTS='" + v + "'\n") hfail.push(v.slice(0, 30) + " -> " + r.rd("tmp/settings.state"));
+      r.rm();
+    });
+    ok("bin/settings apply: hosts accepted (domain, port, address, comma, 20 elements)", !hfail.length, hfail.join("; "));
+    const hbad = [["-x", "-x"], ["a.test -x", "-x"], ["a b'c", "b'c"], ["$(id)", "$(id)"], ["a.test http://a|b", "http://a|b"], ["a`b", "a`b"], ["http://a\\b", "http://a\\b"], ["http://a\"b", "http://a\"b"],
+      ["http://", "http://"], ["ftp://a.test", "ftp://a.test"], ["a.test:123456", "a.test:123456"], ["a.test:", "a.test:"], ["a:b", "a:b"], ["a.test/x", "a.test/x"], ["http://a<b", "http://a<b"],
+      [Array.from({ length: 21 }, (_, i) => "h" + i + ".test").join(" "), "h20.test"], [" , ", ""]];
+    hbad.forEach(([v, el]) => {
+      r = settingsRun(Object.assign({ "var/inbox/h2.txt": msg("h2", ["set k hosts " + v]) }, kbase), "apply");
+      if (r.rd("tmp/settings.state") !== "rev h2\nerr строка 2: неверный адрес: " + el + "\n" || r.rd("etc/services/k.conf") !== KC) hfail.push(v.slice(0, 30) + " -> " + r.rd("tmp/settings.state"));
+      r.rm();
+    });
+    ok("bin/settings apply: bad hosts rejected, names the element, nothing changes", !hfail.length, hfail.join("; "));
+    r = settingsRun(Object.assign({ "var/inbox/h3.txt": msg("h3", ["set k hosts"]) }, { "ext.d/ck": CK, "etc/services/k.conf": KC + "HOSTS='a.test'\n" }), "apply");
+    ok("bin/settings apply: empty hosts clears", r.rd("etc/services/k.conf") === KC && r.rd("tmp/settings.state") === "rev h3\nerr \n", JSON.stringify(r.rd("etc/services/k.conf")));
+    r.rm();
+    const efail = [];
+    ["1", "5", "15", "30", "60"].forEach(v => {
+      r = settingsRun(Object.assign({ "var/inbox/e1.txt": msg("e1", ["set k every " + v]) }, kbase), "apply");
+      if (r.rd("tmp/settings.state") !== "rev e1\nerr \n" || r.rd("etc/services/k.conf") !== KC + "EVERY='" + v + "'\n") efail.push(v + " -> " + r.rd("tmp/settings.state"));
+      r.rm();
+    });
+    ["2", "0", "05", "5 ", "abc", "5m", "15 30", "61", "-5"].forEach(v => {
+      r = settingsRun(Object.assign({ "var/inbox/e2.txt": msg("e2", ["set k every " + v]) }, kbase), "apply");
+      if (r.rd("tmp/settings.state") !== "rev e2\nerr строка 2: неверный интервал\n" || r.rd("etc/services/k.conf") !== KC) efail.push(JSON.stringify(v) + " -> " + r.rd("tmp/settings.state"));
+      r.rm();
+    });
+    ok("bin/settings apply: every is one of 1 5 15 30 60", !efail.length, efail.join("; "));
+    r = settingsRun({ "var/inbox/e3.txt": msg("e3", ["set qb-2 hosts a.test", "set qb-2 every 5"]), "etc/services/qb-2.conf": QB }, "apply");
+    ok("bin/settings apply: hosts and every only for types that list them", r.rd("tmp/settings.state") === "rev e3\nerr строка 2: неизвестное поле hosts\n" && r.rd("etc/services/qb-2.conf") === QB, r.rd("tmp/settings.state"));
     r.rm();
 
     // a deleted or newly added id starts without the cache and history of an earlier one with the same id
@@ -615,6 +655,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     collect("ext", "", "", { state: d, files: { "ext.d/boom": "#!/bin/sh\nexit 1\n", "etc/services/boom.conf": "TYPE='boom'\n" } });
     ok("bin/ext: collector exit status 1 -> x/<id> not deleted", rd(d, "x/boom") !== null, ls(d));
     fs.rmSync(d, { recursive: true, force: true });
+    // EVERY: an instance with a cache runs only in a minute that is a multiple of it (KEENDASH_NOW is epoch seconds); HOSTS and EVERY are unset per instance
+    const e = fs.mkdtempSync(path.join(os.tmpdir(), "kd-e-")), cf = (x, ev) => "TYPE='envt'\n" + (x ? "HOSTS='" + x + "'\n" : "") + (ev ? "EVERY='" + ev + "'\n" : "");
+    fs.mkdirSync(path.join(e, "x"));
+    ["t5", "t7", "t8"].forEach(n => fs.writeFileSync(path.join(e, "x", n), "old\n"));
+    const min = n => "KEENDASH_NOW=" + (n * 60 + 7) + " ";
+    const every = n => collect("ext", "", "", { state: e, env: min(n) + "HOSTS=leak EVERY=5 ", files: { "ext.d/envt": "#!/bin/sh\necho ok 1\necho \"h=$HOSTS e=$EVERY\"\n",
+      "etc/services/t5.conf": cf("a.test b.test", "5"), "etc/services/t6.conf": cf("", "5"), "etc/services/t7.conf": cf("", ""), "etc/services/t8.conf": cf("", "x$(y)") } });
+    every(12347);
+    ok("bin/ext: EVERY=5 skips a minute that is not its own; no cache or no EVERY (or a bad one) runs; env of the caller is dropped",
+      rd(e, "x/t5") === "old\n" && rd(e, "x/t6") === "ok 1\nh= e=5\n" && rd(e, "x/t7") === "ok 1\nh= e=\n" && rd(e, "x/t8") === "ok 1\nh= e=x$(y)\n", JSON.stringify(["t5", "t6", "t7", "t8"].map(n => rd(e, "x/" + n))));
+    every(12350);
+    ok("bin/ext: EVERY=5 runs at minute % 5 == 0, HOSTS and EVERY exported", rd(e, "x/t5") === "ok 1\nh=a.test b.test e=5\n", JSON.stringify(rd(e, "x/t5")));
+    fs.rmSync(e, { recursive: true, force: true });
     const one = collect("ext", "sonarr-1", "", { files: { "etc/services/sonarr-1.conf": "TYPE='sonarr'\nURL='http://sonarr.test'\nKEY='bad'\n" } });
     ok("bin/ext: wrong key -> ok 0", one === "ok 0\n", one);
     const cu = collect("ext", "cu-1", "", { files: { "etc/services/cu-1.conf": "TYPE='custom'\nURL='http://custom.test/stats'\nMAP='A=queue.total; B=speed:bs'\n" } });
@@ -703,7 +756,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
-    fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b\n" +
+    fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b|h.test x.test|15\n" +
       "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n");
     fs.mkdirSync(path.join(sd, "x"));
     fs.writeFileSync(path.join(sd, "x", "qb-2"), "ok 1\n~dl 5\nlist|a|1\n");
@@ -725,8 +778,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: newer version", s.upd.new === "9.9.9" && s.upd.busy === 0, JSON.stringify(s.upd));
       ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]] }), JSON.stringify(s.cfg));
       ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"], 'Ключ: "x"'], ["pl", "Plex", "Медиа", ["url", "token"], ""]]), JSON.stringify(s.types));
-      ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b"],
-        ["pl", "plex", "Plex", "http://p", "", ["token"], null, ""]]), JSON.stringify(s.inst));
+      ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b", "h.test x.test", "15"],
+        ["pl", "plex", "Plex", "http://p", "", ["token"], null, "", "", ""]]), JSON.stringify(s.inst));
       ok("keendashd status: instance series (a key named t too), no old third-party keys", eq(s.series["qb-2.dl"], [4, 5]) && eq(s.series["qb-2.t"], [7]) && !("agh" in s) && !("media" in s) && !("qb_dl" in s.series), JSON.stringify(s.series));
     }
 
@@ -1118,6 +1171,40 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const put = post(fcalls, /\/rci\/put$/)[0], rev = put && JSON.parse(put[1].body).filename.split("/").pop().replace(".txt", "");
     ok("dialog: cleared map sends an empty value", !!put && await blobText(w, post(fcalls, /\/fui$/)[0][1].body.get("Filedata")) === ("keendash 1 " + rev + "\nset cu map \nend\n"), rev);
   }, cf(fcalls, cust("")), URL0);
+  // hosts (text, checked like the router does) and every (a select, default 5 for a new instance)
+  const HOSTERR = "Домен или http(s)://адрес, через пробел, до 20";
+  const chk = Object.assign({}, full, { types: [["check", "Доступность", "Другое", ["hosts", "every"], ""]], inst: [["ck", "check", "Сайты", "", "", [], null, "", "a.test", "5"]] });
+  const sent = async (w, calls) => {
+    const put = post(calls, /\/rci\/put$/)[0], rev = put && JSON.parse(put[1].body).filename.split("/").pop().replace(".txt", "");
+    return put ? [rev, await blobText(w, post(calls, /\/fui$/)[0][1].body.get("Filedata"))] : [null, null];
+  };
+  fcalls = [];
+  await run(chk, async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s), hp = () => q('input[data-f="hosts"]'), ev = () => q('select[data-f="every"]'), hh = () => hp().parentNode.querySelector(".kd-dlg-hint").textContent;
+    q('.kd-dlg-i[data-id="ck"] .kd-dlg-hd').click();
+    ok("dialog: every is a select 1/5/15/30/60", !!ev() && Array.from(ev().options).map(o => o.value).join() === "1,5,15,30,60" && Array.from(ev().options).map(o => o.textContent).join() === "1 мин,5 мин,15 мин,30 мин,1 ч" && ev().value === "5",
+      ev() && Array.from(ev().options).map(o => o.value + ":" + o.textContent).join() + " " + ev().value);
+    ok("dialog: hosts and every labels, nothing to save", hp().value === "a.test" && hp().parentNode.querySelector("span").textContent === "Адреса" && ev().parentNode.querySelector("span").textContent === "Интервал" && !q(".kd-dlg-save"));
+    const wrong = v => { typeIn(w, hp(), v); return hh() === HOSTERR; };
+    ok("dialog: hosts rule accepts", ["a.test", " a.test  b-c.test:8443,http://d.test/x?y=1 ", "https://x", "1.2.3.4:80", Array.from({ length: 20 }, (_, i) => "h" + i).join(" ")].every(v => !wrong(v)));
+    ok("dialog: hosts rule refuses", ["-x", "a b'c", "$(id)", "http://a|b", "a`b", "http://a\\b", 'http://a"b', "http://", "ftp://a", "a.test:123456", "a.test:", "a:b", "a/b", "http://a<b", "http://a>b",
+      Array.from({ length: 21 }, (_, i) => "h" + i).join(" "), "a b"].every(wrong));
+    typeIn(w, hp(), "a.test"); typeIn(w, ev(), "15");
+    ok("dialog: hosts error is gone, the select is a change", hh() === "" && !!q(".kd-dlg-save"));
+    q(".kd-dlg-save").click(); await wait(100);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("dialog: every sent as set <id> every 15", txt === "keendash 1 " + rev + "\nset ck every 15\nend\n", JSON.stringify(txt));
+  }, cf(fcalls, chk), URL0);
+  fcalls = [];
+  await run(chk, async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s);
+    q('.kd-dlg-add[data-type="check"]').click();
+    ok("dialog: a new instance has every 5", q('select[data-f="every"][data-id="check"]').value === "5" && q('input[data-f="hosts"][data-id="check"]').value === "");
+    typeIn(w, q('input[data-f="hosts"][data-id="check"]'), "a.test");
+    q(".kd-dlg-save").click(); await wait(100);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("dialog: a new instance sends hosts and every 5", txt === "keendash 1 " + rev + "\nadd check check\nset check name Доступность\nset check hosts a.test\nset check every 5\nend\n", JSON.stringify(txt));
+  }, cf(fcalls, chk), URL0);
   await run(full, async w => {
     const dlg = await openDlg(w);
     dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
