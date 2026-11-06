@@ -224,7 +224,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       {
         const css = w.document.getElementById("us-style").textContent, rule = (css.match(/\.us-snap,\.us-stream\{[^}]*\}/) || [""])[0];
         ok("frigate snap: the picture is whole (natural ratio, full width), never cropped: no object-fit, aspect-ratio or max-height; rounded", /width:100%;height:auto/.test(rule) && !/object-fit|aspect-ratio|max-height/.test(rule) && /border-radius:6px/.test(rule), rule);
-        ok("frigate cameras: a grid of tiles whose columns follow the card's width", /\.us-cams\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(min\(260px,100%\),1fr\)\)/.test(css));
+        ok("frigate cameras: a grid of tiles that fill the card, apart from the tiles above", /\.us-cams\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(min\(260px,100%\),1fr\)\);gap:12px 16px;margin-top:12px\}/.test(css));
         const tiles = Array.from(m.querySelectorAll(".us-cams > .us-cam"));
         ok("frigate cameras: every camera is a .us-cams > .us-cam tile with its line and its frame", tiles.length === 2 && m.querySelectorAll(".us-cams").length === 1 && tiles.every(t => t.querySelectorAll(".us-row").length === 1 && t.querySelectorAll("img.us-snap").length === 1 && t.firstElementChild.classList.contains("us-row") && t.lastElementChild.tagName === "IMG"), m.innerHTML);
       }

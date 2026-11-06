@@ -750,7 +750,7 @@
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +
       /* the whole picture at its own ratio, never cropped or stretched (an iframe has none: 16/9) */
-      ".us-cams{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:12px 16px}.us-cam{min-width:0}" +
+      ".us-cams{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px 16px;margin-top:12px}.us-cam{min-width:0}" +
       ".us-snap,.us-stream{display:block;width:100%;height:auto;border:0;border-radius:6px}iframe.us-stream{aspect-ratio:16/9}" +
       ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}" +
       ".us-upd{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:8px;background:rgba(0,151,220,.1);font-size:13px}" +
