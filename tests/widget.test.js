@@ -456,17 +456,21 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const QB = "TYPE='qb'\nNAME='qBittorrent 2'\nURL='http://10.0.0.5:8080'\nUSER='admin'\nPASS='s3cret'\n", PL = "TYPE='plex'\nNAME='Plex '\\''A'\\'''\nURL='http://10.0.0.6:32400'\nTOKEN='t0ken'\n";
     const UI = "hide page cron\nhide main telemt\n", base = { "etc/services/qb-2.conf": QB, "etc/services/pl.conf": PL, "etc/ui.conf": UI };
     let r = settingsRun({ "var/inbox/r1.txt": msg("r1", ["add qb-2 qb", "set qb-2 name qBittorrent 2", "set qb-2 url http://10.0.0.5:8080", "set qb-2 user admin",
-      "set qb-2 pass p's $(x) `y` \\z", "hide page cron", "hide main telemt", "col 0 telemt awg", "col 1 qb-2"]) }, "apply");
+      "set qb-2 pass p's $(x) `y` \\z", "hide page cron", "hide main telemt", "group g1 3 0 Дом и сеть", "card sys 1 0 g1", "card qb-2 2 1"]) }, "apply");
     const conf = r.rd("etc/services/qb-2.conf");
-    ok("settings apply: add, set, hide, col", conf === "TYPE='qb'\nNAME='qBittorrent 2'\nURL='http://10.0.0.5:8080'\nUSER='admin'\nPASS='p'\\''s $(x) `y` \\z'\n" &&
-      r.mode("etc/services/qb-2.conf") === 0o600 && r.rd("etc/ui.conf") === "hide page cron\nhide main telemt\ncol 0 telemt awg\ncol 1 qb-2\n" &&
+    ok("settings apply: add, set, hide, layout", conf === "TYPE='qb'\nNAME='qBittorrent 2'\nURL='http://10.0.0.5:8080'\nUSER='admin'\nPASS='p'\\''s $(x) `y` \\z'\n" &&
+      r.mode("etc/services/qb-2.conf") === 0o600 && r.rd("etc/ui.conf") === "hide page cron\nhide main telemt\ngroup g1 3 0 Дом и сеть\ncard sys 1 0 g1\ncard qb-2 2 1\n" &&
       r.rd("tmp/settings.state") === "rev r1\nerr \n" && !r.ls("var/inbox").length, JSON.stringify([conf, r.rd("etc/ui.conf"), r.rd("tmp/settings.state"), r.ls("var/inbox")]));
     const pass = conf && cp.execFileSync("sh", ["-c", '. ./qb-2.conf; printf %s "$PASS"'], { cwd: path.join(r.tmp, "etc", "services"), encoding: "utf8" });
     ok("settings apply: values are data", pass === "p's $(x) `y` \\z", JSON.stringify(pass));
     r.rm();
 
     const bad = [["set qb-2 foo x"], ["add QB qb"], ["add x nosuch"], ["set qb-2 url ftp://h"], ["set qb-2 user " + "a".repeat(513)], ["set qb-2 user a\x01b"],
-      ["set qb-2 name a|b"], ["set qb-2 url http://h|x"], ["set qb-2 user a|b"], ["col 6 a"], ["set pl name " + "a".repeat(65)], ["set nope name x"], ["add y qb", "set y name Y"], ["bogus"]];
+      ["set qb-2 name a|b"], ["set qb-2 url http://h|x"], ["set qb-2 user a|b"], ["col 0 a"], ["set pl name " + "a".repeat(65)], ["set nope name x"], ["add y qb", "set y name Y"], ["bogus"],
+      ["group g 3 0 A"], ["group g1234 3 0 A"], ["group x1 3 0 A"], ["group g1 0 0 A"], ["group g1 4 0 A"], ["group g1 3 2 A"], ["group g1 3 0 " + "Я".repeat(33)], ["group g1 3 0 a|b"],
+      ["group g1 3 0 a\x01b"], ["group g1 3 0 a\tb"], ["group g1 3 0"], ["group g1 3 0 "], ["group g1 3 0  A"], ["group g1 3 0 A "], ["card sys 1 0 g1"], ["group g1 3 0 A", "card sys 1 0 g2"],
+      ["group g1 3 0 A", "group g1 2 0 B"], ["card sys 1 0", "card sys 2 0"], ["card sys 1 0 g1 x"], ["card sys 4 0"], ["card sys 1 2"], ["card a|b 1 0"],
+      Array.from({ length: 65 }, (_, i) => "group g" + i + " 1 0 G")];
     const fails = [];
     bad.concat([null]).forEach(l => {
       const f = Object.assign({ "var/inbox/r2.txt": l ? msg("r2", l) : "keendash 2 r2\nend\n" }, base);
@@ -501,12 +505,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       JSON.stringify([waits, r.rd("tmp/settings.state")]));
     r.rm();
 
-    // an empty column stays (the column count is kept); a hide-only message keeps the col lines
-    r = settingsRun(Object.assign({ "var/inbox/r6.txt": msg("r6", ["col 0 a b", "col 1", "col 2 c"]) }, base), "apply");
-    ok("settings apply: empty column kept", r.rd("etc/ui.conf") === UI + "col 0 a b\ncol 1\ncol 2 c\n", JSON.stringify(r.rd("etc/ui.conf")));
+    // a 32-letter name passes; a hide-only message keeps the layout lines (and old col lines); a layout message drops col lines
+    const LAY = "group g1 3 0 " + "Я".repeat(32) + "\ncard sys 1 0 g1\ncard qb-2 2 1\n";
+    r = settingsRun(Object.assign({ "var/inbox/r6b.txt": msg("r6b", Array.from({ length: 64 }, (_, i) => "group g" + i + " 1 0 G")) }, base), "apply");
+    ok("settings apply: 64 groups", r.rd("tmp/settings.state") === "rev r6b\nerr \n" && r.rd("etc/ui.conf") === UI + Array.from({ length: 64 }, (_, i) => "group g" + i + " 1 0 G\n").join(""), JSON.stringify(r.rd("tmp/settings.state")));
+    r.rm();
+    r = settingsRun(Object.assign({ "var/inbox/r6.txt": msg("r6", ["group g1 3 0 " + "Я".repeat(32), "card sys 1 0 g1", "card qb-2 2 1"]) }, base, { "etc/ui.conf": UI + "col 0 a b\ncol 1\n" }), "apply");
+    ok("settings apply: layout drops col lines, 32-letter name",r.rd("etc/ui.conf") === UI + LAY, JSON.stringify(r.rd("etc/ui.conf")));
+    r.rm();
+    r = settingsRun(Object.assign({ "var/inbox/r7.txt": msg("r7", ["hide main awg"]) }, base, { "etc/ui.conf": UI + LAY }), "apply");
+    ok("settings apply: hide keeps layout", r.rd("etc/ui.conf") === "hide page cron\nhide main awg\nhide main telemt\n" + LAY, JSON.stringify(r.rd("etc/ui.conf")));
     r.rm();
     r = settingsRun(Object.assign({ "var/inbox/r7.txt": msg("r7", ["hide main awg"]) }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1\ncol 2 qb-2\n" }), "apply");
-    ok("settings apply: hide keeps columns", r.rd("etc/ui.conf") === "hide page cron\nhide main awg\nhide main telemt\ncol 0 telemt awg\ncol 1\ncol 2 qb-2\n", JSON.stringify(r.rd("etc/ui.conf")));
+    ok("settings apply: hide keeps old col lines", r.rd("etc/ui.conf") === "hide page cron\nhide main awg\nhide main telemt\ncol 0 telemt awg\ncol 1\ncol 2 qb-2\n", JSON.stringify(r.rd("etc/ui.conf")));
     r.rm();
     // a NUL ends an awk record in busybox: the whole file is rejected, the content is not echoed
     r = settingsRun(Object.assign({ "var/inbox/r8.txt": msg("r8", ["set qb-2 pass a\0hide page x"]) }, base), "apply");
@@ -518,9 +529,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("settings apply: quote in TOKEN survives", r.rd("etc/services/pl.conf") === "TYPE='plex'\nNAME='X'\nURL='http://10.0.0.6:32400'\nTOKEN='t'\\''0ken'\n", JSON.stringify(r.rd("etc/services/pl.conf")));
     r.rm();
 
-    r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\n" }), "list");
+    r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\ngroup g1 3 0 Дом и сеть\ncard sys 1 0 g1\ncard qb-2 2 1\n" }), "list");
     ok("settings list", r.out === "vol|v1:\nrev|r1\nerr|\ntype|plex|Plex|Медиа|url,token|\ntype|qb|qBittorrent|Медиа|url,user,pass|\n" +
-      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token||||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass||||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
+      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token||||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass||||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|3|0|Дом и сеть\nlay|c|sys|1|0|g1\nlay|c|qb-2|2|1|\n" &&
       !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
     r.rm();
 
@@ -1356,7 +1367,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
     fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b|h.test x.test|15|1\n" +
-      "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n");
+      "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|3|0|Дом \"a\" \\b\nlay|c|sys|1|0|\nlay|c|qb-2|2|1|g1\n");
     fs.mkdirSync(path.join(sd, "x"));
     fs.writeFileSync(path.join(sd, "x", "qb-2"), "ok 1\n~dl 5\nlist|a|1\n");
     fs.writeFileSync(path.join(sd, "s.qb-2.dl"), "4\n5\n"); fs.writeFileSync(path.join(sd, "s.qb-2.t"), "7\n"); fs.writeFileSync(path.join(sd, ".s.qb-2.dl.t"), "9\n");
@@ -1375,7 +1386,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: Tailscale", s.ts.run === 1 && s.ts.online === 1 && s.ts.total === 0 && eq(s.ts.self, [["Running", "router", "100.64.0.1", "waw", "", 0, "", ""]]) &&
         eq(s.ts.list, [["pc", "windows", 1, 1, 1, "", "0001-01-01T00:00:00Z", 10, 20, 0, 0, ""]]), JSON.stringify(s.ts));
       ok("keendashd status: newer version", s.upd.new === "9.9.9" && s.upd.busy === 0, JSON.stringify(s.upd));
-      ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]] }), JSON.stringify(s.cfg));
+      ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]], lay: [["g", "g1", 3, 0, 'Дом "a" \\b'], ["c", "sys", 1, 0, ""], ["c", "qb-2", 2, 1, "g1"]] }), JSON.stringify(s.cfg));
       ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"], 'Ключ: "x"'], ["pl", "Plex", "Медиа", ["url", "token"], ""]]), JSON.stringify(s.types));
       ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b", "h.test x.test", "15", "1"],
         ["pl", "plex", "Plex", "http://p", "", ["token"], null, "", "", "", ""]]), JSON.stringify(s.inst));
