@@ -3,12 +3,12 @@
 # group: Файлы
 # fields: url user pass key
 # hint: Токен serverinfo (Настройки → Система, внизу) — тогда логин не нужен; иначе логин администратора и пароль приложения
-# Nextcloud serverinfo (OCS): KEY goes as NC-Token and wins; otherwise Basic when USER is set. Free space is the reference field
+# Nextcloud serverinfo (OCS): KEY goes as NC-Token and wins; otherwise Basic when USER is set. Free space is the reference field; skipApps/skipUpdate keep the answer under the 4 s deadline
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 if [ -n "${KEY:-}" ]; then set -- --header "NC-Token: $KEY"
 elif [ -n "${USER:-}" ]; then set -- --header "Authorization: Basic $(printf '%s:%s' "$USER" "${PASS:-}" | base64 | tr -d '\n')"
 else set --; fi
-J --header "OCS-APIRequest: true" "$@" "${URL%/}/ocs/v2.php/apps/serverinfo/api/v1/info?format=json" | awk "$LOAD"'
+J --header "OCS-APIRequest: true" "$@" "${URL%/}/ocs/v2.php/apps/serverinfo/api/v1/info?format=json&skipApps=true&skipUpdate=true" | awk "$LOAD"'
 function n(k) { return (k in V) && V[k] != "null" ? sprintf("%.0f", V[k]) : "" }
 END {
   if (!("ocs.data.nextcloud.system.freespace" in V)) { print "ok 0"; exit }

@@ -982,18 +982,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-f-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";
       const run = (s, e) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/" + s, "", "", { state: sd, env: e }).trim(); };
-      const nc = "URL=http://nextcloud.test", pw = "PASS='p\"a\\ss' ";
+      const nr = e => run("nextcloud", "USER= " + e), nc = "URL=http://nextcloud.test", pw = "PASS='p\"a\\ss' ";
       const ncWant = ["ok 1", "t|Свободно|512110190592|b", "t|Активных за сутки|3|n", "t|Файлов|48213|n", "t|Общих ссылок|17|n"].join("\n");
-      ok("ext.d/nextcloud: exact tiles with KEY", run("nextcloud", nc + " KEY=testkey ") === ncWant, run("nextcloud", nc + " KEY=testkey "));
-      ok("ext.d/nextcloud: KEY -> OCS-APIRequest and NC-Token, no Authorization, serverinfo path", / OCS-APIRequest: true /.test(lg()) && / NC-Token: testkey /.test(lg()) && !/Authorization/.test(lg()) && / http:\/\/nextcloud\.test\/ocs\/v2\.php\/apps\/serverinfo\/api\/v1\/info\?format=json \n$/.test(lg()), lg());
-      ok("ext.d/nextcloud: KEY and USER -> only NC-Token", run("nextcloud", nc + " KEY=testkey USER=admin " + pw) === ncWant && / NC-Token: testkey /.test(lg()) && !/Authorization/.test(lg()), lg());
-      ok("ext.d/nextcloud: no KEY, USER -> Basic with the JSON-hostile password, no NC-Token", run("nextcloud", nc + " USER=admin " + pw) === ncWant && / Authorization: Basic YWRtaW46cCJhXHNz /.test(lg()) && !/NC-Token/.test(lg()), lg());
-      ok("ext.d/nextcloud: no credentials or a wrong KEY -> ok 0", run("nextcloud", nc + " ") === "ok 0" && run("nextcloud", nc + " KEY=bad ") === "ok 0");
-      ok("ext.d/nextcloud: no freespace -> ok 0; no answer -> ok 0", run("nextcloud", nc + "/nofree KEY=testkey ") === "ok 0" && run("nextcloud", "URL=http://nohost.test KEY=testkey ") === "ok 0");
-      ok("ext.d/nextcloud: secrets not printed", !/testkey|a\\ss|YWRtaW46/.test(run("nextcloud", nc + " KEY=testkey USER=admin " + pw) + run("nextcloud", nc + " USER=admin " + pw)));
+      ok("ext.d/nextcloud: exact tiles with KEY", nr(nc + " KEY=testkey ") === ncWant, nr(nc + " KEY=testkey "));
+      ok("ext.d/nextcloud: KEY -> OCS-APIRequest and NC-Token, no Authorization, serverinfo path", / OCS-APIRequest: true /.test(lg()) && / NC-Token: testkey /.test(lg()) && !/Authorization/.test(lg()) && / http:\/\/nextcloud\.test\/ocs\/v2\.php\/apps\/serverinfo\/api\/v1\/info\?format=json&skipApps=true&skipUpdate=true \n$/.test(lg()), lg());
+      ok("ext.d/nextcloud: KEY and USER -> only NC-Token", nr(nc + " KEY=testkey USER=admin " + pw) === ncWant && / NC-Token: testkey /.test(lg()) && !/Authorization/.test(lg()), lg());
+      ok("ext.d/nextcloud: no KEY, USER -> Basic with the JSON-hostile password, no NC-Token", nr(nc + " USER=admin " + pw) === ncWant && / Authorization: Basic YWRtaW46cCJhXHNz /.test(lg()) && !/NC-Token/.test(lg()), lg());
+      ok("ext.d/nextcloud: no credentials or a wrong KEY -> ok 0", nr(nc + " ") === "ok 0" && nr(nc + " KEY=bad ") === "ok 0");
+      ok("ext.d/nextcloud: no freespace -> ok 0; no answer -> ok 0", nr(nc + "/nofree KEY=testkey ") === "ok 0" && nr("URL=http://nohost.test KEY=testkey ") === "ok 0");
+      ok("ext.d/nextcloud: secrets not printed", !/testkey|a\\ss|YWRtaW46/.test(nr(nc + " KEY=testkey USER=admin " + pw) + nr(nc + " USER=admin " + pw)));
       const pl = "URL=http://paperless.test KEY=testkey ", plWant = ["ok 1", "t|Документов|1284|n", "t|Во входящих|6|n", "t|Тегов|23|n", "t|Корреспондентов|41|n"].join("\n");
       ok("ext.d/paperless: exact tiles, Token header, statistics path", run("paperless", pl) === plWant && / --header Authorization: Token testkey http:\/\/paperless\.test\/api\/statistics\/ \n$/.test(lg()), run("paperless", pl) + lg());
       ok("ext.d/paperless: no tag_count and correspondent_count -> two tiles", run("paperless", "URL=http://paperless.test/two KEY=testkey ") === ["ok 1", "t|Документов|1284|n", "t|Во входящих|6|n"].join("\n"));
+      ok("ext.d/paperless: null value drops its tile like an absent field", run("paperless", "URL=http://paperless.test/null KEY=testkey ") === ["ok 1", "t|Документов|1284|n", "t|Тегов|23|n", "t|Корреспондентов|41|n"].join("\n"));
       ok("ext.d/paperless: wrong token -> ok 0, no answer -> ok 0, key not printed", run("paperless", "URL=http://paperless.test KEY=bad ") === "ok 0" && run("paperless", "URL=http://nohost.test KEY=testkey ") === "ok 0" && !/testkey/.test(run("paperless", pl)));
       fs.rmSync(sd, { recursive: true, force: true });
     }
@@ -1007,6 +1008,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/syncthing: three requests, each with X-Api-Key and --no-check-certificate", lg().split("\n").filter(Boolean).length === 3 && lg().split("\n").filter(Boolean).every(l => / --no-check-certificate /.test(l) && / --header X-Api-Key: testkey /.test(l)) &&
         /rest\/db\/completion \n/.test(lg()) && /rest\/system\/connections \n/.test(lg()) && /rest\/config\/folders \n/.test(lg()), lg());
       ok("ext.d/syncthing: no devices and no folders -> 0 из 0, 0, still ok 1", run("syncthing", "URL=http://syncthing.test/zero KEY=testkey ") === ["ok 1", "t|Синхронизировано|98.8|p", "t|Осталось|1610612736|b", "t|Устройств в сети|0 из 0|t", "t|Папок|0|n"].join("\n"));
+      ok("ext.d/syncthing: failed connections request -> empty devices tile, folders kept", run("syncthing", "URL=http://syncthing.test/nocon KEY=testkey ") === ["ok 1", "t|Синхронизировано|98.8|p", "t|Осталось|1610612736|b", "t|Устройств в сети||t", "t|Папок|2|n"].join("\n"));
+      ok("ext.d/syncthing: failed folders request -> empty folders tile, devices kept", run("syncthing", "URL=http://syncthing.test/nofold KEY=testkey ") === ["ok 1", "t|Синхронизировано|98.8|p", "t|Осталось|1610612736|b", "t|Устройств в сети|2 из 3|t", "t|Папок||n"].join("\n"));
       ok("ext.d/syncthing: wrong key -> ok 0, no answer -> ok 0, key not printed", run("syncthing", "URL=http://syncthing.test KEY=bad ") === "ok 0" && run("syncthing", "URL=http://nohost.test KEY=testkey ") === "ok 0" && !/testkey/.test(run("syncthing", st)));
       const gt = "URL=http://gitea.test KEY=testkey ";
       const gtWant = ["ok 1", "t|Уведомлений|3|n", "t|Открытых задач|14|n", "t|Открытых PR|2|n", "t|Репозиториев|27|n"].join("\n");

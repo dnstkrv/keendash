@@ -59,7 +59,6 @@
 | | SABnzbd, NZBGet | скорость загрузки, сколько осталось |
 | | Transmission, Deluge | скорость загрузки и отдачи, число торрентов |
 | | MeTube | загружается, суммарная скорость, готово, ошибок (логин нужен, только если MeTube закрыт Basic-входом) |
-| | Свой API | любой адрес с JSON: плитки по вашему списку |
 | Дом | Home Assistant | состояния выбранных сущностей (поле «Что показывать»: `Подпись=sensor.id`) |
 | | Frigate | версия, детектор, занятое место, камеры: FPS, детекции, упавшие |
 | | Moonraker | состояние печати, прогресс, сколько осталось, температуры сопла и стола |
@@ -80,6 +79,7 @@
 | | Syncthing | синхронизировано, осталось, устройства в сети, папки (API-ключ; адрес GUI должен слушать сеть, сертификат не проверяется) |
 | | Paperless-ngx | документы, во входящих, теги, корреспонденты (токен: профиль → API Auth Token) |
 | Другое | Gitea / Forgejo | уведомления, открытые задачи и PR, репозитории (токен с правами read на repository, issue, notification) |
+| | Свой API | любой адрес с JSON: плитки по вашему списку |
 | Доступность | Доступность сайтов | отвечают ли ваши домены и адреса: код и время ответа, доступность за 24 часа |
 
 Если на вкладке «Медиа» больше одного сервиса, у каждого своя подвкладка.
@@ -120,7 +120,7 @@ telemt=hide
 
 Сервисы AdGuard Home, qBittorrent, Plex, Sonarr, Radarr, Prowlarr, Overseerr и Immich (а также новые типы из таблицы выше) больше не настраиваются в `keendash.conf`. Их добавляют, правят и удаляют в окне «Настройки» на странице «Сервисы». Тип можно добавить несколько раз (например, два qBittorrent). При обновлении старые ключи `ADGUARD_*`, `QBIT_*` и т. д. сами переезжают в `/opt/etc/keendash/services/<id>.conf`.
 
-Поля окна: «Адрес» (веб-интерфейс сервиса), «Логин» и «Пароль» (AdGuard Home, Pi-hole (только пароль, можно пустой, если в Pi-hole не задан), Nginx Proxy Manager (e-mail пользователя), Traefik (только при basicAuth), qBittorrent, Transmission, NZBGet, Frigate (порт 8971), Glances, OpenMediaVault; Deluge только пароль; у Proxmox в «Логине» ID токена; логин и пароль можно не задавать там, где сервис пускает адрес роутера без них: белые списки qBittorrent и NZBGet; в Transmission логин не нужен, если выключен вход, `rpc-authentication-required`), «API-ключ» (NextDNS, Sonarr, Radarr, Prowlarr, Overseerr, Immich, Jellyfin, Jellyseerr, Lidarr, Bazarr, Tautulli, SABnzbd, Uptime Kuma, Proxmox, Portainer, TrueNAS), «Токен» (Speedtest Tracker, Plex, Home Assistant, Grafana), «Что показывать» (Home Assistant и «Свой API»; до 8 пар), «Адреса» и «Интервал» («Доступность сайтов»). Где взять ключи:
+Поля окна: «Адрес» (веб-интерфейс сервиса), «Логин» и «Пароль» (AdGuard Home, Pi-hole (только пароль, можно пустой, если в Pi-hole не задан), Nginx Proxy Manager (e-mail пользователя), Traefik (только при basicAuth), qBittorrent, Transmission, NZBGet, Frigate (порт 8971), Glances, OpenMediaVault, Nextcloud (если нет токена), MeTube (только с Basic-входом); Deluge только пароль; у Proxmox в «Логине» ID токена; логин и пароль можно не задавать там, где сервис пускает адрес роутера без них: белые списки qBittorrent и NZBGet; в Transmission логин не нужен, если выключен вход, `rpc-authentication-required`), «API-ключ» (NextDNS, Sonarr, Radarr, Prowlarr, Overseerr, Immich, Jellyfin, Jellyseerr, Lidarr, Bazarr, Tautulli, SABnzbd, Uptime Kuma, Proxmox, Portainer, TrueNAS, Nextcloud, Syncthing, Paperless-ngx, Gitea / Forgejo), «Токен» (Speedtest Tracker, Plex, Home Assistant, Grafana), «Что показывать» (Home Assistant и «Свой API»; до 8 пар), «Адреса» и «Интервал» («Доступность сайтов»). Где взять ключи:
 
 - Sonarr, Radarr, Prowlarr, Overseerr: Settings → General → API Key, в поле «API-ключ»;
 - Jellyfin: Панель управления → API-ключи → +; Jellyseerr, Lidarr, Bazarr: Settings → General (Bazarr: Security) → API Key; Tautulli: Settings → Web Interface → API Key; SABnzbd: Config → General → API Key;
@@ -129,7 +129,7 @@ telemt=hide
 - Uptime Kuma: Settings → API Keys; Portainer: My account → Access tokens; TrueNAS: Credentials → API Keys (TrueNAS до 25.10); Grafana: Administration → Service accounts, роль Viewer, в поле «Токен»; Home Assistant: Профиль → Безопасность → Долгосрочные токены, в поле «Токен»;
 - NextDNS: в «Логин» ID профиля (Setup, 6 символов), API-ключ внизу страницы Account; Speedtest Tracker: Settings → API Tokens, право `results:read`;
 - Pi-hole: только v6; пароль веб-интерфейса или пароль приложения (Settings → Web interface / API → App password). keendash входит на время опроса и выходит сам, иначе сессии копились бы до лимита и Pi-hole отвечал бы 429; Nginx Proxy Manager: лучше отдельный пользователь с правом только просмотра; Traefik: адрес API (`api.insecure`, порт 8080, или роутер на `api@internal`);
-- Proxmox: Datacenter → Permissions → API Tokens, роль PVEAuditor; в «Логин» ID токена (`root@pam!keendash`), в «API-ключ» его секрет. **Сертификат Proxmox, Frigate и TrueNAS не проверяется** (обычно он самоподписанный); остальные типы проверяют сертификат, для самоподписанного используйте http-адрес. TrueNAS — только https, ключ, отправленный по http, TrueNAS отзывает; Frigate — `https://хост:8971` с логином или `http://хост:5000` без.
+- Proxmox: Datacenter → Permissions → API Tokens, роль PVEAuditor; в «Логин» ID токена (`root@pam!keendash`), в «API-ключ» его секрет. **Сертификат Proxmox, Frigate, TrueNAS и Syncthing не проверяется** (обычно он самоподписанный); остальные типы проверяют сертификат, для самоподписанного используйте http-адрес. TrueNAS — только https, ключ, отправленный по http, TrueNAS отзывает; Frigate — `https://хост:8971` с логином или `http://хост:5000` без.
 
 #### Frigate: кадры с камер
 
