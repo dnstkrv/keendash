@@ -1890,6 +1890,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     d.title = "Keenetic Hopper – Системный монитор";
     ok("page: Angular's titles keep the page's own", d.title === "Keenetic Hopper – Сервисы", d.title);
   }, w => { w.__keendash = { p: "/keendash" }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(full) }); }, "http://192.168.0.1/dashboard");
+  // the expanded side menu: docked on a wide screen (overlay and menu button hidden) it stays; on a tablet a tap on the
+  // overlay folds it, on a phone the menu button
+  for (const [shown, want] of [["", "none"], ["overlay", "overlay"], ["toggle", "toggle"]]) {
+    await run(full, async w => {
+      const d = w.document, hits = [];
+      d.body.insertAdjacentHTML("beforeend", '<div class="header__menu-toggle"><div class="toggle__toggle"></div></div><div class="layout__overlay"></div>' + layout.replace("<ndw-menu>", '<ndw-menu><div class="menu menu--expanded"></div>'));
+      const ov = d.querySelector(".layout__overlay"), tg = d.querySelector(".toggle__toggle");
+      [[ov, "overlay"], [tg, "toggle"]].forEach(([e, n]) => { e.getClientRects = () => (shown === n ? [{}] : []); e.addEventListener("click", () => hits.push(n)); });
+      await wait(100);
+      d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+      ok("page: side menu fold, shown " + (shown || "nothing"), (hits.join() || "none") === want, hits.join());
+    }, null, "http://192.168.0.1/dashboard");
+  }
   // hidden on the page: no AWG card, the instance card (named after the instance) is there with the qBittorrent view
   await run(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { hide: { page: ["awg", "agh"], main: [] } }) }), async w => {
     const d = w.document;

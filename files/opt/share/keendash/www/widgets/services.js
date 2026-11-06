@@ -1566,9 +1566,10 @@
     Object.defineProperty(document, "title", { configurable: true, get: TD.get, set: set });
     set(document.title);
   }
-  /* the side menu folds itself on Angular's navigation; here by a tap beside it (on a phone: on the menu button) */
+  /* the side menu folds itself on Angular's navigation when it covers the page; here by a tap beside it (tablet) or on
+   * the menu button (phone). A wide screen has neither shown: its expanded menu is docked and stays */
   function fold() {
-    var x = document.querySelector(".layout__overlay") || document.querySelector(".header__menu-toggle .toggle__toggle");
+    var x = [document.querySelector(".layout__overlay"), document.querySelector(".header__menu-toggle .toggle__toggle")].filter(function (e) { return e && e.getClientRects().length; })[0];
     if (x && document.querySelector("ndw-menu .menu--expanded")) x.click();
   }
   function openPage(replace) {
