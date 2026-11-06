@@ -448,7 +448,30 @@
       }
       seen[k] = 1; liveSrc(e); ph.parentNode.replaceChild(e.el, ph);
     });
+    /* nodes that morph() left in place have no slot */
+    Object.keys(live).forEach(function (k) { if (k.charAt(0) === ctx && root.contains(live[k].el)) seen[k] = 1; });
     liveDrop(ctx, seen);
+  }
+  function tplOf(h) { var t = document.createElement("template"); t.innerHTML = h; return t.content; }
+  /* bring the children of a (the live DOM) to those of b (a template's content) node by node instead of replacing them, so that a stream node is never removed and put back (the
+   * browser would reload it). A live node stays where it is while the slot at its place has the same key and address; anything else that differs is replaced (a failed frame too: it retries) */
+  function morph(a, b, ctx) {
+    var i, j, x, y, t;
+    for (i = 0; i < b.childNodes.length; i++) {
+      x = a.childNodes[i]; y = b.childNodes[i];
+      if (!x) { a.appendChild(y.cloneNode(true)); continue; }
+      if (x.nodeType === 1 && x.className === "us-stream") {
+        t = y.nodeType === 1 && y.className === "us-lv" && live[ctx + y.getAttribute("data-lk")];
+        if (!t || t.el !== x || t.s !== y.getAttribute("data-ls") || t.t !== y.getAttribute("data-lt")) a.replaceChild(y.cloneNode(true), x);
+        continue;
+      }
+      if (x.nodeType !== y.nodeType || x.nodeName !== y.nodeName || (x.nodeName === "IMG" && x.style.display === "none")) { a.replaceChild(y.cloneNode(true), x); continue; }
+      if (x.nodeType !== 1) { if (x.data !== y.data) x.data = y.data; continue; }
+      for (j = x.attributes.length - 1; j >= 0; j--) if (!y.hasAttribute(x.attributes[j].name)) x.removeAttribute(x.attributes[j].name);
+      for (j = 0; j < y.attributes.length; j++) if (x.getAttribute(y.attributes[j].name) !== y.attributes[j].value) x.setAttribute(y.attributes[j].name, y.attributes[j].value);
+      morph(x, y, ctx);
+    }
+    while (a.childNodes.length > b.childNodes.length) a.removeChild(a.lastChild);
   }
   /* x.ver, x.det + x.inf (detector, ms), x.used/x.total (bytes); x.cam = [[name, fps, detections/s, 1 when fps is 0]]; x.snap: the time (epoch) of the newest frame in the router's
    * $PUB/cam (ext.d/frigate). With SNAP set (inst.snap not 0), up to 8 cameras get under their row: over http a go2rtc iframe (inst.stream, http(s):// only) or, with no stream, Frigate's own MJPEG
@@ -459,14 +482,18 @@
     var go = !ST && LIVE.test(inst.stream || "") ? inst.stream.replace(/\/+$/, "") : "", mj = !ST && !go && /^http:\/\//.test(inst.url || "") && !inst.user ? inst.url.replace(/\/+$/, "") : "";
     var h = '<div class="us-grid">' + blk("Версия", x.ver ? esc(x.ver) : "—", null) + blk("Детектор", x.det ? esc(x.det) + " · " + (+x.inf || 0) + " мс" : "—", null) +
       blk("Занято", x.total > 0 ? fmtBytes(x.used) + " из " + fmtBytes(x.total) : "—", null) + "</div>";
+    /* a tile per camera (its line and its media) in a grid whose columns follow the card's width */
+    if ((x.cam || []).length) h += '<div class="us-cams">';
     (x.cam || []).forEach(function (c, n) {
-      h += c[3] ? line(BAD, esc(c[0]), "нет потока") : line(OK, esc(c[0]), "FPS " + (+c[1] || 0) + " · детекций " + (+c[2] || 0) + "/с");
-      if (!on || n >= 8) return;
+      h += '<div class="us-cam">' + (c[3] ? line(BAD, esc(c[0]), "нет потока") : line(OK, esc(c[0]), "FPS " + (+c[1] || 0) + " · детекций " + (+c[2] || 0) + "/с"));
+      if (!on || n >= 8) { h += "</div>"; return; }
       var nm = encodeURIComponent(c[0]), k = esc(inst.id) + "-" + (n + 1);
       if (go) h += liveSlot(k, "i", go + "/stream.html?src=" + nm + "&mode=mse,webrtc");
       else if (mj) h += liveSlot(k, "m", mj + "/api/" + nm + "?fps=5&height=240");
       else if (x.snap) { nsn++; h += '<img class="us-snap" loading="lazy" alt="" src="/storage/.keendash/cam/' + k + ".jpg?" + (sn ? Math.floor(Date.now() / 1000 / sn) : +x.snap || 0) + '"' + (sn ? ' data-sn="' + sn + '"' : "") + ">"; }
+      h += "</div>";
     });
+    if ((x.cam || []).length) h += "</div>";
     if (sn && nsn && !snapTm) snapTm = setInterval(snapTick, 1000);
     return h;
   };
@@ -658,7 +685,7 @@
       }
       h += cur ? instBody(cur, d) : note(WAIT);
     }
-    bodyEl.innerHTML = h;
+    morph(bodyEl, tplOf(h), "m");
     /* the dashboard is hidden while the page is open: no stream on it */
     if (page) liveDrop("m", {}); else attachLive(bodyEl, "m");
     /* re-rendering resets the tab strip's scroll: keep the active tab visible */
@@ -720,7 +747,9 @@
       ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +
-      ".us-snap,.us-stream{display:block;width:100%;aspect-ratio:16/9;max-height:240px;object-fit:cover;border:0;border-radius:6px}" +
+      /* the whole picture at its own ratio, never cropped or stretched (an iframe has none: 16/9) */
+      ".us-cams{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px 16px}.us-cam{min-width:0}" +
+      ".us-snap,.us-stream{display:block;width:100%;height:auto;border:0;border-radius:6px}iframe.us-stream{aspect-ratio:16/9}" +
       ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}" +
       ".us-upd{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:8px;background:rgba(0,151,220,.1);font-size:13px}" +
       ".us-upd-t b{font-weight:600}.us-upd-b{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}" +
@@ -1093,16 +1122,17 @@
   }
   /* label is HTML-safe already (esc() on the name); extra: more attributes */
   function btn(cls, label, text, extra) { return '<button type="button" class="' + cls + '" aria-label="' + label + '" title="' + label + '"' + (extra || "") + ">" + text + "</button>"; }
+  var pageSk = "", MARK = /\u0001(\d+)\u0002/g;
   function renderPage() {
     var main = page && page.parentNode, d = lastData;
     if (!main || busy()) return;
     var top = main.scrollTop;
-    page.innerHTML = '<div class="kd-ph"><h1>' + PTITLE + '</h1><div class="kd-pb"><button type="button" class="kd-btn kd-ng"' + (d ? "" : " disabled") + '>Новая группа</button><button type="button" class="kd-btn kd-set"' + (d ? "" : " disabled") + ">Настройки</button></div></div>";
-    if (!d) { liveDrop("p", {}); page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
+    var head = '<div class="kd-ph"><h1>' + PTITLE + '</h1><div class="kd-pb"><button type="button" class="kd-btn kd-ng"' + (d ? "" : " disabled") + '>Новая группа</button><button type="button" class="kd-btn kd-set"' + (d ? "" : " disabled") + ">Настройки</button></div></div>";
+    if (!d) { pageSk = ""; liveDrop("p", {}); page.innerHTML = head; page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
     var cf = d.cfg || {};
     if (pendingLay && cf.rev === pendingRev && cf.err) pageNote = "Не удалось сохранить раскладку: " + cf.err;
     if (pendingLay && (cf.rev === pendingRev || (cf.rev !== pendingFrom && !sentRevs[cf.rev]) || Date.now() - pendingAt > 45000)) pendingLay = null;
-    if (pageNote) page.insertAdjacentHTML("beforeend", note(esc(pageNote)));
+    var pre = head + (pageNote ? note(esc(pageNote)) : ""), bodies = [];
     /* under 900 px (the page without its padding) one column; the saved widths stay */
     var cs = window.getComputedStyle(page), one = page.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0) < 900;
     var all = pageCards(d), cards = {}, inst = {}, items = layModel(d, all);
@@ -1117,7 +1147,7 @@
       if (!c) return "";
       return '<div class="kd-item kd-card' + (it.c ? " kd-c1" : "") + '" data-id="' + esc(it.id) + '"' + pos(it) + '><div class="kd-ch">' + fold(it, c[0]) +
         '<span class="kd-ct">' + esc(c[0]) + "</span>" + openHtml(c[2]) + (inst[it.id] ? btn("kd-gear", "Настроить: " + esc(c[0]), "&#9881;") : "") +
-        more(c[0]) + drag(c[0]) + "</div>" + (it.c ? "" : '<div class="us-body">' + c[1] + "</div>") + "</div>";
+        more(c[0]) + drag(c[0]) + "</div>" + (it.c ? "" : '<div class="us-body">' + "\u0001" + (bodies.push(c[1]) - 1) + "\u0002</div>") + "</div>";
     }
     var ab = one ? "" : " kd-abs", h = '<div class="kd-lay' + ab + '" data-cols="3">';
     items.forEach(function (it) {
@@ -1127,7 +1157,16 @@
         '<span class="kd-gc">' + it.cards.filter(function (c) { return cards[c.id]; }).length + "</span>" + more(it.name) + drag(it.name) + "</div>" +
         (it.c ? "" : '<div class="kd-lay' + ab + '" data-cols="' + it.w + '">' + (inner || '<div class="kd-empty">Перетащите сюда карточки</div>') + "</div>") + "</div>";
     });
-    page.insertAdjacentHTML("beforeend", h + "</div>");
+    /* the markup without the card bodies tells whether the page itself changed; if not, only the bodies are brought up to date, node by node */
+    var sk = pre + h.replace(MARK, "") + "</div>", bs = page.querySelectorAll(".us-body");
+    if (sk === pageSk && !refocus && !renaming && bs.length === bodies.length) {
+      bodies.forEach(function (b, i) { morph(bs[i], tplOf(b), "p"); });
+      attachLive(page, "p");
+      if (!one) placeAll();
+      return;
+    }
+    pageSk = sk; page.innerHTML = pre;
+    page.insertAdjacentHTML("beforeend", h.replace(MARK, function (m, i) { return bodies[i] || ""; }) + "</div>");
     attachLive(page, "p");
     if (!one) { placeAll(); watchHeights(); } else if (pageRO) pageRO.disconnect();
     Array.prototype.forEach.call(page.querySelectorAll(".kd-ch > .kd-drag,.kd-gh > .kd-drag"), function (b) { attachPageDrag(b.parentNode.parentNode, b); });
@@ -1173,7 +1212,7 @@
   function menuKey(e) { if (e.key === "Escape") closeMenu(); }
   function menuOut(e) { if (!(e.target.closest && e.target.closest(".kd-menu,.kd-more"))) closeMenu(); }
   function openMenu(head, it) {
-    head.insertAdjacentHTML("beforeend", '<div class="kd-menu"><span class="kd-mt">Ширина:</span>' + [1, 2, 3].map(function (n) {
+    pageSk = ""; head.insertAdjacentHTML("beforeend", '<div class="kd-menu"><span class="kd-mt">Ширина:</span>' + [1, 2, 3].map(function (n) {
       return '<button type="button" class="kd-mw' + (it.w === n ? " kd-on" : "") + '" data-w="' + n + '" aria-pressed="' + (it.w === n) + '" aria-label="Ширина ' + n + '/3" title="Ширина ' + n + '/3">' + n + "/3</button>";
     }).join("") + (it.g ? '<button type="button" class="kd-ren" aria-label="Переименовать" title="Переименовать">Переименовать</button><button type="button" class="kd-ung" aria-label="Разгруппировать" title="Разгруппировать">Разгруппировать</button>' : "") + "</div>");
     refocus = null; head.querySelector(".kd-more").setAttribute("aria-expanded", "true");
@@ -1205,6 +1244,7 @@
     handle.style.touchAction = "none"; handle.style.cursor = "grab";
     handle.addEventListener("pointerdown", function (ev) {
       if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      pageSk = ""; /* the drag changes the DOM: the next draw is a whole one */
       if (busy()) return; /* a name field or a menu is open: no preventDefault, so the field blurs and saves */
       ev.preventDefault();
       var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, ph, lay = r.parentNode, grids = r.hasAttribute("data-g") ? [lay] : Array.prototype.slice.call(page.querySelectorAll(".kd-lay")), rw = +r.getAttribute("data-w");
@@ -1617,7 +1657,7 @@
       pageFrom = location.pathname + location.search + location.hash; pageState = history.state; stripped = []; holdTitle(true);
       Array.prototype.forEach.call(main.children, function (c) { if (c.tagName !== "ROUTER-OUTLET") c.setAttribute("data-kd-hidden", ""); });
       addStyle();
-      page = main.appendChild(document.createElement("div")); page.className = "kd-page";
+      page = main.appendChild(document.createElement("div")); page.className = "kd-page"; pageSk = "";
       page.addEventListener("click", onPageClick);
       page.addEventListener("error", snapErr, true);
     }
@@ -1628,7 +1668,7 @@
   /* back: to the page Angular still has underneath, its menu item active again; the title is Angular's latest anyway */
   function closePage(back) {
     if (!page) return;
-    page.parentNode.removeChild(page); page = null; liveDrop("p", {});
+    page.parentNode.removeChild(page); page = null; pageSk = ""; liveDrop("p", {});
     Array.prototype.forEach.call(document.querySelectorAll("[data-kd-hidden]"), function (c) { c.removeAttribute("data-kd-hidden"); });
     if (back) stripped.forEach(function (x) { x.classList.add(ACT); });
     holdTitle(false);
