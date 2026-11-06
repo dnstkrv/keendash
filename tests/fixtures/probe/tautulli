@@ -1,4 +1,4 @@
-/
+/auth/login
   HTTP/1.1 200 OK
 
 <title>Tautulli - Login</title>

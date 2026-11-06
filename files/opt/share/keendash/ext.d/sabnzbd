@@ -2,7 +2,7 @@
 # name: SABnzbd
 # group: Медиа
 # fields: url key
-# probe: 8080 / SABnzbd
+# probe: 8080 /sabnzbd/ SABnzbd
 # hint: Ключ: Config → General → API Key
 # SABnzbd: queue speed and size as tiles (the key is in the query string only, never printed)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

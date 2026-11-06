@@ -2,7 +2,7 @@
 # name: Tautulli
 # group: Медиа
 # fields: url key
-# probe: 8181 / Tautulli
+# probe: 8181 /auth/login Tautulli
 # hint: Ключ: Settings → Web Interface → API Key
 # Tautulli: streams and traffic as tiles (the key is in the query string only, never printed)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

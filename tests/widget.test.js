@@ -803,7 +803,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const src = n => fs.readFileSync(path.join(bin, n), "utf8").replace(/\r/g, "").replace(/^PATH=.*$/m, ":");
     const FWGET = '#!/bin/sh\nfor u; do :; done\necho "$*" >> "$FAKE/log"\nmkdir -p "$FAKE/run"; : > "$FAKE/run/$$"; ls "$FAKE/run" | wc -l >> "$FAKE/conc"\n' +
       'f=$FAKE/ans/$(echo "$u" | tr "/:" "__")\ntrap \'rm -f "$FAKE/run/$$"; exit 143\' TERM\n' +
-      'if [ -f "$f" ]; then [ "$(cat "$f")" = HANG ] && exec sleep 30; cat "$f"; rm -f "$FAKE/run/$$"; exit 0; fi\n' +
+      // an answer "REDIR <url>" is a 302: refused with --max-redirect=0, else "followed" (a line "follow <url>" in the log); cat's status is ours (141 when the reader cut it)
+      'if [ -f "$f" ]; then l=$(sed 1q "$f"); [ "$l" = HANG ] && exec sleep 30\n' +
+      '  case $l in "REDIR "*) printf "  HTTP/1.1 302 Found\\n  Location: %s\\n" "${l#REDIR }" >&2; rm -f "$FAKE/run/$$"; case " $* " in *" --max-redirect=0 "*) exit 8 ;; esac; echo "follow ${l#REDIR }" >> "$FAKE/log"; exit 0 ;; esac\n' +
+      '  cat "$f"; c=$?; rm -f "$FAKE/run/$$"; exit $c; fi\n' +
       '[ -z "$HANG" ] || exec sleep 30\nsleep "${WSLEEP:-0}"; rm -f "$FAKE/run/$$"; exit 4\n';
     const FRCI = "#!/bin/sh\ncase $1 in\n  show/interface/Bridge0) printf 'address\\t192.168.1.1\\nmask\\t255.255.255.0\\n' ;;\n  show/ip/hotspot) cat \"$FAKE/hotspot\" ;;\nesac\n";
     const scan = o => {
@@ -815,9 +818,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       Object.keys(o.ans || {}).forEach(n => put("fake/ans/" + n, o.ans[n]));
       put("fake/hotspot", o.clients.map((c, i) => "host." + i + ".interface.name\tBridge0\nhost." + i + ".ip\t" + c[0] + "\nhost." + i + ".active\t" + (c[1] ? "true" : "false") + "\n" +
         (c[2] ? "host." + i + ".name\t" + c[2] + "\n" : "") + (c[3] ? "host." + i + ".hostname\t" + c[3] + "\n" : "")).join(""));
-      if (o.lock) put("tmp/scan.lock", o.lock + "\n");
-      const t0 = Date.now();
-      cp.spawnSync("sh", ["-c", 'PATH="' + t + '/bin:$PATH" FAKE="' + t + '/fake" KEENDASH_ETC="' + t + '/etc" KEENDASH_TMP="' + t + '/tmp" KEENDASH_EXTD="' + t + '/ext.d" ' + (o.env || "") + 'sh "' + t + '/bin/scan"'], { encoding: "utf8" });
+      if (o.lock) { put("tmp/scan.lock", o.lock + "\n"); if (o.lockAge) { const at = Date.now() / 1000 - o.lockAge; fs.utimesSync(path.join(tmp, "tmp/scan.lock"), at, at); } }
+      const t0 = Date.now(), run = 'sh "' + t + '/bin/scan"';
+      cp.spawnSync("sh", ["-c", 'export PATH="' + t + '/bin:$PATH" FAKE="' + t + '/fake" KEENDASH_ETC="' + t + '/etc" KEENDASH_TMP="' + t + '/tmp" KEENDASH_EXTD="' + t + '/ext.d" ' + (o.env || "") + "; " +
+        (o.dup ? run + " & " + run + " & wait" : run)], { encoding: "utf8" });
       const rd = f => { try { return fs.readFileSync(path.join(tmp, f), "utf8"); } catch (e) { return null; } };
       const lines = (rd("fake/log") || "").split("\n").filter(Boolean);
       return { rd, ex: f => fs.existsSync(path.join(tmp, f)), lines, ms: Date.now() - t0, maxc: Math.max(0, ...(rd("fake/conc") || "").split("\n").filter(Boolean).map(Number)), rm: () => fs.rmSync(tmp, { recursive: true, force: true }) };
@@ -844,9 +848,29 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       r.rm();
     }
     {
-      const r = scan({ types: T1, clients: C1, ans: A1, conf: { jf: "TYPE='jellyfin'\nNAME='J'\nURL='http://192.168.1.10:8096/'\nKEY='k'\n", px: "TYPE='proxmox'\nURL='https://127.0.0.1:8006'\n", other: "TYPE='metube'\nURL='http://192.168.1.99:8081'\n" } }), l = st(r);
-      ok("bin/scan: an added service is not listed (same type and host:port, 127.0.0.1 is the router), another address is",
-        !l.some(x => /\|jellyfin\||\|proxmox\|/.test(x)) && l.some(x => /\|metube\|/.test(x)) && l.some(x => /\|aa\|/.test(x)), l.join("\n"));
+      const r = scan({ types: Object.assign({ tn: "# probe: https:443 / TrueNAS" }, T1), clients: C1, ans: Object.assign({ "https___192.168.1.1_443_": "TrueNAS\n" }, A1),
+        conf: { jf: "TYPE='jellyfin'\nNAME='J'\nURL='http://192.168.1.10:8096/'\nKEY='k'\n", px: "TYPE='proxmox'\nURL='https://127.0.0.1:8006'\n", other: "TYPE='metube'\nURL='http://192.168.1.99:8081'\n", tn: "TYPE='tn'\nURL='https://localhost'\n" } }), l = st(r);
+      ok("bin/scan: an added service is not listed (same type and host:port, 127.0.0.1 and localhost are the router, https defaults to 443), another address is",
+        !l.some(x => /\|jellyfin\||\|proxmox\||\|tn\|/.test(x)) && r.lines.some(x => /:443\/$/.test(x)) && l.some(x => /\|metube\|/.test(x)) && l.some(x => /\|aa\|/.test(x)), l.join("\n"));
+      r.rm();
+    }
+    {
+      // a client's 302 to the router's own loopback is not followed
+      const r = scan({ types: { aa: T1.aa }, clients: [], ans: { "http___192.168.1.1_7000_": "REDIR http://127.0.0.1:9/x\n" } }), l = st(r);
+      ok("bin/scan: --max-redirect=0, a redirect is not followed", r.lines.length === 1 && / --max-redirect=0 /.test(" " + r.lines[0] + " ") && !r.lines.some(x => /follow|127\.0\.0\.1/.test(x)) && l.length === 2, r.lines.join(" / "));
+      r.rm();
+    }
+    {
+      // a body over 64 KB ends in SIGPIPE (141): still an answer, the other paths of the port are asked
+      const r = scan({ types: { "a-big": "# probe: 80 / NOMATCH", nc: '# probe: 80 /status.php "productname":"Nextcloud"' }, clients: [],
+        ans: { "http___192.168.1.1_80_": "x".repeat(300000), "http___192.168.1.1_80_status.php": '{"productname":"Nextcloud"}\n' } }), l = st(r);
+      ok("bin/scan: a response cut at 64 KB does not end the port", r.lines.length === 2 && l[1] === "found|192.168.1.1|Роутер|nc|http://192.168.1.1:80", r.lines.join(" / ") + " " + l.join("\n"));
+      r.rm();
+    }
+    {
+      // no ext.d types at all
+      const r = scan({ types: {}, clients: C1, ans: A1 });
+      ok("bin/scan: no types -> done, nothing asked", /^state\|done\|4\|4\|\d{10}$/.test(st(r)[0]) && !r.lines.length && st(r).length === 2, st(r).join("\n"));
       r.rm();
     }
     {
@@ -860,7 +884,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const T = { "a-jf": T1.jellyfin };
       for (let i = 1; i <= 12; i++) T["t" + (i < 10 ? "0" : "") + i] = "# probe: " + (9000 + i) + " / X" + i;
       const r = scan({ types: T, clients: [["192.168.1.10", 1, "a"], ["192.168.1.11", 1, "b"], ["192.168.1.12", 1, "c"]], ans: { "http___192.168.1.1_8096_System_Info_Public": JF }, env: "HANG=1 KEENDASH_SCAN_LIMIT=2 " }), l = st(r);
-      ok("bin/scan: the time limit ends it as done with what was found", /^state\|done\|0\|4\|\d{10}$/.test(l[0]) && l[1] === "found|192.168.1.1|Роутер|a-jf|http://192.168.1.1:8096" && r.ms >= 2000 && r.ms < 15000 && !r.ex("tmp/scan.lock"), r.ms + " " + l.join("\n"));
+      ok("bin/scan: the time limit ends it as done with what was found", /^state\|done\|0\|4\|\d{10}$/.test(l[0]) && l[1] === "found|192.168.1.1|Роутер|a-jf|http://192.168.1.1:8096" && r.ms >= 2000 && r.ms < 6000 && !r.ex("tmp/scan.lock"), r.ms + " " + l.join("\n"));
       r.rm();
     }
     {
@@ -871,7 +895,17 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const dead = cp.spawnSync("sh", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim();
       r = scan({ types: T1, clients: C1, ans: A1, lock: dead });
       ok("bin/scan: a lock with a dead pid is taken over", /^state\|done\|4\|4\|/.test(st(r)[0]) && !r.ex("tmp/scan.lock"), st(r)[0]);
+      const solo = r.lines.length;
       r.rm();
+      // two runs started together on a dead lock: one takes it over, the other leaves (the fake refuses slowly, so the first is still running when the second looks)
+      r = scan({ types: T1, clients: C1, ans: A1, lock: dead, dup: true, env: "WSLEEP=1 " });
+      ok("bin/scan: two runs on a dead lock make one scan", /^state\|done\|4\|4\|/.test(st(r)[0]) && r.lines.length === solo && r.maxc <= 8 && !r.ex("tmp/scan.lock"), solo + " " + r.lines.length + " " + r.maxc);
+      r.rm();
+      // a live pid does not keep a lock older than LIMIT + 60 s
+      const sl2 = cp.spawn("sleep", ["30"]);
+      r = scan({ types: T1, clients: C1, ans: A1, lock: String(sl2.pid), lockAge: 1000 });
+      ok("bin/scan: a lock older than the limit plus a minute is stale even with a live pid", /^state\|done\|4\|4\|/.test(st(r)[0]) && r.lines.length === solo, st(r)[0] + " " + r.lines.length);
+      r.rm(); sl2.kill();
     }
     {
       const r = scan({ types: { aa: T1.aa }, clients: Array.from({ length: 300 }, (_, i) => ["10.1." + Math.floor(i / 250) + "." + (i % 250 + 1), 1, "h" + i]) });
@@ -1530,6 +1564,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       let s0 = null;
       try { s0 = JSON.parse(cp.execFileSync(kd, ["status"], { env: Object.assign({}, env, { KEENDASH_SETTINGS: "echo vol\\|v1:" }), encoding: "utf8" })); } catch (e) { s0 = e.message; }
       ok("keendashd status: cfg.scan is null without the file", s0 && s0.cfg && s0.cfg.scan === null, JSON.stringify(s0 && s0.cfg));
+      // a state line cut short (a file read while it is written) is still valid JSON
+      try { s0 = JSON.parse(cp.execFileSync(kd, ["status"], { env: Object.assign({}, env, { KEENDASH_SETTINGS: "printf 'scan|state|run\\nscan|found|10.0.0.5|n\\n'" }), encoding: "utf8" })); } catch (e) { s0 = e.message; }
+      ok("keendashd status: cfg.scan with a cut-short line is valid JSON", s0 && s0.cfg && s0.cfg.scan && s0.cfg.scan.state === "run" && s0.cfg.scan.n === 0 && s0.cfg.scan.of === 0 && s0.cfg.scan.at === 0 && JSON.stringify(s0.cfg.scan.found) === '[["10.0.0.5","n","",""]]', JSON.stringify(s0 && s0.cfg));
       ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"], 'Ключ: "x"'], ["pl", "Plex", "Медиа", ["url", "token"], ""]]), JSON.stringify(s.types));
       ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b", "h.test x.test", "15", "1"],
         ["pl", "plex", "Plex", "http://p", "", ["token"], null, "", "", "", ""]]), JSON.stringify(s.inst));

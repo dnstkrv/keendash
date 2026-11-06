@@ -2,7 +2,7 @@
 # name: Radarr
 # group: Медиа
 # fields: url key
-# probe: 7878 / Radarr
+# probe: 7878 /login Radarr
 # Radarr v3: queue, missing movies, week calendar
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 B=${URL%/}; set -- --header "X-Api-Key: ${KEY:-}"

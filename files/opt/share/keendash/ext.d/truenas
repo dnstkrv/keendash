@@ -2,7 +2,7 @@
 # name: TrueNAS
 # group: Серверы
 # fields: url key
-# probe: 80,https:443 / TrueNAS
+# probe: 80,https:443 /ui/ TrueNAS
 # hint: Ключ: Credentials → API Keys; TrueNAS до 25.10; адрес https://, ключ по http отзывается. Сертификат не проверяется
 # TrueNAS: pools, alerts, load, uptime; certificate not checked (usually self-signed), 25.x revokes a key sent over plain http
 BIN=${0%/*}/../bin; . "$BIN/extlib"

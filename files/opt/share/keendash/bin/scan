@@ -13,11 +13,14 @@ export DLT LC_ALL
 T=$(printf '\t')
 L=$TMP/scan.lock W=$TMP/scan.d n=0 of=0
 mkdir -p "$TMP" || exit 1
-# shortcut: an empty lock (another run between create and write) counts as live; a pid reused by another process too
+# shortcut: an empty lock (another run between create and write) counts as live; a pid reused by another process too, until the lock is older than LIMIT + 60 s
 if ! (set -C; echo $$ > "$L") 2>/dev/null; then
   p=$(cat "$L" 2>/dev/null)
-  [ -z "$p" ] || kill -0 "$p" 2>/dev/null && exit 0
-  rm -f "$L"; (set -C; echo $$ > "$L") 2>/dev/null || exit 0
+  if [ -z "$p" ] || { kill -0 "$p" 2>/dev/null && [ $(( $(date +%s) - $(date -r "$L" +%s 2>/dev/null || echo 0) )) -lt $((LIMIT + 60)) ]; }; then exit 0; fi
+  # take a stale lock over: of several runs only one moves it, and only that one still finds the pid it read
+  mv "$L" "$L.$$" 2>/dev/null || exit 0
+  [ "$(cat "$L.$$")" = "$p" ] || { [ -e "$L" ] || mv "$L.$$" "$L"; rm -f "$L.$$"; exit 0; }
+  rm -f "$L.$$"; (set -C; echo $$ > "$L") 2>/dev/null || exit 0
 fi
 res() { { echo "state|$1|$n|$of|$2"; cat "$W/found"; } > "$TMP/scan.new" && mv "$TMP/scan.new" "$TMP/scan"; }
 trap 'res done "$(date +%s)"; rm -rf "$W" "$L"' EXIT
@@ -42,7 +45,7 @@ of=$(( $(wc -l < "$W/dev") ))
 
 # "<scheme:port><TAB><path><TAB><type><TAB><match>", rows of one port and path together
 set -- "$EXTD"/*
-[ -e "$1" ] || set --
+[ -e "$1" ] || set -- /dev/null
 awk 'FNR <= 20 && /^# probe: / { t = FILENAME; sub(/.*\//, "", t); s = substr($0, 10); sub(/\r$/, "", s)
     if (t !~ /^[a-z0-9-]+$/ || !match(s, /^[0-9a-z:,]+ \/[^ \t]* /) || (m = substr(s, RLENGTH + 1)) == "" || index(m, "\t")) next
     split(substr(s, 1, RLENGTH - 1), a, " "); k = split(a[1], pp, ",")
@@ -63,17 +66,18 @@ for f in "$ETC"/services/*.conf; do
 done > "$W/have"
 
 # one device and port: the first type whose match is in a response wins; $1 ip, $2 name, $3 scheme:port, $4 job number
+# (a batch has 8 jobs, so 8 response files are enough)
 probe() {
-  f=$W/r$4 sch=${3%%:*} port=${3#*:} lp= rc=0 x=
+  f=$W/r$(( $4 % 8 )) sch=${3%%:*} port=${3#*:} lp= rc=0 x=
   [ "$sch" = https ] && x=--no-check-certificate
   while IFS=$T read -r s p t m; do
     [ "$s" = "$3" ] || continue
     if [ "$p" != "$lp" ]; then
-      # a refused or timed out port has nothing on its other paths
-      case $rc in 4|1[2-9][0-9]|[2-9][0-9][0-9]) return ;; esac
+      # a refused or timed out port has nothing on its other paths (141 is SIGPIPE from the 64 KB cut: an answer)
+      case $rc in 141) ;; 4|1[2-9][0-9]|[2-9][0-9][0-9]) return ;; esac
       lp=$p
-      # the first 64 KB of headers and body
-      { dl -S -O- --tries=1 $x "$sch://$1:$port$p" 2>&1; echo $? > "$f.rc"; } | head -c 65536 > "$f"
+      # the first 64 KB of headers and body; no redirects, a client could send the router anywhere
+      { dl -S -O- --tries=1 --max-redirect=0 $x "$sch://$1:$port$p" 2>&1; echo $? > "$f.rc"; } | head -c 65536 > "$f"
       rc=$(cat "$f.rc" 2>/dev/null); rc=${rc:-1}
     fi
     grep -qF -e "$m" "$f" || continue

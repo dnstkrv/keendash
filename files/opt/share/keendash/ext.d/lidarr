@@ -2,7 +2,7 @@
 # name: Lidarr
 # group: Медиа
 # fields: url key
-# probe: 8686 / Lidarr
+# probe: 8686 /login Lidarr
 # hint: Ключ: Settings → General → API Key
 # Lidarr: queue and missing albums as tiles
 BIN=${0%/*}/../bin; . "$BIN/extlib"
