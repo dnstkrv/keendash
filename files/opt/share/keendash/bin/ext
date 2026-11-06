@@ -71,4 +71,10 @@ for f in "$TMP"/s.*; do
   id=${f##*/}; id=${id#s.}; id=${id%%.*}
   case "$ids" in *" $id "*) ;; *) rm -f "$f" ;; esac
 done
+# chk.<id>.<key>: the history files of the collectors (kuma, check)
+for f in "$TMP"/chk.*; do
+  [ -f "$f" ] || continue
+  id=${f##*/}; id=${id#chk.}; id=${id%%.*}
+  case "$ids" in *" $id "*) ;; *) rm -f "$f" ;; esac
+done
 wait

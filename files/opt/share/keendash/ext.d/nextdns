@@ -3,13 +3,17 @@
 # group: Сеть
 # fields: user key
 # hint: В «Логин» — ID профиля (Setup, 6 символов), API-ключ — внизу страницы Account
-# NextDNS cloud API: queries and blocked share for the last day. USER (the profile ID) is a path segment: only [A-Za-z0-9]{1,32} goes to a request. URL (tests only, not a field) replaces the API host
+# NextDNS cloud API: queries and blocked share for the last day. USER (the profile ID, surrounding spaces trimmed) is a path segment, so only [A-Za-z0-9]{1,32} goes to a request. URL (tests only, not a field) replaces the API host
 BIN=${0%/*}/../bin; . "$BIN/extlib"
-case "${USER:-}" in "" | *[!A-Za-z0-9]*) echo "ok 0"; exit ;; esac
-[ ${#USER} -le 32 ] || { echo "ok 0"; exit; }
+U=${USER:-}
+while :; do case "$U" in " "*) U=${U# } ;; *" ") U=${U% } ;; *) break ;; esac; done
+case "$U" in "" | *[!A-Za-z0-9]*) echo "ok 0"; exit ;; esac
+[ ${#U} -le 32 ] || { echo "ok 0"; exit; }
 B=${URL:-https://api.nextdns.io}; B=${B%/}
-J --header "X-Api-Key: ${KEY:-}" "$B/profiles/$USER/analytics/status?from=-1d" | awk "$LOAD"'END {
-  if (V["data.0.status"] == "") { print "ok 0"; exit }
+# JN: no answer -> ok 0. {"data":[]} flattens to no data row but is a real answer (ok 1, zeros); an error object or a page that is not JSON is ok 0
+r=$(JN --header "X-Api-Key: ${KEY:-}" "$B/profiles/$U/analytics/status?from=-1d") || { echo "ok 0"; exit; }
+printf '%s' "$r" | awk "$LOAD"'END {
+  if (V["data.0.status"] == "" && (("" in V) || ("errors.0.code" in V))) { print "ok 0"; exit }
   for (i = 0; V["data." i ".status"] != ""; i++) { q = V["data." i ".queries"] + 0; t += q; if (V["data." i ".status"] == "blocked") b += q }
-  print "ok 1"; print "t|Запросов за сутки|" t "|n"; print "t|Заблокировано|" b "|n"
+  print "ok 1"; print "t|Запросов за сутки|" (t + 0) "|n"; print "t|Заблокировано|" (b + 0) "|n"
   printf "t|Блокировок|%.1f|p\n", t ? b * 100 / t : 0 }'

@@ -69,18 +69,24 @@
     });
   }
   function url(port) { return PROXY["@" + port] || "http://" + location.hostname + ":" + port + "/"; }
+  /* round at the current unit first, then step up when it rounds to the next one: 99.96 Мбит/с is 100, 999.6 Кбит/с is 1 Мбит/с */
+  function scale(b, step, u, dot) {
+    var i = 0, r;
+    for (;;) {
+      r = b >= 100 || i === 0 ? Math.round(b) : Math.round(b * 10) / 10;
+      if (r < step || i === u.length - 1) break;
+      b /= step; i++;
+    }
+    return (r < 100 && i && dot ? r.toFixed(1) : r) + " " + u[i];
+  }
   function fmtBytes(b) {
     if (b == null || isNaN(b)) return "—";
-    var u = ["Б", "КБ", "МБ", "ГБ", "ТБ"], i = 0;
-    while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
-    return (b >= 100 || i === 0 ? Math.round(b) : b.toFixed(1)) + " " + u[i];
+    return scale(b, 1024, ["Б", "КБ", "МБ", "ГБ", "ТБ"], 1);
   }
   /* bit/s in steps of 1000: 850 бит/с, 12.5 Кбит/с, 245 Мбит/с */
   function fmtBits(b) {
     if (b == null || b === "" || isNaN(b)) return "—";
-    var u = ["бит/с", "Кбит/с", "Мбит/с", "Гбит/с", "Тбит/с"], i = 0;
-    while (b >= 1000 && i < u.length - 1) { b /= 1000; i++; }
-    return (b >= 100 || i === 0 ? Math.round(b) : b.toFixed(1)) + " " + u[i];
+    return scale(b, 1000, ["бит/с", "Кбит/с", "Мбит/с", "Гбит/с", "Тбит/с"]);
   }
   function fmtDur(s) {
     s = Math.floor(s || 0);
@@ -1040,7 +1046,7 @@
       var e, l, b;
       p = p.replace(/^ +| +$/g, ""); e = p.indexOf("="); l = p.slice(0, e); b = p.slice(e + 1).split(":");
       return e > 0 && l.replace(/[\ud800-\udbff][\udc00-\udfff]/g, "x").length <= 32 && l.indexOf("|") < 0 && b.length <= 2 &&
-        /^[A-Za-z0-9_.-]{1,128}$/.test(b[0]) && /^(n|b|bs|p|s)?$/.test(b[1] || "");
+        /^[A-Za-z0-9_.-]{1,128}$/.test(b[0]) && /^(n|b|bs|bit|p|s)?$/.test(b[1] || "");
     });
   }
   /* bin/settings okhosts: 1-20 elements split by ASCII spaces and commas, a domain[:port] not starting with - or an http(s):// address */

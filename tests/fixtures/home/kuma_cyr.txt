@@ -1,0 +1,4 @@
+# HELP monitor_status Monitor Status (1 = UP, 0 = DOWN, 2 = PENDING, 3 = MAINTENANCE)
+# TYPE monitor_status gauge
+monitor_status{monitor_name="Роутер",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 1
+monitor_status{monitor_name="Сервер",monitor_type="http",monitor_url="https://example.test",monitor_hostname="null",monitor_port="null"} 0

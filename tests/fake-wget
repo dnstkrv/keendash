@@ -77,14 +77,14 @@ case "$u" in
       */open/* | */nopw/*) ;;
       *) need "X-FTL-SID: S1D-test" ;;
     esac ;;
-  # NextDNS: X-Api-Key testkey; requests go to $LOG
+  # NextDNS: X-Api-Key testkey; requests go to $LOG; /empty has an empty data list, /noblock no blocked row, /html is not JSON
   *//nextdns.test/*) echo "nextdns$a" >> "${LOG:-/dev/null}"; need "X-Api-Key: testkey" ;;
-  # Speedtest Tracker: Bearer testkey; created_at comes from $AT; /nobits has no *_bits, /none no data
+  # Speedtest Tracker: Bearer testkey; created_at comes from $AT; /nobits has no *_bits, /none no data, /failed has nulls
   *//speedtest.test/*) echo "speedtest$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   # Traefik: no auth of its own, requests go to $LOG; /none has no http.routers
   *//traefik.test/*) echo "traefik$a" >> "${LOG:-/dev/null}" ;;
   # Nginx Proxy Manager: login only for me@example.test / p"a\ss (JSON-escaped in the body), it answers T0K-test; data routes need it as Bearer
-  # (/expired/ has only expired certificates, /empty/ empty lists). Requests go to $LOG
+  # (/expired/ has only expired certificates, /empty/ empty lists, /norh/ fails the redirection-hosts list). Requests go to $LOG
   *//npm.test/*) printf 'npm%s\n' "$a" >> "${LOG:-/dev/null}"
     case "$u" in
       */api/tokens) need '--post-data {"identity":"me@example.test","secret":"p\"a\\ss"}' ;;
@@ -105,6 +105,7 @@ case "$u" in
 esac
 case "$u" in
   *//ha.test/html/*) echo "<html>login</html>"; exit 0 ;;
+  *//nextdns.test/html/*) echo "<html>login</html>"; exit 0 ;;
   *//custom.test/html) echo "<html>not json</html>"; exit 0 ;;
   *//custom.test/page) echo "<style>a{b:1}</style>"; exit 0 ;;
   *//custom.test/*) f=media/custom ;;
@@ -151,6 +152,8 @@ case "$u" in
   *//omv.test/*) case "$a" in *'"method":"login"'*) f=home/omv_login ;; *) case "$u" in */str/*) f=home/omv_info_str ;; */la/*) f=home/omv_info_la ;; *) f=home/omv_info ;; esac ;; esac ;;
   *//kuma.test/empty/metrics) f=home/kuma_empty.txt ;;
   *//kuma.test/less/metrics) f=home/kuma_less.txt ;;
+  *//kuma.test/cyr/metrics) f=home/kuma_cyr.txt ;;
+  *//kuma.test/cyr2/metrics) f=home/kuma_cyr2.txt ;;
   *//kuma.test/metrics) f=home/kuma_metrics.txt ;;
   *//moonraker.test/idle/printer/*) f=media/moonraker_idle ;;
   *//moonraker.test/printer/*) f=media/moonraker_printing ;;
@@ -170,14 +173,18 @@ case "$u" in
   *//pihole.test/*api/history) f=net/pihole_history ;;
   *//pihole.test/*api/stats/top_domains*) f=net/pihole_top_domains ;;
   *//pihole.test/*api/stats/top_clients*) f=net/pihole_top_clients ;;
+  *//nextdns.test/empty/*) f=net/nextdns_empty ;;
+  *//nextdns.test/noblock/*) f=net/nextdns_noblock ;;
   *//nextdns.test/*) f=net/nextdns_status ;;
   *//speedtest.test/none/*) f=net/speedtest_none ;;
+  *//speedtest.test/failed/*) f=net/speedtest_failed ;;
   *//speedtest.test/nobits/*) f=net/speedtest_latest_nobits ;;
   *//speedtest.test/*) f=net/speedtest_latest ;;
   *//traefik.test/none/*) f=net/traefik_none ;;
   *//traefik.test/*) f=net/traefik_overview ;;
   *//npm.test/*api/tokens) f=net/npm_tokens ;;
   *//npm.test/empty/*) f=net/npm_empty ;;
+  *//npm.test/norh/*redirection-hosts) exit 8 ;;
   *//npm.test/*proxy-hosts) f=net/npm_proxy_hosts ;;
   *//npm.test/*redirection-hosts) f=net/npm_redirection_hosts ;;
   *//npm.test/*streams) f=net/npm_streams ;;

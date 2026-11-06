@@ -113,6 +113,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Медиа");
     ok("tiles: bit format, 1000 steps and a dash for a non-number", vals(m) === "850 бит/с|12.5 Кбит/с|245 Мбит/с|1.2 Гбит/с|—|0 бит/с", vals(m));
   });
+  await run(zz({ ok: 1, t: [["A", 99960000, "bit"], ["B", 999600, "bit"], ["C", 999999999, "bit"], ["D", 99960, "bit"], ["E", 1048473, "b"], ["F", 1023.7, "b"], ["G", 102375, "bs"]] }), (w, m) => {
+    gclick(w, m, "Медиа");
+    ok("tiles: bit and byte formats round before choosing the unit", vals(m) === "100 Мбит/с|1 Мбит/с|1 Гбит/с|100 Кбит/с|1.0 МБ|1.0 КБ|100 КБ/с", vals(m));
+  });
   await run(zz({ ok: 1, t: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ["T" + n, n, "n"]) }), (w, m) => {
     gclick(w, m, "Медиа");
     ok("tiles: up to 8", vals(m) === "1|2|3|4|5|6|7|8", vals(m));
@@ -531,7 +535,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const hl = r.out.split("\n").find(l => l.startsWith("type|hh|")).split("|")[5];
     ok("bin/settings types: hint cut to 200 characters", hl === "я".repeat(200) && !r.out.includes("�"), hl.length + " " + JSON.stringify(hl.slice(-3)));
     r.rm();
-    r = settingsRun(Object.assign({ "var/inbox/m3.txt": msg("m3", ["set c map " + "я".repeat(32) + "=x.y:n;b=c:p; d=e:s ; f=g;h=i;j=k;l=m;n=o"]) }, mbase), "apply");
+    r = settingsRun(Object.assign({ "var/inbox/m3.txt": msg("m3", ["set c map " + "я".repeat(32) + "=x.y:n;b=c:p; d=e:s ; f=g:bit;h=i;j=k;l=m;n=o"]) }, mbase), "apply");
     ok("bin/settings apply: map limits (32 characters, 8 pairs, spaces)", /^rev m3\nerr \n$/.test(r.rd("tmp/settings.state")) && /^MAP=/m.test(r.rd("etc/services/c.conf")), r.rd("tmp/settings.state"));
     r.rm();
     r = settingsRun({ "ext.d/mp": MP, "etc/services/c.conf": MC + "MAP='A=x.y'\n", "etc/services/d.conf": MC }, "list");
@@ -737,16 +741,37 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     {
       // history: <tmp>/chk.<ID>.<key>, 24 h, percent of up among up/down, last 30 statuses; no ID -> no files and short rows
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-m-")), f = n => path.join(sd, n), rd = n => fs.existsSync(f(n)) ? fs.readFileSync(f(n), "utf8") : null, now = Math.floor(Date.now() / 1000);
-      const chks = () => fs.readdirSync(sd).filter(n => /^\.?chk\./.test(n)).sort(), kc = (u, id) => collect("ext.d/kuma", "", "", { state: sd, env: "KEENDASH_NOW=" + now + " ID=" + id + " URL=http://kuma.test" + u + " KEY=testkey " }).trim().split("\n");
-      fs.writeFileSync(f("chk.km.Host_01"), (now - 86410) + " 0\n" + (now - 100) + " 0\n" + (now - 50) + " 1\n"); fs.writeFileSync(f("chk.other.Host_09"), (now - 5) + " 1\n");
+      // the key: the name with every byte outside [A-Za-z0-9.-] turned into _ (cut to 100) + _ + 32-bit hash (x31 + byte) of the whole name as 8 hex digits
+      const key = n => { const b = Buffer.from(n); let h = 0; b.forEach(c => { h = (h * 31 + c) % 4294967296; }); return b.toString("latin1").replace(/[^A-Za-z0-9.-]/g, "_").slice(0, 100) + "_" + ("0000000" + h.toString(16)).slice(-8); };
+      const chks = () => fs.readdirSync(sd).filter(n => /^\.?chk\./.test(n)).sort(), kc = (u, id, at, d) => collect("ext.d/kuma", "", "", { state: d || sd, env: "KEENDASH_NOW=" + (at || now) + " ID=" + id + " URL=http://kuma.test" + u + " KEY=testkey " }).trim().split("\n");
+      fs.writeFileSync(f("chk.km." + key("Host 01")), (now - 86410) + " 0\n" + (now - 100) + " 0\n" + (now - 50) + " 1\n"); fs.writeFileSync(f("chk.other.Host_09"), (now - 5) + " 1\n");
       let l = kc("", "km");
       ok("ext.d/kuma history: rows get percent and cells (down 0, up 100, pending has none)", l.includes('list|A "q" \\ b c|0|0|0|0') && l.includes("list|Host 01|1|101|66.6|0,1,1") && l.includes("list|Host 02|1|102|100|1") && l.includes("list|Beta Pending|2|0||2") && l.includes("list|Gamma Maint|3|0||3") && l.length === 24, l.join(" / "));
-      ok("ext.d/kuma history: a file per monitor (all 23), the old line dropped, a tricky name gets a sanitised key, another instance untouched",
-        chks().length === 24 && rd("chk.km.Host_01").trim().split("\n").length === 3 && rd("chk.km.A__q____b_c") === now + " 0\n" && rd("chk.other.Host_09") !== null, chks().join());
+      ok("ext.d/kuma history: a file per monitor (all 23), the old line dropped, a tricky name gets a sanitised key with the hash, another instance untouched",
+        chks().length === 24 && rd("chk.km." + key("Host 01")).trim().split("\n").length === 3 && rd("chk.km." + key('A "q" \\ b c')) === now + " 0\n" && /^chk\.km\.A__q____b_c_[0-9a-f]{8}$/.test("chk.km." + key('A "q" \\ b c')) && rd("chk.other.Host_09") !== null, chks().join());
       l = kc("/less", "km");
-      ok("ext.d/kuma history: runs grow the file, percent over both runs, a monitor that left loses its file",
-        l.join("\n") === 'ok 1\nup 2\ndown 0\nlist|A "q" \\ b c|1|0|50|0,1\nlist|Host 01|1|0|75|0,1,1,1\nn 2' && chks().join() === "chk.km.A__q____b_c,chk.km.Host_01,chk.other.Host_09", l.join(" / ") + " || " + chks().join());
+      ok("ext.d/kuma history: runs grow the file, percent over both runs",
+        l.join("\n") === 'ok 1\nup 2\ndown 0\nlist|A "q" \\ b c|1|0|50|0,1\nlist|Host 01|1|0|75|0,1,1,1\nn 2', l.join(" / "));
+      ok("ext.d/kuma history: a monitor missing from one poll keeps its file", chks().length === 24 && rd("chk.km." + key("Host 02")) === now + " 1\n", chks().join());
+      l = kc("", "km");
+      ok("ext.d/kuma history: ... and its history comes back with it", l.includes("list|Host 02|1|102|100|1,1") && l.includes("list|Host 01|1|101|80|0,1,1,1,1"), l.join(" / "));
+      l = kc("/less", "km", now + 86401);
+      ok("ext.d/kuma history: a monitor gone for over 24 h loses its file; the others and another instance stay",
+        l.join("\n") === 'ok 1\nup 2\ndown 0\nlist|A "q" \\ b c|1|0|100|1\nlist|Host 01|1|0|100|1\nn 2' && chks().join() === ["chk.km." + key('A "q" \\ b c'), "chk.km." + key("Host 01"), "chk.other.Host_09"].sort().join(), l.join(" / ") + " || " + chks().join());
       fs.rmSync(sd, { recursive: true, force: true });
+      // names that differ only in non-ASCII text: a key each, whatever the /metrics order
+      const s3 = fs.mkdtempSync(path.join(os.tmpdir(), "kd-m-"));
+      l = kc("/cyr", "km", now, s3);
+      ok("ext.d/kuma history: two Cyrillic names of the same length -> two files", fs.readdirSync(s3).filter(n => /^chk\./.test(n)).sort().join() === ["chk.km." + key("Роутер"), "chk.km." + key("Сервер")].sort().join() && key("Роутер") !== key("Сервер"), fs.readdirSync(s3).join());
+      l = kc("/cyr2", "km", now + 60, s3);
+      ok("ext.d/kuma history: swapped order in /metrics -> each history stays with its own name", l.join("\n") === "ok 1\nup 1\ndown 1\nlist|Сервер|0|0|0|0,0\nlist|Роутер|1|0|100|1,1\nn 2" && fs.readdirSync(s3).filter(n => /^chk\./.test(n)).length === 2, l.join(" / ") + " || " + fs.readdirSync(s3).join());
+      fs.rmSync(s3, { recursive: true, force: true });
+      // 40 lines on file: the row gets the last 30 statuses
+      const s4 = fs.mkdtempSync(path.join(os.tmpdir(), "kd-m-"));
+      fs.writeFileSync(path.join(s4, "chk.km." + key("Host 01")), Array.from({ length: 40 }, (_, i) => (now - 400 + i * 10) + " 1\n").join(""));
+      l = kc("/less", "km", now, s4);
+      ok("ext.d/kuma history: at most 30 cells in a row", l.includes("list|Host 01|1|0|100|" + new Array(30).fill(1).join(",")) && fs.readFileSync(path.join(s4, "chk.km." + key("Host 01")), "utf8").trim().split("\n").length === 41, l.join(" / "));
+      fs.rmSync(s4, { recursive: true, force: true });
       const s2 = fs.mkdtempSync(path.join(os.tmpdir(), "kd-m-"));
       l = collect("ext.d/kuma", "", "", { state: s2, env: env.kuma }).trim().split("\n");
       ok("ext.d/kuma: no ID -> no files, rows without percent and cells", !fs.readdirSync(s2).length && l.includes("list|Host 01|1|101"), l.join(" / "));
@@ -813,6 +838,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/speedtest: *_bits", JSON.stringify(run("", "2026-11-05T10:00:00Z")) === JSON.stringify(want(300)), run("", "2026-11-05T10:00:00Z").join(" / "));
       ok("ext.d/speedtest: without *_bits, bytes x 8", JSON.stringify(run("/nobits/", "2026-11-05T10:00:00Z")) === JSON.stringify(want(300)), run("/nobits/", "2026-11-05T10:00:00Z").join(" / "));
       ok("ext.d/speedtest: created_at +03:00, -05:00, fraction, no offset", ["2026-11-05T13:00:00+03:00", "2026-11-05T05:00:00-05:00", "2026-11-05T10:00:00.000000Z", "2026-11-05T10:00:00"].every(a => run("", a)[4] === "t|С последнего замера|300|s"), run("", "2026-11-05T13:00:00+03:00").join(" / "));
+      ok("ext.d/speedtest: a failed test (nulls) -> empty values, not 0", JSON.stringify(run("/failed/", "2026-11-05T10:00:00Z")) === JSON.stringify(["ok 1", "t|Загрузка||bit", "t|Отдача||bit", "t|Пинг||", "t|С последнего замера|300|s"]), run("/failed/", "2026-11-05T10:00:00Z").join(" / "));
       ok("ext.d/speedtest: no data or a wrong token -> ok 0, token not printed", run("/none/", "x").join() === "ok 0" && run("", "x", "bad").join() === "ok 0" && !/testkey/.test(run("", "x").join()));
       ok("ext.d/speedtest: token in the Bearer header, path /api/v1/results/latest", / --header Authorization: Bearer testkey http:\/\/speedtest\.test\/api\/v1\/results\/latest \n/.test(lg()), lg());
       fs.rmSync(sd, { recursive: true, force: true });
@@ -829,6 +855,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/npm: token and password not printed", !/T0K-test|a\\+ss/.test(o.join("\n")));
       ok("ext.d/npm: only expired certificates -> «истёк», not a negative number", JSON.stringify(run("/expired")) === JSON.stringify(want("t|Сертификат истекает через|истёк|t")), run("/expired").join(" / "));
       ok("ext.d/npm: empty lists -> 0 of 0, zero counts, empty certificate value", JSON.stringify(run("/empty")) === JSON.stringify(["ok 1", "t|Прокси-хостов|0 из 0|t", "t|Перенаправлений|0|n", "t|Потоков|0|n", "t|Сертификат истекает через||s"]), run("/empty").join(" / "));
+      ok("ext.d/npm: redirection-hosts fails -> ok 1, redirections empty, the rest unchanged", JSON.stringify(run("/norh")) === JSON.stringify(want("t|Сертификат истекает через|2210100|s").map(x => x.startsWith("t|Перенаправлений") ? "t|Перенаправлений||n" : x)), run("/norh").join(" / "));
       ok("ext.d/npm: wrong password -> ok 0, no data requests", run("", "x").join() === "ok 0" && ll().length === 1, lg());
       ok("ext.d/npm: no answer -> ok 0", collect("ext.d/npm", "", "", { env: "URL=http://nohost.test USER=a PASS=b " }).trim() === "ok 0");
       fs.rmSync(sd, { recursive: true, force: true });
@@ -853,6 +880,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/nextdns: odd profile IDs -> ok 0, no request, nothing executed", odd.every(u => run("URL=http://nextdns.test KEY=testkey USER='" + u + "' ") === "ok 0" && lg() === "") && !fs.existsSync(path.join(sd, "pwn")), lg());
       ok("ext.d/nextdns: 32 chars is fine; the profile is in the path with from=-1d, the key in the header", run("URL=http://nextdns.test KEY=testkey USER=" + "a".repeat(32) + " ").startsWith("ok 1") && lg().split("\n").filter(Boolean).length === 1 && / --header X-Api-Key: testkey http:\/\/nextdns\.test\/profiles\/a{32}\/analytics\/status\?from=-1d \n$/.test(lg()), lg());
       ok("ext.d/nextdns: wrong key -> ok 0", run("URL=http://nextdns.test KEY=bad USER=abc123 ") === "ok 0");
+      ok("ext.d/nextdns: spaces around the profile ID are trimmed", run("URL=http://nextdns.test KEY=testkey USER='  abc123 ' ").startsWith("ok 1") && / http:\/\/nextdns\.test\/profiles\/abc123\/analytics\/status\?from=-1d \n$/.test(lg()), lg());
+      ok("ext.d/nextdns: no blocked row -> 0 blocked, 0.0 percent", run("URL=http://nextdns.test/noblock KEY=testkey USER=abc123 ") === ["ok 1", "t|Запросов за сутки|8000|n", "t|Заблокировано|0|n", "t|Блокировок|0.0|p"].join("\n"));
+      ok("ext.d/nextdns: an empty data list is an answer -> ok 1 with zeros", run("URL=http://nextdns.test/empty KEY=testkey USER=abc123 ") === ["ok 1", "t|Запросов за сутки|0|n", "t|Заблокировано|0|n", "t|Блокировок|0.0|p"].join("\n"));
+      ok("ext.d/nextdns: not JSON -> ok 0", run("URL=http://nextdns.test/html KEY=testkey USER=abc123 ") === "ok 0");
       ok("ext.d/nextdns: key not printed", !/testkey/.test(run("URL=http://nextdns.test KEY=testkey USER=abc123 ")));
       fs.rmSync(sd, { recursive: true, force: true });
     }
@@ -944,6 +975,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/custom: bad pairs skipped, values and labels are data, nothing executed", l.join("\n") === "ok 1\nt|T|x$(id)`y|\nt|Q\"\\x|2048|\nt|U|7|\nt|T5|2048|\nt|T6|2048|" && !fs.existsSync(path.join(sd, "pwn")), l.join(" / "));
       [l] = run("MAP='" + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "P" + n + "=speed").join("; ") + "'");
       ok("ext.d/custom: 9 pairs -> 8 tiles", l.join("\n") === "ok 1\n" + [1, 2, 3, 4, 5, 6, 7, 8].map(n => "t|P" + n + "|2048|").join("\n"), l.join(" / "));
+      [l] = run("MAP='Скорость=speed:bit'");
+      ok("ext.d/custom: format bit", l.join("\n") === "ok 1\nt|Скорость|2048|bit", l.join(" / "));
       [l, lg] = run(M + "PASS=p");
       ok("ext.d/custom: pass without user -> no auth header", !/Authorization/.test(lg), lg);
       [l] = run("MAP='Y=a`touch " + unix(sd) + "/pwn`; T=txt'");
@@ -964,8 +997,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/ext: two qBittorrent instances", /^ok 1\n/.test(rd(d, "x/qb")) && rd(d, "x/qb-2") === "ok 0\n" && rd(d, "s.qb.dl") === "5242880\n" && rd(d, "s.qb.up") === "524288\n" &&
       rd(d, "s.qb-2.dl") === null && rd(d, "x/bad") === null && rd(d, "x/Up") === null && rd(d, "x.agh") === null && ls(d).split(" ").every(n => !/\.new$/.test(n)), ls(d));
     fs.writeFileSync(path.join(d, "x", "old"), "ok 1\n"); fs.writeFileSync(path.join(d, "s.old.dl"), "1\n");
+    fs.writeFileSync(path.join(d, "chk.old.Host_01_0123abcd"), "1 1\n"); fs.writeFileSync(path.join(d, "chk.qb.Host_01_0123abcd"), "1 1\n");
     collect("ext", "", "", { state: d, files: { "etc/services/qb.conf": QB } });
     ok("bin/ext: removed instance -> cache gone", rd(d, "x/old") === null && rd(d, "s.old.dl") === null && rd(d, "x/qb-2") === null && rd(d, "s.qb.dl") === "5242880\n5242880\n" && /^ok 1\n/.test(rd(d, "x/qb")), ls(d));
+    ok("bin/ext: removed instance -> its chk.<id>.* history files go too, another instance's stay", rd(d, "chk.old.Host_01_0123abcd") === null && rd(d, "chk.qb.Host_01_0123abcd") !== null, ls(d));
     // a collector that exits non-zero keeps its cache file
     fs.writeFileSync(path.join(d, "x", "boom"), "ok 1\n");
     collect("ext", "", "", { state: d, files: { "ext.d/boom": "#!/bin/sh\nexit 1\n", "etc/services/boom.conf": "TYPE='boom'\n" } });
@@ -1545,7 +1580,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     q('.kd-dlg-i[data-id="cu"] .kd-dlg-hd').click();
     ok("dialog: empty hint, no tip; unchanged map, no save bar", !q(".kd-dlg-tip") && !q(".kd-dlg-save"));
     const wrong = v => { typeIn(w, mp(), v); return mh() === MAPERR; };
-    ok("dialog: map rule accepts", [" A=x ; B=y:s ", "A=x;B=y;C=z;D=p:p;E=q;F=r;G=s;H=t", "Ж=a.b-c_d:n", "A=x:"," A=x","\u00a0A=x", "\u{1F600}".repeat(32) + "=x", "a=" + "x".repeat(128)].every(v => !wrong(v)));
+    ok("dialog: map rule accepts", [" A=x ; B=y:s ", "A=x;B=y;C=z;D=p:p;E=q;F=r;G=s;H=t", "Ж=a.b-c_d:n", "Скорость=speed:bit", "A=x:"," A=x","\u00a0A=x", "\u{1F600}".repeat(32) + "=x", "a=" + "x".repeat(128)].every(v => !wrong(v)));
     ok("dialog: map rule refuses", ["A", "=x", "A=", "A=x:q", "A=x:n:n", "A=b=c", "A;B=c", "A=x;B=y;C=z;D=p;E=q;F=r;G=s;H=t;I=u","A=x\u00a0", "A\u00a0=x\u00a0", "A=x ; B", "A;=x", ";",
       "\u{1F600}".repeat(33) + "=x", "a=" + "x".repeat(129), "A=x:bs ;", "A b=x y"].every(wrong));
     typeIn(w, mp(), "A=x; B=y:bs");

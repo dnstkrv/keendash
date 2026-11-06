@@ -4,15 +4,17 @@
 # fields: url key
 # hint: Ключ: Settings → API Keys
 # Uptime Kuma: monitors from /metrics (Prometheus text, parsed here; names are user text), failed first, 20 rows.
-# History per monitor like ext.d/check: <tmp>/chk.<ID>.<key> (key = the name with all but [A-Za-z0-9.-] turned into _, _2, _3 ... on a
-# collision), lines "<epoch> <status 0-3>" of the last 24 h; the row gets the percent of up among up/down and the last 30 statuses
-# (comma separated: keendashd would turn "0011" into a number). Without a valid ID no history is kept and the row stays short
+# History per monitor like ext.d/check: <tmp>/chk.<ID>.<key> (key = the name with all but [A-Za-z0-9.-] turned into _, cut to 100, then _ and
+# a hash of the whole name, so names that differ only in non-ASCII text and the /metrics order do not matter; _2, _3 ... only on a hash collision),
+# lines "<epoch> <status 0-3>" of the last 24 h; the row gets the percent of up among up/down and the last 30 statuses
+# (comma separated: keendashd would turn "0011" into a number). A monitor missing from a poll keeps its file until its newest line is
+# 24 h old. Without a valid ID no history is kept and the row stays short. LC_ALL=C: awk works on bytes, as busybox awk does
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 T=${KEENDASH_TMP:-/tmp/keendash} NOW=${KEENDASH_NOW:-$(date +%s)}
 case "${ID:-}" in ""|*[!a-z0-9-]*) ID= ;; esac
 export T NOW ID
-dl -qO- --header "Authorization: Basic $(printf ':%s' "${KEY:-}" | base64 | tr -d '\n')" "${URL%/}/metrics" 2>/dev/null | awk '
-BEGIN { T = ENVIRON["T"]; NOW = ENVIRON["NOW"] + 0; ID = ENVIRON["ID"] }
+dl -qO- --header "Authorization: Basic $(printf ':%s' "${KEY:-}" | base64 | tr -d '\n')" "${URL%/}/metrics" 2>/dev/null | LC_ALL=C awk '
+BEGIN { T = ENVIRON["T"]; NOW = ENVIRON["NOW"] + 0; ID = ENVIRON["ID"]; for (i = 1; i < 256; i++) ORD[sprintf("%c", i)] = i }
 # label value after monitor_name=": \ -> \, \" -> ", \n -> space; the | of the list line and control characters -> space
 function nm(s,  i, c, d, o) {
   for (i = 1; i <= length(s); i++) {
@@ -23,9 +25,15 @@ function nm(s,  i, c, d, o) {
   }
   gsub(/[[:cntrl:]|]/, " ", o); return o
 }
+# file key: the sanitised prefix + _ + (hash x31 + byte, 32 bit, of the whole name) as 8 hex digits; only [A-Za-z0-9._-], it reaches system()
+function hk(s,  i, h, x, k) {
+  for (i = 1; i <= length(s); i++) h = (h * 31 + ORD[substr(s, i, 1)]) % 4294967296
+  for (i = 0; i < 8; i++) { x = substr("0123456789abcdef", h % 16 + 1, 1) x; h = int(h / 16) }
+  k = s; gsub(/[^A-Za-z0-9.-]/, "_", k); return substr(k, 1, 100) "_" x
+}
 # merge the status into the monitor file (24 h, atomic through a temp file), set P[i] and H[i]
 function hist(i,  k, b, f, t, m, p, u, d, j, s) {
-  k = N[i]; gsub(/[^A-Za-z0-9.-]/, "_", k); k = substr(k, 1, 120)
+  k = hk(N[i])
   b = k; for (j = 2; k in K; j++) k = b "_" j
   K[k] = 1; f = T "/chk." ID "." k; t = T "/.chk." ID "." k ".t"
   while ((getline ln < f) > 0) { split(ln, p, " "); if (p[1] + 0 > NOW - 86400 && p[2] ~ /^[0-3]$/) { m++; E[m] = p[1]; L[m] = p[2] + 0 } }
@@ -56,9 +64,12 @@ END {
   }
   if (ID != "") {
     for (i = 1; i <= c; i++) hist(i)
-    # monitors that left the list lose their file
+    # monitors that left the list lose their file once its newest line is 24 h old (one missed poll keeps the history)
     while (("ls -a \"$T\" 2>/dev/null" | getline f) > 0)
-      if (index(f, "chk." ID ".") == 1 && f ~ /^[A-Za-z0-9._-]+$/ && !(substr(f, length(ID) + 6) in K)) system("rm -f \"$T/" f "\"")
+      if (index(f, "chk." ID ".") == 1 && f ~ /^[A-Za-z0-9._-]+$/ && !(substr(f, length(ID) + 6) in K)) {
+        x = 0; while ((getline ln < (T "/" f)) > 0) { split(ln, p, " "); if (p[1] + 0 > x) x = p[1] + 0 }
+        close(T "/" f); if (x <= NOW - 86400) system("rm -f \"$T/" f "\"")
+      }
   }
   print "ok 1"; print "up " u + 0; print "down " d + 0
   for (i = 1; i <= c && i <= 20; i++) print "list|" N[O[i]] "|" S[O[i]] "|" R[N[O[i]]] + 0 (ID != "" ? "|" P[O[i]] "|" H[O[i]] : "")
