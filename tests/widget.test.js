@@ -208,6 +208,34 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Дом");
     ok("frigate: a camera name with markup is text, no detector and storage -> dashes", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>" && vals(m) === "1|—|—", vals(m));
   });
+  // frigate frames (x.snap): over https an <img> under each camera row, its src made of the instance id and the row number only; over http one note
+  {
+    const fnow = Math.floor(Date.now() / 1000), cams = [["front|door", 5, 0.4, 0], ["<b>x</b>", 0, 0, 1]];
+    const fgs = x => Object.assign(fg(x), { now: fnow }), SNOTE = "Кадры с камер видны при входе в роутер по https";
+    const https = d => w => { w.__keendash = { base: "/storage/.keendash/", st: true }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(d) }); };
+    await run(fgs({ ok: 1, ver: "1", snap: 1, cam: cams }), (w, m) => {
+      gclick(w, m, "Дом");
+      const im = Array.from(m.querySelectorAll("img")), rows = Array.from(m.querySelectorAll(".us-row"));
+      ok("frigate snap, https: one img per camera row, src from the instance id and the row number", im.length === 2 && im.every(i => i.className === "us-snap" && i.getAttribute("loading") === "lazy" && i.getAttribute("alt") === "") &&
+        im[0].getAttribute("src") === "/storage/.keendash/cam/frigate-1.jpg?" + fnow && im[1].getAttribute("src") === "/storage/.keendash/cam/frigate-2.jpg?" + fnow, im.map(i => i.outerHTML).join(" "));
+      ok("frigate snap, https: the img sits right under its row, no http note", rows[0].nextElementSibling === im[0] && rows[1].nextElementSibling === im[1] && !m.textContent.includes(SNOTE), m.innerHTML);
+      im[0].dispatchEvent(new w.Event("error"));
+      ok("frigate snap: a failed image hides itself, the other stays", im[0].style.display === "none" && im[1].style.display !== "none");
+      ok("frigate snap: nothing from the API in the src", !/%3C|<b>|front|door/.test(im.map(i => i.getAttribute("src")).join()));
+    }, https(fgs({ ok: 1, ver: "1", snap: 1, cam: cams })), "https://r.example.net/");
+    await run(fgs({ ok: 1, ver: "1", cam: cams }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate no snap, https: no img, no note", !m.querySelector("img") && !m.textContent.includes(SNOTE), m.innerHTML);
+    }, https(fgs({ ok: 1, ver: "1", cam: cams })), "https://r.example.net/");
+    await run(fgs({ ok: 1, ver: "1", snap: 1, cam: cams }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate snap, http: no img, one note", !m.querySelector("img") && m.textContent.split(SNOTE).length === 2 && !!m.querySelector(".us-note"), m.innerHTML);
+    });
+    await run(fgs({ ok: 1, ver: "1", snap: 1, cam: Array.from({ length: 10 }, (_, i) => ["c" + i, 5, 0, 0]) }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate snap, https: at most 8 images", m.querySelectorAll("img").length === 8 && m.querySelectorAll("img")[7].getAttribute("src") === "/storage/.keendash/cam/frigate-8.jpg?" + fnow, m.querySelectorAll("img").length);
+    }, https(fgs({ ok: 1, ver: "1", snap: 1, cam: Array.from({ length: 10 }, (_, i) => ["c" + i, 5, 0, 0]) })), "https://r.example.net/");
+  }
   // pihole: AdGuard's card without the filter/latency note and the recent blocks: two graphs, top domains, clients, its own note
   const ph = (x) => Object.assign(one("pihole", "Pi-hole", "Сеть", "http://10.0.0.5", x), { now: 1793438837 });
   await run(ph({ ok: 1, q: 52310, b: 7840, act: 12, rules: 368606, upd: 1793431637, sq: Array(24).fill(100), sb: Array(24).fill(10),
@@ -398,7 +426,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   // bin/settings in a scratch etc/var/tmp/ext.d: files {"etc/services/qb.conf": "..."}, inbox files 10 s old unless ago {path: seconds}
   function settingsRun(files, cmd, ago) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kdset-")), now = Date.now() / 1000;
-    ["etc/services", "var/inbox", "tmp/x", "ext.d"].forEach(d => fs.mkdirSync(path.join(tmp, d), { recursive: true }));
+    ["etc/services", "var/inbox", "tmp/x", "ext.d", "pub/cam"].forEach(d => fs.mkdirSync(path.join(tmp, d), { recursive: true }));
     fs.writeFileSync(path.join(tmp, "ext.d", "qb"), "#!/bin/sh\n# name: qBittorrent\n# group: Медиа\n# fields: url user pass\n");
     fs.writeFileSync(path.join(tmp, "ext.d", "plex"), "#!/bin/sh\n# name: Plex\n# group: Медиа\n# fields: url token\n");
     Object.keys(files).forEach(f => {
@@ -407,7 +435,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       fs.utimesSync(path.join(tmp, f), t, t);
     });
     const t = unix(tmp), bin = unix(path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", "settings"));
-    const out = cp.spawnSync("sh", ["-c", 'KEENDASH_ETC="' + t + '/etc" KEENDASH_VAR="' + t + '/var" KEENDASH_TMP="' + t + '/tmp" KEENDASH_EXTD="' + t + '/ext.d" sh "' + bin + '" ' + cmd], { encoding: "utf8" }).stdout;
+    const out = cp.spawnSync("sh", ["-c", 'KEENDASH_ETC="' + t + '/etc" KEENDASH_VAR="' + t + '/var" KEENDASH_TMP="' + t + '/tmp" KEENDASH_EXTD="' + t + '/ext.d" KEENDASH_PUB="' + t + '/pub" sh "' + bin + '" ' + cmd], { encoding: "utf8" }).stdout;
     const rd = f => { try { return fs.readFileSync(path.join(tmp, f), "utf8"); } catch (e) { return null; } };
     return { tmp, out, rd, mode: f => fs.statSync(path.join(tmp, f)).mode & 0o777, ls: d => fs.readdirSync(path.join(tmp, d)), rm: () => fs.rmSync(tmp, { recursive: true, force: true }) };
   }
@@ -491,7 +519,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
 
     r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\n" }), "list");
     ok("settings list", r.out === "vol|v1:\nrev|r1\nerr|\ntype|plex|Plex|Медиа|url,token|\ntype|qb|qBittorrent|Медиа|url,user,pass|\n" +
-      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token|||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass|||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
+      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token||||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass||||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n" &&
       !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
     r.rm();
 
@@ -539,13 +567,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/settings apply: map limits (32 characters, 8 pairs, spaces)", /^rev m3\nerr \n$/.test(r.rd("tmp/settings.state")) && /^MAP=/m.test(r.rd("etc/services/c.conf")), r.rd("tmp/settings.state"));
     r.rm();
     r = settingsRun({ "ext.d/mp": MP, "etc/services/c.conf": MC + "MAP='A=x.y'\n", "etc/services/d.conf": MC }, "list");
-    ok("bin/settings list: map", /\ninst\|c\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|A=x.y\|\|\n/.test(r.out) && /\ninst\|d\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|\|\|\n/.test(r.out), JSON.stringify(r.out));
+    ok("bin/settings list: map", /\ninst\|c\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|A=x.y\|\|\|\n/.test(r.out) && /\ninst\|d\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|\|\|\|\n/.test(r.out), JSON.stringify(r.out));
     r.rm();
 
     // hosts and every (the check type): types() keeps the fields, apply checks them like the browser does, list prints them last
     const CK = "#!/bin/sh\n# name: CK\n# group: Доступность\n# fields: hosts every\n", KC = "TYPE='ck'\nNAME='K'\n", kbase = { "ext.d/ck": CK, "etc/services/k.conf": KC };
     r = settingsRun({ "ext.d/ck": CK, "etc/services/k.conf": KC + "HOSTS='a.test b.test:81'\nEVERY='15'\n" }, "list");
-    ok("bin/settings types and list: hosts, every", r.out.startsWith("type|ck|CK|Доступность|hosts,every|\n") && r.out.includes("\ninst|k|ck|K|||||a.test b.test:81|15\n"), JSON.stringify(r.out));
+    ok("bin/settings types and list: hosts, every", r.out.startsWith("type|ck|CK|Доступность|hosts,every|\n") && r.out.includes("\ninst|k|ck|K|||||a.test b.test:81|15|\n"), JSON.stringify(r.out));
     r.rm();
     const HOK = "a.test b.test:8443,https://c.test/x?y=1&z=%20 http://d.test:8080", hfail = [];
     [HOK, "  a.test  ", "a.test,", ["a.test", "b-c.test", "1.2.3.4:80"].concat(Array.from({ length: 17 }, (_, i) => "h" + i + ".test")).join(" ")].forEach(v => {
@@ -582,6 +610,27 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/settings apply: hosts and every only for types that list them", r.rd("tmp/settings.state") === "rev e3\nerr строка 2: неизвестное поле hosts\n" && r.rd("etc/services/qb-2.conf") === QB, r.rd("tmp/settings.state"));
     r.rm();
 
+    // snap (the Frigate type): the last field of an inst line, only 0 or 1
+    const FG = "#!/bin/sh\n# name: FG\n# group: Дом\n# fields: url snap\n", FC = "TYPE='fg'\nNAME='F'\nURL='http://h'\n", fbase = { "ext.d/fg": FG, "etc/services/f.conf": FC };
+    r = settingsRun({ "ext.d/fg": FG, "etc/services/f.conf": FC + "SNAP='1'\n" }, "list");
+    ok("bin/settings types and list: snap after every", r.out.startsWith("type|fg|FG|Дом|url,snap|\n") && r.out.includes("\ninst|f|fg|F|http://h||||||1\n"), JSON.stringify(r.out));
+    r.rm();
+    const sfail = [];
+    ["0", "1"].forEach(v => {
+      r = settingsRun(Object.assign({ "var/inbox/s1.txt": msg("s1", ["set f snap " + v]) }, fbase), "apply");
+      if (r.rd("tmp/settings.state") !== "rev s1\nerr \n" || r.rd("etc/services/f.conf") !== FC + "SNAP='" + v + "'\n") sfail.push(v + " -> " + r.rd("tmp/settings.state"));
+      r.rm();
+    });
+    ["2", "01", "10", "1 ", "on", "yes", "-1", "1;id", "$(id)"].forEach(v => {
+      r = settingsRun(Object.assign({ "var/inbox/s2.txt": msg("s2", ["set f snap " + v]) }, fbase), "apply");
+      if (r.rd("tmp/settings.state") !== "rev s2\nerr строка 2: snap: нужно 0 или 1\n" || r.rd("etc/services/f.conf") !== FC) sfail.push(JSON.stringify(v) + " -> " + r.rd("tmp/settings.state"));
+      r.rm();
+    });
+    ok("bin/settings apply: snap is 0 or 1", !sfail.length, sfail.join("; "));
+    r = settingsRun({ "var/inbox/s3.txt": msg("s3", ["set qb-2 snap 1"]), "etc/services/qb-2.conf": QB }, "apply");
+    ok("bin/settings apply: snap only for types that list it", r.rd("tmp/settings.state") === "rev s3\nerr строка 2: неизвестное поле snap\n" && r.rd("etc/services/qb-2.conf") === QB, r.rd("tmp/settings.state"));
+    r.rm();
+
     // a deleted or newly added id starts without the cache and history of an earlier one with the same id
     r = settingsRun(Object.assign({ "var/inbox/r10.txt": msg("r10", ["del qb-2", "add z qb", "set z url http://h"]), "tmp/x/qb-2": "ok 1\n", "tmp/s.qb-2.dl": "1\n", "tmp/x/z": "ok 1\n", "tmp/s.z.dl": "1\n",
       "tmp/x/pl": "ok 1\n", "tmp/s.pl.dl": "1\n", "tmp/chk.qb-2.a.test": "1 1\n", "tmp/.chk.qb-2.a.test.now": "200 1 1\n", "tmp/chk.z.a.test": "1 1\n", "tmp/.chk.z.a.test.t": "1 1\n", "tmp/chk.pl.a.test": "1 1\n", "tmp/chk.qb-2b.a.test": "1 1\n" }, base), "apply");
@@ -589,6 +638,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       r.rd("tmp/x/pl") === "ok 1\n" && r.rd("tmp/s.pl.dl") === "1\n", JSON.stringify(r.ls("tmp")));
     ok("settings apply: del and add drop the check history and its scratch files of that id only", ["tmp/chk.qb-2.a.test", "tmp/.chk.qb-2.a.test.now", "tmp/chk.z.a.test", "tmp/.chk.z.a.test.t"].every(n => r.rd(n) === null) &&
       r.rd("tmp/chk.pl.a.test") !== null && r.rd("tmp/chk.qb-2b.a.test") !== null, JSON.stringify(r.ls("tmp")));
+    r.rm();
+    // frames in $PUB/cam go with the card: del and add drop <id>-<n>.jpg and the .t temps, not another id's (qb-2b-1, qb-2-3-1 of the id qb-2-3 stay)
+    r = settingsRun(Object.assign({ "var/inbox/r11.txt": msg("r11", ["del qb-2", "add z qb", "set z url http://h"]), "pub/cam/qb-2-1.jpg": "j", "pub/cam/qb-2-8.jpg": "j", "pub/cam/.qb-2-2.jpg.t": "j",
+      "pub/cam/z-1.jpg": "j", "pub/cam/.z-3.jpg.t": "j", "pub/cam/pl-1.jpg": "j", "pub/cam/qb-2b-1.jpg": "j", "pub/cam/qb-2-3-1.jpg": "j" }, base), "apply");
+    ok("settings apply: del and add drop the camera frames of that id only", r.rd("etc/services/z.conf") !== null && r.ls("pub/cam").sort().join() === "pl-1.jpg,qb-2-3-1.jpg,qb-2b-1.jpg", r.ls("pub/cam").join());
     r.rm();
   }
   {
@@ -808,6 +862,51 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/frigate: wrong password and no answer -> ok 0", fr("URL=http://frigate.test:8971 USER=admin PASS=x ") === "ok 0" && fr("URL=http://nohost.test USER= PASS= ") === "ok 0");
       fs.rmSync(sd, { recursive: true, force: true });
     }
+    // frigate frames: SNAP=1 and a valid ID write $KEENDASH_PUB/cam/<ID>-<n>.jpg (n = the camera's place in the sorted list), only for names of [A-Za-z0-9_-]
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-f-")), pub = fs.mkdtempSync(path.join(os.tmpdir(), "kd-p-")), cam = path.join(pub, "cam");
+      const lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "", lgs = () => lg().split("\n").filter(l => /latest\.jpg/.test(l)), ls = () => fs.existsSync(cam) ? fs.readdirSync(cam).sort().join() : "-";
+      const fs1 = (u, e, p) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/frigate", "", "", { state: sd, env: "KEENDASH_PUB=" + unix(p || pub) + " USER= PASS= URL=" + u + " " + (e === undefined ? "ID=fg-1 SNAP=1 " : e) }).trim(); };
+      const put = (n, c) => { fs.mkdirSync(cam, { recursive: true }); fs.writeFileSync(path.join(cam, n), c || "old"); };
+      const JPG = "\xff\xd8\xff\xe0fake-jpeg\n";
+      put("fg-1-5.jpg"); put(".fg-1-6.jpg.t"); put("fg-1-2-1.jpg"); put("fg-2-1.jpg"); put("other.txt");
+      let o = fs1("http://frigate.test:5000/snap");
+      ok("ext.d/frigate snap: frames written, the extra ones and temps of this id removed, other ids and files stay", ls() === "fg-1-1.jpg,fg-1-2-1.jpg,fg-1-2.jpg,fg-2-1.jpg,other.txt" &&
+        fs.readFileSync(path.join(cam, "fg-1-1.jpg"), "latin1") === JPG && fs.readFileSync(path.join(cam, "fg-1-2.jpg"), "latin1") === JPG, ls() + " " + JSON.stringify(fs.readFileSync(path.join(cam, "fg-1-1.jpg"), "latin1")));
+      ok("ext.d/frigate snap: snap 1 last, no internal lines in the cache", o.split("\n").pop() === "snap 1" && o.startsWith("ok 1\n") && o.includes("\ncam|front|5|0.4|0\ncam|garage|5|0|0\n") && !/^frames? /m.test(o), o);
+      ok("ext.d/frigate snap: one request per camera, same options, h=240", JSON.stringify(lgs().map(l => l.replace(/^frigate -q /, "").replace(/ -O \S+ /, " -O F ")).sort()) === JSON.stringify([
+        "--no-check-certificate -O F http://frigate.test:5000/snap/api/front/latest.jpg?h=240 ", "--no-check-certificate -O F http://frigate.test:5000/snap/api/garage/latest.jpg?h=240 "]), lg());
+      ok("ext.d/frigate snap: the download goes to a hidden temp of the id", lgs().every(l => / -O \S*\/cam\/\.fg-1-[12]\.jpg\.t /.test(l)), lg());
+      // names that are not [A-Za-z0-9_-]{1,64} are never requested and keep their place in the numbering; the old frames of their numbers go
+      put("fg-1-5.jpg");
+      o = fs1("http://frigate.test:5000/odd");
+      ok("ext.d/frigate snap: ../x and 'a b' skipped, never requested, ok1 is number 3", ls() === "fg-1-2-1.jpg,fg-1-3.jpg,fg-2-1.jpg,other.txt" && lgs().length === 1 && lgs()[0].endsWith(" http://frigate.test:5000/odd/api/ok1/latest.jpg?h=240 ") && !/\.\.\/|a b/.test(lg()) && o.split("\n").pop() === "snap 1", ls() + " / " + lg());
+      // a failed or empty download keeps the previous frame and leaves no temp
+      put("fg-1-1.jpg"); put("fg-1-2.jpg");
+      o = fs1("http://frigate.test:5000/fail");
+      ok("ext.d/frigate snap: failed and empty downloads keep the old frame, the good one is written, no temps", ls() === "fg-1-1.jpg,fg-1-2-1.jpg,fg-1-2.jpg,fg-1-3.jpg,fg-2-1.jpg,other.txt" && fs.readFileSync(path.join(cam, "fg-1-1.jpg"), "utf8") === "old" &&
+        fs.readFileSync(path.join(cam, "fg-1-2.jpg"), "utf8") === "old" && fs.readFileSync(path.join(cam, "fg-1-3.jpg"), "latin1") === JPG && lgs().length === 3 && o.split("\n").pop() === "snap 1", ls() + " / " + o);
+      // the cookie of the 8971 login goes with the frame request, 'front|door' (number 1) is skipped
+      fs.rmSync(cam, { recursive: true });
+      o = fs1("http://frigate.test:8971", "ID=fg-1 SNAP=1 USER=admin PASS='p\"a\\ss' ");
+      ok("ext.d/frigate snap: login cookie on the frame request, a name with | skipped", ls() === "fg-1-2.jpg" && lgs().length === 1 && / Cookie: frigate_token=abc /.test(lgs()[0]) && lgs()[0].endsWith(" http://frigate.test:8971/api/garage/latest.jpg?h=240 ") && o.split("\n").pop() === "snap 1", ls() + " / " + lg());
+      // SNAP not 1: this id's frames and temps go, nothing printed, no frame requests, other ids stay
+      for (const e of ["ID=fg-1 SNAP=0 ", "ID=fg-1 SNAP= ", "ID=fg-1 SNAP=yes ", "ID=fg-1 "]) {
+        put("fg-1-1.jpg"); put(".fg-1-2.jpg.t"); put("fg-2-1.jpg"); put("fg-1-2-1.jpg"); fs.rmSync(path.join(cam, "fg-1-2.jpg"), { force: true });
+        o = fs1("http://frigate.test:5000/snap", e);
+        ok("ext.d/frigate snap: '" + e.trim() + "' removes the frames, prints no snap line, makes no frame request", ls() === "fg-1-2-1.jpg,fg-2-1.jpg" && !/snap/.test(o) && lgs().length === 0 && /^ok 1\n/.test(o), ls() + " / " + o);
+      }
+      // $PUB is not a directory: silently no frames; a bad ID: nothing written anywhere
+      o = fs1("http://frigate.test:5000/snap", undefined, path.join(pub, "nope"));
+      ok("ext.d/frigate snap: no $PUB directory -> no frames, no snap line, nothing created", /^ok 1\n/.test(o) && !/snap/.test(o) && lgs().length === 0 && !fs.existsSync(path.join(pub, "nope")), o);
+      const badid = [];
+      for (const id of ["../up", "a b", "A", "", "x;id"]) {
+        o = fs1("http://frigate.test:5000/snap", "ID='" + id + "' SNAP=1 ");
+        if (lgs().length || /snap/.test(o) || ls() !== "fg-1-2-1.jpg,fg-2-1.jpg" || fs.readdirSync(pub).join() !== "cam") badid.push(JSON.stringify(id) + " " + ls() + " / " + fs.readdirSync(pub).join() + " / " + lg());
+      }
+      ok("ext.d/frigate snap: a bad ID writes and requests nothing", !badid.length, badid.join("; "));
+      fs.rmSync(sd, { recursive: true, force: true }); fs.rmSync(pub, { recursive: true, force: true });
+    }
     // pihole: JSON-escaped login, the sid in X-FTL-SID, the session is deleted at the end of every run that logged in
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-h-")), lg = () => fs.readFileSync(path.join(sd, "log"), "utf8"), ll = () => lg().split("\n").filter(Boolean);
@@ -1001,6 +1100,15 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     collect("ext", "", "", { state: d, files: { "etc/services/qb.conf": QB } });
     ok("bin/ext: removed instance -> cache gone", rd(d, "x/old") === null && rd(d, "s.old.dl") === null && rd(d, "x/qb-2") === null && rd(d, "s.qb.dl") === "5242880\n5242880\n" && /^ok 1\n/.test(rd(d, "x/qb")), ls(d));
     ok("bin/ext: removed instance -> its chk.<id>.* history files go too, another instance's stay", rd(d, "chk.old.Host_01_0123abcd") === null && rd(d, "chk.qb.Host_01_0123abcd") !== null, ls(d));
+    // SNAP is unset per instance like HOSTS and EVERY; the frames $PUB/cam/<id>-<n>.jpg (and their .t temps) of a removed instance go, other ids and files stay
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-x-")), pub = fs.mkdtempSync(path.join(os.tmpdir(), "kd-p-")), cam = path.join(pub, "cam");
+      fs.mkdirSync(cam); ["s1-1.jpg", "s2-3.jpg", "gone-1.jpg", ".gone-2.jpg.t", "s1-9-1.jpg", "gone-2-1.jpg", ".s2-4.jpg.t", "README.jpg", "n.txt"].forEach(n => fs.writeFileSync(path.join(cam, n), "j"));
+      collect("ext", "", "", { state: sd, env: "SNAP=leak KEENDASH_PUB=" + unix(pub) + " ", files: { "ext.d/snapt": "#!/bin/sh\necho ok 1\necho \"s=$SNAP\"\n", "etc/services/s1.conf": "TYPE='snapt'\nSNAP='1'\n", "etc/services/s2.conf": "TYPE='snapt'\n" } });
+      ok("bin/ext: SNAP exported from the conf, unset when the conf has none", rd(sd, "x/s1") === "ok 1\ns=1\n" && rd(sd, "x/s2") === "ok 1\ns=\n", JSON.stringify([rd(sd, "x/s1"), rd(sd, "x/s2")]));
+      ok("bin/ext: removed instance -> its frames and temps go, other ids and files stay", fs.readdirSync(cam).sort().join() === ".s2-4.jpg.t,README.jpg,n.txt,s1-1.jpg,s2-3.jpg", fs.readdirSync(cam).sort().join());
+      fs.rmSync(sd, { recursive: true, force: true }); fs.rmSync(pub, { recursive: true, force: true });
+    }
     // a collector that exits non-zero keeps its cache file
     fs.writeFileSync(path.join(d, "x", "boom"), "ok 1\n");
     collect("ext", "", "", { state: d, files: { "ext.d/boom": "#!/bin/sh\nexit 1\n", "etc/services/boom.conf": "TYPE='boom'\n" } });
@@ -1183,7 +1291,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
-    fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b|h.test x.test|15\n" +
+    fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b|h.test x.test|15|1\n" +
       "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\n");
     fs.mkdirSync(path.join(sd, "x"));
     fs.writeFileSync(path.join(sd, "x", "qb-2"), "ok 1\n~dl 5\nlist|a|1\n");
@@ -1205,8 +1313,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: newer version", s.upd.new === "9.9.9" && s.upd.busy === 0, JSON.stringify(s.upd));
       ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]] }), JSON.stringify(s.cfg));
       ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"], 'Ключ: "x"'], ["pl", "Plex", "Медиа", ["url", "token"], ""]]), JSON.stringify(s.types));
-      ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b", "h.test x.test", "15"],
-        ["pl", "plex", "Plex", "http://p", "", ["token"], null, "", "", ""]]), JSON.stringify(s.inst));
+      ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b", "h.test x.test", "15", "1"],
+        ["pl", "plex", "Plex", "http://p", "", ["token"], null, "", "", "", ""]]), JSON.stringify(s.inst));
       ok("keendashd status: instance series (a key named t too), no old third-party keys", eq(s.series["qb-2.dl"], [4, 5]) && eq(s.series["qb-2.t"], [7]) && !("agh" in s) && !("media" in s) && !("qb_dl" in s.series), JSON.stringify(s.series));
     }
 
@@ -1641,6 +1749,34 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     q(".kd-dlg-save").click(); await wait(100);
     ok("dialog: hosts is required, an empty one blocks the save", !post(fcalls, /\/rci\/put$/).length && q('input[data-f="hosts"][data-id="check"]').parentNode.querySelector(".kd-dlg-hint").textContent === "Заполните поле");
   }, cf(fcalls, chk), URL0);
+  // snap (Frigate): a select Нет/Да, 0 for a new instance and for one saved before the field; a change goes as set <id> snap 1
+  const frg = Object.assign({}, full, { types: [["frigate", "Frigate", "Дом", ["url", "snap"], ""]], inst: [["fg", "frigate", "Камеры", "http://h:5000", "", [], null, "", "", "", ""], ["fg-2", "frigate", "Двор", "http://h:5001", "", [], null, "", "", "", "1"]] });
+  fcalls = [];
+  await run(frg, async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s), sn = id => q('select[data-f="snap"][data-id="' + id + '"]');
+    q('.kd-dlg-i[data-id="fg"] .kd-dlg-hd').click();
+    ok("dialog: snap is a select Нет/Да, 0 when unset", !!sn("fg") && Array.from(sn("fg").options).map(o => o.value + ":" + o.textContent).join() === "0:Нет,1:Да" && sn("fg").value === "0" &&
+      sn("fg").parentNode.querySelector("span").textContent === "Кадры с камер" && !q(".kd-dlg-save"));
+    typeIn(w, sn("fg"), "1");
+    q(".kd-dlg-save").click(); await wait(100);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("dialog: snap sent as set <id> snap 1", txt === "keendash 1 " + rev + "\nset fg snap 1\nend\n", JSON.stringify(txt));
+  }, cf(fcalls, frg), URL0);
+  await run(frg, async w => {
+    const dlg = await openDlg(w);
+    dlg.querySelector('.kd-dlg-i[data-id="fg-2"] .kd-dlg-hd').click();
+    ok("dialog: a saved snap 1 is shown", dlg.querySelector('select[data-f="snap"][data-id="fg-2"]').value === "1" && !dlg.querySelector(".kd-dlg-save"));
+  }, cf([], frg), URL0);
+  fcalls = [];
+  await run(frg, async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s);
+    q('.kd-dlg-add[data-type="frigate"]').click();
+    ok("dialog: a new instance has snap 0", q('select[data-f="snap"][data-id="frigate"]').value === "0");
+    typeIn(w, q('input[data-f="url"][data-id="frigate"]'), "http://h:5000");
+    q(".kd-dlg-save").click(); await wait(100);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("dialog: a new instance sends snap 0", txt === "keendash 1 " + rev + "\nadd frigate frigate\nset frigate name Frigate\nset frigate url http://h:5000\nset frigate snap 0\nend\n", JSON.stringify(txt));
+  }, cf(fcalls, frg), URL0);
   await run(full, async w => {
     const dlg = await openDlg(w);
     dlg.querySelector('input[data-w="main"][data-n="cron"]').click();

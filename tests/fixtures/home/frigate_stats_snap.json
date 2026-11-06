@@ -1,0 +1,1 @@
+{"cameras":{"garage":{"camera_fps":5.0,"detection_fps":0.0},"front":{"camera_fps":5.0,"detection_fps":0.4}},"detectors":{"openvino":{"inference_speed":22.93}},"service":{"version":"0.14.1-test","storage":{"/media/frigate/recordings":{"total":1000000,"used":102400}}}}

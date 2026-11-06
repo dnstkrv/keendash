@@ -1,9 +1,10 @@
 #!/bin/sh
 # name: Frigate
 # group: Дом
-# fields: url user pass
-# hint: Адрес https://хост:8971 и логин Frigate либо http://хост:5000 без логина. Сертификат не проверяется
-# Frigate NVR (certificate not checked, 8971 is usually self-signed): version, detector speed, cameras (fps 0 = no stream), storage; the login (only with USER) goes in a JSON body, its cookie into the stats request
+# fields: url user pass snap
+# hint: Адрес https://хост:8971 и логин Frigate либо http://хост:5000 без логина. Сертификат не проверяется. Кадры видны только при входе в роутер по https
+# Frigate NVR (certificate not checked, 8971 is usually self-signed): version, detector speed, cameras (fps 0 = no stream), storage; the login (only with USER) goes in a JSON body, its cookie into the stats request.
+# SNAP=1: a frame of every camera (up to 8) into $PUB/cam/<ID>-<n>.jpg, n = place in the sorted list; $PUB is tmpfs, the web UI serves it only to a logged-in user
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 B=${URL%/}; set -- --no-check-certificate
 if [ -n "${USER:-}" ]; then
@@ -12,7 +13,7 @@ if [ -n "${USER:-}" ]; then
     sed -n 's/.*[Ss]et-[Cc]ookie: *\(frigate_token=[^;[:space:]]*\).*/\1/p' | head -n 1)
   set -- "$@" --header "Cookie: $sid"
 fi
-J "$@" "$B/api/stats" | awk "$LOAD"'END {
+out=$(J "$@" "$B/api/stats" | awk "$LOAD"'END {
   for (k in V) {
     if (match(k, /^cameras\..+\.camera_fps$/)) C[substr(k, 9, RLENGTH - 19)] = 1
     else if (match(k, /^detectors\..+\.inference_speed$/)) { d = substr(k, 11, RLENGTH - 26); if (dn == "" || d < dn) dn = d }
@@ -28,5 +29,29 @@ J "$@" "$B/api/stats" | awk "$LOAD"'END {
   for (i = 1; i <= n; i++) {
     c = N[i]; f = V["cameras." c ".camera_fps"] + 0; s = c; gsub(/[[:cntrl:]|]/, " ", s)
     print "cam|" s "|" f "|" V["cameras." c ".detection_fps"] + 0 "|" (f == 0 ? 1 : 0)
+    if (ENVIRON["SNAP"] == 1 && i <= 8 && length(c) <= 64 && c ~ /^[A-Za-z0-9_-]+$/) print "frame " i ":" c
   }
-  if (su) printf "used %.0f\ntotal %.0f\n", u * 1048576, t * 1048576 }'
+  if (su) printf "used %.0f\ntotal %.0f\n", u * 1048576, t * 1048576 }')
+printf '%s\n' "$out" | sed '/^frame /d'
+# frames: only into $PUB/cam (never under /opt or the http www, they have no login); a camera's name is data and never part of a file name
+PUB=${KEENDASH_PUB:-/tmp/mnt/.keendash}; C=$PUB/cam
+case "${ID:-}" in ""|*[!a-z0-9-]*) ;; *) if [ -d "$PUB" ]; then
+  have=" "; rm -f "$C/.$ID"-[0-9].jpg.t
+  if [ "${SNAP:-}" = 1 ] && mkdir -p "$C"; then
+    for kv in $(printf '%s\n' "$out" | sed -n 's/^frame //p'); do
+      i=${kv%%:*}; name=${kv#*:}
+      case "$i" in [1-8]) ;; *) continue ;; esac
+      case "$name" in ""|*[!A-Za-z0-9_-]*) continue ;; esac
+      have="$have$i "; t=$C/.$ID-$i.jpg.t
+      # a failed or empty download keeps the previous frame
+      if dl -q "$@" -O "$t" "$B/api/$name/latest.jpg?h=240" 2>/dev/null && [ -s "$t" ]; then mv -f "$t" "$C/$ID-$i.jpg"; else rm -f "$t"; fi
+    done
+  fi
+  # frames of cameras that are gone, skipped (a name the loop refused) or not asked for
+  for f in "$C/$ID"-[0-9].jpg; do
+    [ -f "$f" ] || continue
+    k=${f%.jpg}; k=${k##*-}
+    case "$have" in *" $k "*) ;; *) rm -f "$f" ;; esac
+  done
+  for k in $have; do [ -f "$C/$ID-$k.jpg" ] && { echo "snap 1"; break; }; done
+fi ;; esac

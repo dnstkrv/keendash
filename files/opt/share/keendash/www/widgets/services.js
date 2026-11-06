@@ -414,12 +414,16 @@
     });
     return x.n > list.length ? h + note("и ещё " + (x.n - list.length)) : h;
   };
-  /* x.ver, x.det + x.inf (detector, ms), x.used/x.total (bytes); x.cam = [[name, fps, detections/s, 1 when fps is 0]] */
-  VIEW.frigate = function (x) {
+  /* x.ver, x.det + x.inf (detector, ms), x.used/x.total (bytes); x.cam = [[name, fps, detections/s, 1 when fps is 0]]; x.snap: frames in the router's
+   * $PUB/cam (ext.d/frigate), shown over https only: the src is made of the instance id and the row number, never of the API's text */
+  VIEW.frigate = function (x, ser, d, inst) {
     var h = '<div class="us-grid">' + blk("Версия", x.ver ? esc(x.ver) : "—", null) + blk("Детектор", x.det ? esc(x.det) + " · " + (+x.inf || 0) + " мс" : "—", null) +
       blk("Занято", x.total > 0 ? fmtBytes(x.used) + " из " + fmtBytes(x.total) : "—", null) + "</div>";
-    (x.cam || []).forEach(function (c) { h += c[3] ? line(BAD, esc(c[0]), "нет потока") : line(OK, esc(c[0]), "FPS " + (+c[1] || 0) + " · детекций " + (+c[2] || 0) + "/с"); });
-    return h;
+    (x.cam || []).forEach(function (c, n) {
+      h += c[3] ? line(BAD, esc(c[0]), "нет потока") : line(OK, esc(c[0]), "FPS " + (+c[1] || 0) + " · детекций " + (+c[2] || 0) + "/с");
+      if (x.snap && ST && n < 8) h += '<img class="us-snap" loading="lazy" alt="" src="' + BASE + "cam/" + esc(inst.id) + "-" + (n + 1) + ".jpg?" + ((d && +d.now) || 0) + '">';
+    });
+    return x.snap && !ST ? h + note("Кадры с камер видны при входе в роутер по https") : h;
   };
   /* x.e = [[label, state, unit]] */
   VIEW.ha = function (x) {
@@ -435,7 +439,7 @@
   };
   VIEW.jellyfin = VIEW.plex; VIEW.jellyseerr = VIEW.overseerr;
   function instOf(d) {
-    return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "", hosts: a[8] || "", every: a[9] || "" }; });
+    return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "", hosts: a[8] || "", every: a[9] || "", snap: a[10] || "0" }; });
   }
   function typeOf(d, type) {
     var t = (d.types || []).filter(function (e) { return e[0] === type; })[0] || [];
@@ -463,7 +467,7 @@
   function instBody(i, d) {
     if (!i.x) return note(WAIT);
     if (!i.x.ok) return note('<span style="color:' + BAD + '">API ' + esc(i.name) + " недоступен</span> · проверьте настройки");
-    return (VIEW[i.type] || tiles)(i.x, function (k) { return (d.series || {})[i.id + "." + k] || []; }, d);
+    return (VIEW[i.type] || tiles)(i.x, function (k) { return (d.series || {})[i.id + "." + k] || []; }, d, i);
   }
   /* the group tabs go before GRPAT, or last */
   function mix(found, extra) {
@@ -664,6 +668,7 @@
       ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +
+      ".us-snap{display:block;width:100%;max-height:240px;object-fit:cover;border-radius:6px}" +
       ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}" +
       ".us-upd{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:8px;background:rgba(0,151,220,.1);font-size:13px}" +
       ".us-upd-t b{font-weight:600}.us-upd-b{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}" +
@@ -739,6 +744,8 @@
     if (a) { a.removeAttribute("href"); a.textContent = TITLE; a.style.pointerEvents = "none"; a.style.cursor = "default"; }
     bodyEl = document.createElement("div");
     bodyEl.className = "us-body";
+    /* an image error doesn't bubble: a frame that isn't there (yet) hides itself */
+    bodyEl.addEventListener("error", function (e) { if (e.target.className === "us-snap") e.target.style.display = "none"; }, true);
     bodyEl.addEventListener("click", function (e) {
       var u = e.target.closest ? e.target.closest(".us-upd-go,.us-upd-skip") : null;
       if (u) {
@@ -1024,9 +1031,9 @@
   }
   /* ---------- settings dialog: edits pile up in a draft; "Сохранить" sends them as one message (bin/settings reads it) through
    * the firmware file manager: /rci/put names the file in keendash's inbox, /fui takes its content; status.json confirms ---------- */
-  var FLD = { name: "Имя", url: "Адрес", user: "Логин", pass: "Пароль", token: "Токен", key: "API-ключ", map: "Что показывать", hosts: "Адреса", every: "Интервал" };
-  var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user|map|hosts|every)$/, NOSAVE = "Не удалось сохранить";
-  var EVERY = [["1", "1 мин"], ["5", "5 мин"], ["15", "15 мин"], ["30", "30 мин"], ["60", "1 ч"]];
+  var FLD = { name: "Имя", url: "Адрес", user: "Логин", pass: "Пароль", token: "Токен", key: "API-ключ", map: "Что показывать", hosts: "Адреса", every: "Интервал", snap: "Кадры с камер" };
+  var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user|map|hosts|every|snap)$/, NOSAVE = "Не удалось сохранить";
+  var CHOICE = { every: [["1", "1 мин"], ["5", "5 мин"], ["15", "15 мин"], ["30", "30 мин"], ["60", "1 ч"]], snap: [["0", "Нет"], ["1", "Да"]] };
   var TRASH = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 9h12l-1 12H7L6 9z"/></svg>';
   /* dd: the status the dialog works from (taken when it opens, again after a save), so a failed poll changes nothing;
    * lost: the last poll got 401; down: where the mouse button went down. dlg: the backdrop; draft: {inst: [{id, type, name, url, user, vals}], del: [id], hide: {page, main}}; dopen: the instance
@@ -1070,7 +1077,7 @@
   }
   function fresh(d) {
     var h = (d.cfg || {}).hide || {};
-    return { inst: instOf(d).map(function (i) { return { id: i.id, type: i.type, name: i.name, url: i.url || "", user: i.user || "", map: i.map, hosts: i.hosts, every: i.every, vals: {} }; }),
+    return { inst: instOf(d).map(function (i) { return { id: i.id, type: i.type, name: i.name, url: i.url || "", user: i.user || "", map: i.map, hosts: i.hosts, every: i.every, snap: i.snap, vals: {} }; }),
       del: [], hide: { page: (h.page || []).slice(), main: (h.main || []).slice() } };
   }
   function fv(e, f) { return PLAIN.test(f) ? e[f] : e.vals[f] || ""; }
@@ -1152,8 +1159,8 @@
   /* a field of an instance's form; its value is put in by renderList (never into the markup), a set secret shows only "задан" */
   function fld(e, f, isSet) {
     var sec = SECRET.test(f), at = ' data-f="' + f + '" data-id="' + esc(e.id) + '"';
-    return '<label class="kd-dlg-f"><span>' + FLD[f] + "</span>" + (f === "every" ?
-      "<select" + at + ">" + EVERY.map(function (o) { return '<option value="' + o[0] + '">' + o[1] + "</option>"; }).join("") + "</select>" :
+    return '<label class="kd-dlg-f"><span>' + FLD[f] + "</span>" + (CHOICE[f] ?
+      "<select" + at + ">" + CHOICE[f].map(function (o) { return '<option value="' + o[0] + '">' + o[1] + "</option>"; }).join("") + "</select>" :
       '<input type="' + (sec ? "password" : "text") + '"' + at + ' autocomplete="' + (sec ? "new-password" : "off") + '"' + (isSet ? ' placeholder="задан"' : "") + ">") +
       '<span class="kd-dlg-hint"></span></label>';
   }
@@ -1200,7 +1207,7 @@
     var d = dd, taken = {}, id, n;
     instOf(d).concat(draft.inst).forEach(function (i) { taken[i.id] = 1; });
     id = newId(type, taken); n = id.slice(type.length + 1);
-    draft.inst.push({ id: id, type: type, name: typeOf(d, type).name + (n ? " " + n : ""), url: "", user: "", map: "", hosts: "", every: "5", vals: {} });
+    draft.inst.push({ id: id, type: type, name: typeOf(d, type).name + (n ? " " + n : ""), url: "", user: "", map: "", hosts: "", every: "5", snap: "0", vals: {} });
     dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; dopen = id; renderList(); renderStrip();
     /* the form opens above the catalog the click was in */
     var el = dlg.querySelector('.kd-dlg-i[data-id="' + id + '"]');

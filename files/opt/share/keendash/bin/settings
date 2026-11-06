@@ -15,6 +15,7 @@ TMP=${KEENDASH_TMP:-/tmp/keendash}
 EXTD=${KEENDASH_EXTD:-/opt/share/keendash/ext.d}
 MNT=${KEENDASH_MNT:-/tmp/mnt}
 OPT=${KEENDASH_OPT:-/opt}
+PUB=${KEENDASH_PUB:-/tmp/mnt/.keendash}
 
 # "type|<type>|<name>|<group>|<f1,f2>|<hint>" from the collectors' headers: "# name: ...", "# group: ...", "# fields: url user pass", "# hint: ..."
 types() {
@@ -27,7 +28,7 @@ types() {
     FNR <= 20 && /^# name: / { n = substr($0, 9) }
     FNR <= 20 && /^# group: / { g = substr($0, 10) }
     FNR <= 20 && /^# hint: / { h = substr($0, 9); gsub("[|]", "", h); h = chars(h, 200) }
-    FNR <= 20 && /^# fields: / { f = ""; k = split(substr($0, 11), a, " "); for (i = 1; i <= k; i++) if (a[i] ~ /^(url|user|pass|key|token|map|hosts|every)$/) f = f (f == "" ? "" : ",") a[i] }
+    FNR <= 20 && /^# fields: / { f = ""; k = split(substr($0, 11), a, " "); for (i = 1; i <= k; i++) if (a[i] ~ /^(url|user|pass|key|token|map|hosts|every|snap)$/) f = f (f == "" ? "" : ",") a[i] }
     END { out() }' "$@"
 }
 
@@ -46,7 +47,7 @@ list() {
     match($0, /^[A-Z]+=/) && substr($0, RLENGTH + 1, 1) == q { v = substr($0, RLENGTH + 2); if (substr(v, length(v)) == q) v = substr(v, 1, length(v) - 1)
       gsub(q "\\\\" q q, q, v); V[substr($0, 1, RLENGTH - 1)] = v }
     function out(  s) { s = (V["PASS"] != "" ? ",pass" : "") (V["KEY"] != "" ? ",key" : "") (V["TOKEN"] != "" ? ",token" : "")
-      print "inst|" id "|" V["TYPE"] "|" V["NAME"] "|" V["URL"] "|" V["USER"] "|" substr(s, 2) "|" V["MAP"] "|" V["HOSTS"] "|" V["EVERY"] }
+      print "inst|" id "|" V["TYPE"] "|" V["NAME"] "|" V["URL"] "|" V["USER"] "|" substr(s, 2) "|" V["MAP"] "|" V["HOSTS"] "|" V["EVERY"] "|" V["SNAP"] }
     END { if (id != "") out() }' "$@"
   [ -f "$ETC/ui.conf" ] && awk '$1 == "hide" && NF == 3 && ($2 == "page" || $2 == "main") { print "hide|" $2 "|" $3 }
     $1 == "col" { s = ""; for (i = 3; i <= NF; i++) s = s (i > 3 ? "," : "") $i; print "col|" s }' "$ETC/ui.conf"
@@ -116,6 +117,7 @@ $1 == "set" { s = substr($0, 5); id = s; sub(/ .*/, "", id); s = substr(s, lengt
   else if (f == "map" && v != "") { okmap(v); V[id, "MAP"] = v; X[id] = 1 }
   else if (f == "hosts" && v != "") { okhosts(v); V[id, "HOSTS"] = v; X[id] = 1 }
   else if (f == "every" && v != "" && v !~ /^(1|5|15|30|60)$/) bad("неверный интервал")
+  else if (f == "snap" && v != "" && v !~ /^[01]$/) bad("snap: нужно 0 или 1")
   else { V[id, toupper(f)] = v; X[id] = 1 }
   next }
 $1 == "hide" || $1 == "show" { if (NF != 3 || ($2 != "page" && $2 != "main") || !okname($3)) bad("неверная строка " $1)
@@ -187,9 +189,9 @@ apply() {
         # the loop is a pipeline subshell: its exit status says whether every mv/rm worked
         printf '%s\n' "$out" | while read -r op id; do
           case $op in
-            N) rm -f "$TMP/x/$id" "$TMP/s.$id."* "$TMP/chk.$id."* "$TMP/.chk.$id."* || exit 1 ;;
+            N) rm -f "$TMP/x/$id" "$TMP/s.$id."* "$TMP/chk.$id."* "$TMP/.chk.$id."* "$PUB/cam/$id"-[0-9].jpg "$PUB/cam/.$id"-[0-9].jpg.t || exit 1 ;;
             M) mv -f "$W/$id.conf" "$ETC/services/$id.conf" || exit 1 ;;
-            R) rm -f "$ETC/services/$id.conf" "$TMP/x/$id" "$TMP/s.$id."* "$TMP/chk.$id."* "$TMP/.chk.$id."* || exit 1 ;;
+            R) rm -f "$ETC/services/$id.conf" "$TMP/x/$id" "$TMP/s.$id."* "$TMP/chk.$id."* "$TMP/.chk.$id."* "$PUB/cam/$id"-[0-9].jpg "$PUB/cam/.$id"-[0-9].jpg.t || exit 1 ;;
             U) mv -f "$W/ui.conf" "$ETC/ui.conf" || exit 1 ;;
           esac
         done || err="не удалось записать настройки"
