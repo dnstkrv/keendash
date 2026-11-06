@@ -320,7 +320,7 @@ static void status(buf *o) {
   bs(o, ",\"hide\":{\"page\":["); rows(o, &C, "hide|page", "=s");
   bs(o, "],\"main\":["); rows(o, &C, "hide|main", "=s");
   bs(o, "]},\"cols\":["); rows(o, &C, "col", "=a");
-  bs(o, "],\"lay\":["); rows(o, &C, "lay", "ssnns");
+  bs(o, "],\"lay\":["); rows(o, &C, "lay", "ssnnss");
   bs(o, "]},\"types\":["); rows(o, &C, "type", "sssas");
   bs(o, "],\"inst\":["); insts(o, &C, tmp);
   bs(o, "]");

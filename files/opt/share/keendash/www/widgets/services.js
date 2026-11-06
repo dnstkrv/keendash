@@ -683,7 +683,7 @@
       "[data-kd-hidden]{display:none!important}.kd-page{padding:0 32px 64px;box-sizing:border-box}.kd-ph{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:32px 32px 0 0;margin:0 0 24px}" +
       ".kd-ph h1{font-size:28px;font-weight:700;line-height:36px;margin:0}.kd-pb{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}" +
       ".kd-name{flex:1;min-width:0;padding:4px 8px;border:1px solid #0097dc;border-radius:4px;background:transparent;color:inherit;font:inherit;outline:none}" +
-      ".kd-lay{display:grid;gap:24px;align-items:start}.kd-item{min-width:0}.kd-gh{position:relative;display:flex;align-items:center;gap:8px;min-height:32px;margin-bottom:12px;font-size:16px;font-weight:700}" +
+      ".kd-lay{display:grid;gap:24px;grid-template-columns:1fr}.kd-abs{display:block;position:relative}.kd-abs>.kd-item,.kd-abs>.kd-hold{position:absolute}.kd-item{min-width:0}.kd-gh{position:relative;display:flex;align-items:center;gap:8px;min-height:32px;margin-bottom:12px;font-size:16px;font-weight:700}" +
       ".kd-gn{min-width:0;cursor:pointer}.kd-gc{flex:1;opacity:.55;font-weight:400}.kd-empty{grid-column:1/-1;padding:24px;border:2px dashed rgba(128,128,128,.55);border-radius:8px;text-align:center;opacity:.7}" +
       ".kd-ch{position:relative}.kd-c1 .kd-ch{margin-bottom:24px}.kd-ct{cursor:pointer}" +
       ".kd-fold,.kd-gear,.kd-more{flex:none;width:32px;height:32px;margin:-4px 0;padding:0;border:0;border-radius:6px;background:none;color:inherit;font:inherit;font-size:16px;cursor:pointer;opacity:.6}.kd-fold{margin-left:-8px}.kd-fold:hover,.kd-gear:hover,.kd-more:hover{opacity:1;background:rgba(128,128,128,.18)}" +
@@ -923,30 +923,80 @@
     });
     return out;
   }
-  /* the page layout as items: {id, w, c} for a card or {g, w, c, name, cards: [{id, w, c}]} for a group, from the layout just
-   * saved, else cfg.lay, else cfg.cols read row by row; cards with data that are not in it follow, w 1, unfolded.
-   * Ids the layout has but no card does stay in it (kept as they are when it is saved). */
+  /* the page layout as items: {id, w, c, x} for a card or {g, w, c, x, name, cards: [{id, w, c, x}]} for a group (x: the start
+   * column, null = not known yet), from the layout just saved, else cfg.lay, else cfg.cols read row by row; cards with data that
+   * are not in it follow, w 1, unfolded, x null (placeItems puts them in the lowest column). Ids the layout has but no card does
+   * stay in it (kept as they are when it is saved). */
   function layModel(d, all) {
     var cf = d.cfg || {}, items = [], gm = {}, have = {}, cols = cf.cols || [], k;
+    /* layout lines saved before the x column have none: the rows they were laid in give it, a cursor running left to right */
+    function flow(a, n) { var cur = 0; a.forEach(function (it) { var w = Math.min(it.w, n); if (it.x === null) { if (cur + w > n) cur = 0; it.x = cur; } cur = it.x + w; }); }
     if (pendingLay) items = JSON.parse(JSON.stringify(pendingLay));
-    else if (cf.lay && cf.lay.length) cf.lay.forEach(function (r) {
-      if (r[0] === "g") { gm[r[1]] = { g: r[1], w: r[2], c: r[3], name: r[4], cards: [] }; items.push(gm[r[1]]); }
-      else if (r[4] && gm[r[4]]) gm[r[4]].cards.push({ id: r[1], w: r[2], c: r[3] });
-      else items.push({ id: r[1], w: r[2], c: r[3] });
-    });
-    else for (k = 0; k < 99; k++) cols.forEach(function (c) { if (k < c.length && !have[c[k]]) { have[c[k]] = 1; items.push({ id: c[k], w: 1, c: 0 }); } });
+    else if (cf.lay && cf.lay.length) {
+      cf.lay.forEach(function (r) {
+        var x = parseInt(r[4], 10), o = { w: r[2], c: r[3], x: x >= 0 && x <= 2 ? x : null };
+        if (r[0] === "g") { o = { g: r[1], w: o.w, c: o.c, x: o.x, name: r[5], cards: [] }; gm[r[1]] = o; items.push(o); }
+        else { o = { id: r[1], w: o.w, c: o.c, x: o.x }; if (r[5] && gm[r[5]]) gm[r[5]].cards.push(o); else items.push(o); }
+      });
+      flow(items, 3); items.forEach(function (g) { if (g.cards) flow(g.cards, g.w); });
+    } else for (k = 0; k < 99; k++) cols.forEach(function (c, i) { if (k < c.length && !have[c[k]]) { have[c[k]] = 1; items.push({ id: c[k], w: 1, c: 0, x: Math.min(i, 2) }); } });
     items.forEach(function (it) { if (it.id) have[it.id] = 1; (it.cards || []).forEach(function (c) { have[c.id] = 1; }); });
-    (all || pageCards(d)).forEach(function (c) { if (!have[c[3]]) { have[c[3]] = 1; items.push({ id: c[3], w: 1, c: 0 }); } });
+    (all || pageCards(d)).forEach(function (c) { if (!have[c[3]]) { have[c[3]] = 1; items.push({ id: c[3], w: 1, c: 0, x: null }); } });
     return items;
   }
   /* the message lines of a layout: a group line, then its cards */
   function layMsg(items) {
     var L = [];
     items.forEach(function (it) {
-      if (it.g) { L.push("group " + it.g + " " + it.w + " " + it.c + " " + it.name); it.cards.forEach(function (c) { L.push("card " + c.id + " " + c.w + " " + c.c + " " + it.g); }); }
-      else L.push("card " + it.id + " " + it.w + " " + it.c);
+      if (it.g) { L.push("group " + it.g + " " + it.w + " " + it.c + " " + (it.x || 0) + " " + it.name); it.cards.forEach(function (c) { L.push("card " + c.id + " " + c.w + " " + c.c + " " + (c.x || 0) + " " + it.g); }); }
+      else L.push("card " + it.id + " " + it.w + " " + it.c + " " + (it.x || 0));
     });
     return L.join("\n");
+  }
+  /* the skyline rule: in list order each item goes to its start column x (none: the lowest place there is) on the height of the
+   * lowest of the columns it spans and raises them to its bottom + gap. heights: px per item -> [{x, top}] */
+  function placeItems(items, heights, cols, gap) {
+    var sky = [], out = [], c;
+    for (c = 0; c < cols; c++) sky.push(0);
+    function at(x, w) { return Math.max.apply(null, sky.slice(x, x + w)); }
+    items.forEach(function (it, i) {
+      var w = Math.max(1, Math.min(it.w, cols)), x = it.x, t;
+      if (x == null || !(x >= 0)) { x = 0; for (c = 1; c <= cols - w; c++) if (at(c, w) < at(x, w)) x = c; }
+      x = Math.min(x, cols - w); t = at(x, w);
+      for (c = x; c < x + w; c++) sky[c] = t + heights[i] + gap;
+      out.push({ x: x, top: t });
+    });
+    return out;
+  }
+  /* before saving: a card with no x takes the column it was drawn in, every x fits its grid (page: 3 columns, group: its w) */
+  function fit(items) {
+    function f(it, n) { it.x = Math.max(0, Math.min(it.x || 0, n - Math.min(it.w, n))); }
+    items.forEach(function (it) {
+      if (it.x == null) { var e = page && Array.prototype.filter.call(page.querySelectorAll(".kd-card"), function (k) { return k.getAttribute("data-id") === it.id; })[0]; it.x = e ? +e.getAttribute("data-px") || 0 : 0; }
+      f(it, 3); (it.cards || []).forEach(function (c) { f(c, it.w); });
+    });
+  }
+  /* the absolute grids of the page: items sit at x columns of the grid, top from placeItems; a group's own grid goes first (its
+   * height is the group's). Widths first: the heights depend on them. */
+  var PGAP = 24;
+  function placeLay(lay) {
+    var cols = +lay.getAttribute("data-cols"), bottom = 0, ks = Array.prototype.filter.call(lay.children, function (k) { return k.hasAttribute("data-w") && k.style.position !== "fixed"; });
+    ks.forEach(function (k) { k.style.width = "calc((100% + " + PGAP + "px) / " + cols + " * " + Math.min(+k.getAttribute("data-w"), cols) + " - " + PGAP + "px)"; });
+    var res = placeItems(ks.map(function (k) { var x = k.getAttribute("data-x"); return { w: +k.getAttribute("data-w"), x: x === "" ? null : +x }; }), ks.map(function (k) { return k.offsetHeight; }), cols, PGAP);
+    ks.forEach(function (k, i) {
+      k.style.top = res[i].top + "px"; k.style.left = "calc((100% + " + PGAP + "px) / " + cols + " * " + res[i].x + ")"; k.setAttribute("data-px", res[i].x);
+      bottom = Math.max(bottom, res[i].top + k.offsetHeight);
+    });
+    lay.style.height = ks.length ? bottom + "px" : "";
+  }
+  function placeAll() { if (page) Array.prototype.slice.call(page.querySelectorAll(".kd-abs")).reverse().forEach(placeLay); }
+  /* a card changing its height (data, frames, folding) places the page again, without drawing it */
+  var pageRO = null, roFrame = 0;
+  function watchHeights() {
+    if (!window.ResizeObserver) return;
+    if (!pageRO) pageRO = new window.ResizeObserver(function () { if (!roFrame) roFrame = requestAnimationFrame(function () { roFrame = 0; placeAll(); }); });
+    pageRO.disconnect();
+    Array.prototype.forEach.call(page.querySelectorAll(".kd-item"), function (k) { pageRO.observe(k); });
   }
   /* pendingLay: the layout just saved, shown until status.json carries its rev (or another one, or 45 s pass: pendingFrom
    * is the rev it was saved over, pendingAt the time); sentRevs: the revs this tab sent, not another browser's save;
@@ -958,6 +1008,7 @@
   var refocus = null;
   function saveLay(items) {
     var cf = (lastData || {}).cfg || {}, rev = newRev(), old = pendingLay;
+    fit(items);
     if (!cf.vol) { pageNote = "Не найден диск Entware"; renderPage(); return; }
     sentRevs[rev] = 1; pendingLay = items; pendingRev = rev; pendingFrom = cf.rev; pendingAt = Date.now(); pageNote = "";
     renderPage();
@@ -994,26 +1045,27 @@
     var all = pageCards(d), cards = {}, inst = {}, items = layModel(d, all);
     all.forEach(function (c) { cards[c[3]] = c; });
     instOf(d).forEach(function (i) { inst[i.id] = 1; });
-    function span(w, max) { return ' style="grid-column:span ' + (one ? 1 : Math.min(w, max)) + '"'; }
+    function pos(it) { return ' data-w="' + it.w + '" data-x="' + (it.x == null ? "" : it.x) + '"'; }
     function fold(it, name) { return btn("kd-fold", (it.c ? "Развернуть: " : "Свернуть: ") + esc(name), it.c ? "&#9656;" : "&#9662;", ' aria-expanded="' + !it.c + '"'); }
     function more(name) { return btn("kd-more", "Ещё: " + esc(name), "&#8943;", ' aria-haspopup="true" aria-expanded="false"'); }
     function drag(name) { return btn("kd-drag", "Перетащить: " + esc(name), "&#8942;&#8942;"); }
-    function card(it, max) {
+    function card(it) {
       var c = cards[it.id];
       if (!c) return "";
-      return '<div class="kd-item kd-card' + (it.c ? " kd-c1" : "") + '" data-id="' + esc(it.id) + '"' + span(it.w, max) + '><div class="kd-ch">' + fold(it, c[0]) +
+      return '<div class="kd-item kd-card' + (it.c ? " kd-c1" : "") + '" data-id="' + esc(it.id) + '"' + pos(it) + '><div class="kd-ch">' + fold(it, c[0]) +
         '<span class="kd-ct">' + esc(c[0]) + "</span>" + openHtml(c[2]) + (inst[it.id] ? btn("kd-gear", "Настроить: " + esc(c[0]), "&#9881;") : "") +
         more(c[0]) + drag(c[0]) + "</div>" + (it.c ? "" : '<div class="us-body">' + c[1] + "</div>") + "</div>";
     }
-    var h = '<div class="kd-lay" style="grid-template-columns:' + (one ? "1fr" : "repeat(3,1fr)") + '">';
+    var ab = one ? "" : " kd-abs", h = '<div class="kd-lay' + ab + '" data-cols="3">';
     items.forEach(function (it) {
-      if (!it.g) { h += card(it, 3); return; }
-      var inner = it.cards.map(function (c) { return card(c, it.w); }).join("");
-      h += '<div class="kd-item kd-grp" data-g="' + esc(it.g) + '"' + span(it.w, 3) + '><div class="kd-gh">' + fold(it, it.name) + (renaming === it.g ? '<input class="kd-name" aria-label="Имя группы" value="' + esc(it.name) + '">' : '<span class="kd-gn">' + esc(it.name) + "</span>") +
+      if (!it.g) { h += card(it); return; }
+      var inner = it.cards.map(function (c) { return card(c); }).join("");
+      h += '<div class="kd-item kd-grp" data-g="' + esc(it.g) + '"' + pos(it) + '><div class="kd-gh">' + fold(it, it.name) + (renaming === it.g ? '<input class="kd-name" aria-label="Имя группы" value="' + esc(it.name) + '">' : '<span class="kd-gn">' + esc(it.name) + "</span>") +
         '<span class="kd-gc">' + it.cards.filter(function (c) { return cards[c.id]; }).length + "</span>" + more(it.name) + drag(it.name) + "</div>" +
-        (it.c ? "" : '<div class="kd-lay" style="grid-template-columns:' + (one ? "1fr" : "repeat(" + it.w + ",1fr)") + '">' + (inner || '<div class="kd-empty">Перетащите сюда карточки</div>') + "</div>") + "</div>";
+        (it.c ? "" : '<div class="kd-lay' + ab + '" data-cols="' + it.w + '">' + (inner || '<div class="kd-empty">Перетащите сюда карточки</div>') + "</div>") + "</div>";
     });
     page.insertAdjacentHTML("beforeend", h + "</div>");
+    if (!one) { placeAll(); watchHeights(); } else if (pageRO) pageRO.disconnect();
     Array.prototype.forEach.call(page.querySelectorAll(".kd-ch > .kd-drag,.kd-gh > .kd-drag"), function (b) { attachPageDrag(b.parentNode.parentNode, b); });
     if (refocus) {
       Array.prototype.forEach.call(page.querySelectorAll(".kd-item"), function (e) {
@@ -1070,7 +1122,7 @@
       /* the lowest free gN */
       var n = 1; items = layModel(lastData);
       while (items.some(function (x) { return x.g === "g" + n; })) n++;
-      closeMenu(true); renaming = "g" + n; items.unshift({ g: "g" + n, w: 3, c: 0, name: "Новая группа", cards: [] }); saveLay(items); return;
+      closeMenu(true); renaming = "g" + n; items.unshift({ g: "g" + n, w: 3, c: 0, x: 0, name: "Новая группа", cards: [] }); saveLay(items); return;
     }
     if (!el || !lastData) return;
     items = layModel(lastData); it = lookup(items, el);
@@ -1078,43 +1130,45 @@
     if (c(".kd-gear")) openSettings(it.id);
     else if (c(".kd-mw")) { closeMenu(true); it.w = +c(".kd-mw").getAttribute("data-w"); saveLay(items); }
     else if (c(".kd-ren")) { closeMenu(true); renaming = it.g; renderPage(); }
-    else if (c(".kd-ung")) { closeMenu(true); items.splice.apply(items, [items.indexOf(it), 1].concat(it.cards)); saveLay(items); }
+    else if (c(".kd-ung")) { closeMenu(true); it.cards.forEach(function (k) { k.x = (k.x || 0) + (it.x || 0); }); items.splice.apply(items, [items.indexOf(it), 1].concat(it.cards)); saveLay(items); }
     else if (c(".kd-more")) { head = c(".kd-more").parentNode; same = head.querySelector(".kd-menu"); closeMenu(true); if (same) renderPage(); else openMenu(head, it); }
     else if (c(".kd-fold,.kd-ct,.kd-gn")) { it.c = it.c ? 0 : 1; saveLay(items); }
   }
-  /* the item's drag handle: a dashed placeholder follows the pointer over the page grid, a card also over the grid of a group
- * (the innermost grid under the pointer, else the last one); a group only over the page grid; the drop saves the layout */
+  /* the item's drag handle: a dashed placeholder, placed with the other items, shows where the item lands: in the grid under the
+ * pointer (a card also in a group's, the innermost; a group only on the page), in the column under the pointer, in the list before
+ * the first item of that column whose middle is below the pointer, else last; the drop saves the layout */
   function attachPageDrag(r, handle) {
     handle.style.touchAction = "none"; handle.style.cursor = "grab";
     handle.addEventListener("pointerdown", function (ev) {
       if (ev.pointerType === "mouse" && ev.button !== 0) return;
       if (busy()) return; /* a name field or a menu is open: no preventDefault, so the field blurs and saves */
       ev.preventDefault();
-      var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, ph, lay = r.parentNode, grids = r.hasAttribute("data-g") ? [lay] : Array.prototype.slice.call(page.querySelectorAll(".kd-lay"));
+      var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, ph, lay = r.parentNode, grids = r.hasAttribute("data-g") ? [lay] : Array.prototype.slice.call(page.querySelectorAll(".kd-lay")), rw = +r.getAttribute("data-w");
       try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
       function kids() { return Array.prototype.filter.call(lay.children, function (k) { return k !== r && k.classList.contains("kd-item"); }); }
       function move(e) {
         if (!started) {
           if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 5) return;
           started = true; dragging = true;
-          ph = document.createElement("div");
-          ph.setAttribute("style", (r.getAttribute("style") || "") + ";height:" + rect.height + "px;border:2px dashed rgba(128,128,128,.55);border-radius:8px;box-sizing:border-box;");
+          ph = document.createElement("div"); ph.className = "kd-hold"; ph.setAttribute("data-w", rw); ph.setAttribute("data-x", "");
+          ph.setAttribute("style", "height:" + rect.height + "px;border:2px dashed rgba(128,128,128,.55);border-radius:8px;box-sizing:border-box;");
           lay.insertBefore(ph, r);
           r.style.position = "fixed"; r.style.width = rect.width + "px"; r.style.left = rect.left + "px"; r.style.top = rect.top + "px";
           r.style.margin = "0"; r.style.zIndex = "10000"; r.style.pointerEvents = "none"; r.style.opacity = ".92"; r.style.boxShadow = "0 8px 24px rgba(0,0,0,.45)";
         }
         r.style.left = (e.clientX - offX) + "px"; r.style.top = (e.clientY - offY) + "px";
-        /* before or after the nearest item: before when the pointer is above it, or beside it and left of its middle */
-        var best = null, bd = 1e18, before = false, ref;
+        var ref = null, col = -1;
         grids.forEach(function (g) { var b = g.getBoundingClientRect(); if (e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) lay = g; });
-        kids().forEach(function (k) {
-          var b = k.getBoundingClientRect(), dx = e.clientX - (b.left + b.width / 2), dy = e.clientY - (b.top + b.height / 2), d2 = dx * dx + dy * dy;
-          if (d2 < bd) { bd = d2; best = k; before = e.clientY < b.top || (e.clientY <= b.bottom && dx < 0); }
+        var abs = lay.classList.contains("kd-abs"), cols = +lay.getAttribute("data-cols"), lb = lay.getBoundingClientRect();
+        if (abs) col = Math.max(0, Math.min(cols - Math.min(rw, cols), lb.width > 0 ? Math.floor((e.clientX - lb.left) / (lb.width / cols)) : 0));
+        kids().some(function (k) {
+          var b = k.getBoundingClientRect(), px = +k.getAttribute("data-px");
+          if ((!abs || (col >= px && col < px + Math.min(+k.getAttribute("data-w"), cols))) && b.top + b.height / 2 > e.clientY) { ref = k; return true; }
         });
         Array.prototype.forEach.call(page.querySelectorAll(".kd-empty"), function (m) { m.style.display = m.parentNode === lay ? "none" : ""; });
-        if (!best) { if (ph.parentNode !== lay) lay.appendChild(ph); return; }
-        ref = before ? best : best.nextSibling;
-        if (ref !== ph && !(ref && ref.previousSibling === ph)) lay.insertBefore(ph, ref);
+        ph.setAttribute("data-x", col < 0 ? "" : col);
+        if (ref) { if (ph.nextSibling !== ref) lay.insertBefore(ph, ref); } else if (ph.parentNode !== lay || ph.nextSibling) lay.appendChild(ph);
+        placeAll();
       }
       function end(e) {
         handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end);
@@ -1135,6 +1189,7 @@
         rest = gid !== null && !r.hasAttribute("data-g") ? (items.filter(function (it) { return it.g === gid; })[0] || {}).cards : items;
         if (!mine || !rest) { renderPage(); return; }
         p = rest.map(ikey).indexOf(key(prev)); n = rest.map(ikey).indexOf(key(next)); at = n >= 0 ? n : p >= 0 ? p + 1 : rest.length;
+        if (ph.getAttribute("data-x") !== "") mine.x = +ph.getAttribute("data-x");
         rest.splice(at, 0, mine);
         saveLay(items);
       }
@@ -1220,7 +1275,7 @@
     });
     return L.length ? "keendash 1 " + rev + "\n" + L.join("\n") + "\nend\n" : "";
   }
-  window.__servicesWidget = { newId: newId, buildMsg: buildMsg, update: update, awaitRev: awaitRev, layModel: layModel, layMsg: layMsg, grpName: grpName }; // for the tests
+  window.__servicesWidget = { newId: newId, buildMsg: buildMsg, update: update, awaitRev: awaitRev, layModel: layModel, layMsg: layMsg, placeItems: placeItems, grpName: grpName }; // for the tests
 
   /* the file lands in the inbox as <rev>.txt; a rejected promise carries the text to show */
   function newRev() { return (Math.random().toString(36) + "000000000000").slice(2, 14); }

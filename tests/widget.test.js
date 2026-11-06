@@ -456,10 +456,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const QB = "TYPE='qb'\nNAME='qBittorrent 2'\nURL='http://10.0.0.5:8080'\nUSER='admin'\nPASS='s3cret'\n", PL = "TYPE='plex'\nNAME='Plex '\\''A'\\'''\nURL='http://10.0.0.6:32400'\nTOKEN='t0ken'\n";
     const UI = "hide page cron\nhide main telemt\n", base = { "etc/services/qb-2.conf": QB, "etc/services/pl.conf": PL, "etc/ui.conf": UI };
     let r = settingsRun({ "var/inbox/r1.txt": msg("r1", ["add qb-2 qb", "set qb-2 name qBittorrent 2", "set qb-2 url http://10.0.0.5:8080", "set qb-2 user admin",
-      "set qb-2 pass p's $(x) `y` \\z", "hide page cron", "hide main telemt", "group g1 3 0 Дом и сеть", "card sys 1 0 g1", "card qb-2 2 1"]) }, "apply");
+      "set qb-2 pass p's $(x) `y` \\z", "hide page cron", "hide main telemt", "group g1 3 0 0 Дом и сеть", "card sys 1 0 0 g1", "card qb-2 2 1 1"]) }, "apply");
     const conf = r.rd("etc/services/qb-2.conf");
     ok("settings apply: add, set, hide, layout", conf === "TYPE='qb'\nNAME='qBittorrent 2'\nURL='http://10.0.0.5:8080'\nUSER='admin'\nPASS='p'\\''s $(x) `y` \\z'\n" &&
-      r.mode("etc/services/qb-2.conf") === 0o600 && r.rd("etc/ui.conf") === "hide page cron\nhide main telemt\ngroup g1 3 0 Дом и сеть\ncard sys 1 0 g1\ncard qb-2 2 1\n" &&
+      r.mode("etc/services/qb-2.conf") === 0o600 && r.rd("etc/ui.conf") === "hide page cron\nhide main telemt\ngroup g1 3 0 0 Дом и сеть\ncard sys 1 0 0 g1\ncard qb-2 2 1 1\n" &&
       r.rd("tmp/settings.state") === "rev r1\nerr \n" && !r.ls("var/inbox").length, JSON.stringify([conf, r.rd("etc/ui.conf"), r.rd("tmp/settings.state"), r.ls("var/inbox")]));
     const pass = conf && cp.execFileSync("sh", ["-c", '. ./qb-2.conf; printf %s "$PASS"'], { cwd: path.join(r.tmp, "etc", "services"), encoding: "utf8" });
     ok("settings apply: values are data", pass === "p's $(x) `y` \\z", JSON.stringify(pass));
@@ -467,10 +467,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
 
     const bad = [["set qb-2 foo x"], ["add QB qb"], ["add x nosuch"], ["set qb-2 url ftp://h"], ["set qb-2 user " + "a".repeat(513)], ["set qb-2 user a\x01b"],
       ["set qb-2 name a|b"], ["set qb-2 url http://h|x"], ["set qb-2 user a|b"], ["col 0 a"], ["set pl name " + "a".repeat(65)], ["set nope name x"], ["add y qb", "set y name Y"], ["bogus"],
-      ["group g 3 0 A"], ["group g1234 3 0 A"], ["group x1 3 0 A"], ["group g1 0 0 A"], ["group g1 4 0 A"], ["group g1 3 2 A"], ["group g1 3 0 " + "Я".repeat(33)], ["group g1 3 0 a|b"],
-      ["group g1 3 0 a\x01b"], ["group g1 3 0 a\tb"], ["group g1 3 0"], ["group g1 3 0 "], ["group g1 3 0  A"], ["group g1 3 0 A "], ["card sys 1 0 g1"], ["group g1 3 0 A", "card sys 1 0 g2"],
-      ["group g1 3 0 A", "group g1 2 0 B"], ["card sys 1 0", "card sys 2 0"], ["card sys 1 0 g1 x"], ["card sys 4 0"], ["card sys 1 2"], ["card a|b 1 0"],
-      Array.from({ length: 65 }, (_, i) => "group g" + i + " 1 0 G")];
+      ["group g 3 0 0 A"], ["group g1234 3 0 0 A"], ["group x1 3 0 0 A"], ["group g1 0 0 0 A"], ["group g1 4 0 0 A"], ["group g1 3 2 0 A"], ["group g1 3 0 0 " + "Я".repeat(33)], ["group g1 3 0 0 a|b"],
+      ["group g1 3 0 0 a\x01b"], ["group g1 3 0 0 a\tb"], ["group g1 3 0 0"], ["group g1 3 0 0 "], ["group g1 3 0 0  A"], ["group g1 3 0 0 A "], ["card sys 1 0 0 g1"], ["group g1 3 0 0 A", "card sys 1 0 0 g2"],
+      ["group g1 3 0 0 A", "group g1 2 0 0 B"], ["card sys 1 0 0", "card sys 2 0 0"], ["card sys 1 0 0 g1 x"], ["card sys 4 0 0"], ["card sys 1 2 0"], ["card a|b 1 0 0"],
+      ["group g1 3 0 3 A"], ["group g1 3 0 -1 A"], ["group g1 3 0 a A"], ["group g1 3 0 1 A"], ["group g1 2 0 2 A"], ["group g1 3 0 A"], ["card sys 1 0 3"], ["card sys 1 0 -1"], ["card sys 1 0 a"], ["card a 2 0 2"], ["card a 3 0 1"], ["card sys 1 0"], ["card sys 1 0 g1"],
+      Array.from({ length: 65 }, (_, i) => "group g" + i + " 1 0 0 G")];
     const fails = [];
     bad.concat([null]).forEach(l => {
       const f = Object.assign({ "var/inbox/r2.txt": l ? msg("r2", l) : "keendash 2 r2\nend\n" }, base);
@@ -509,11 +510,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     r.rm();
 
     // a 32-letter name passes; a hide-only message keeps the layout lines (and old col lines); a layout message drops col lines
-    const LAY = "group g1 3 0 " + "Я".repeat(32) + "\ncard sys 1 0 g1\ncard qb-2 2 1\n";
-    r = settingsRun(Object.assign({ "var/inbox/r6b.txt": msg("r6b", Array.from({ length: 64 }, (_, i) => "group g" + i + " 1 0 G")) }, base), "apply");
-    ok("settings apply: 64 groups", r.rd("tmp/settings.state") === "rev r6b\nerr \n" && r.rd("etc/ui.conf") === UI + Array.from({ length: 64 }, (_, i) => "group g" + i + " 1 0 G\n").join(""), JSON.stringify(r.rd("tmp/settings.state")));
+    const LAY = "group g1 3 0 0 " + "Я".repeat(32) + "\ncard sys 1 0 0 g1\ncard qb-2 2 1 1\n";
+    r = settingsRun(Object.assign({ "var/inbox/r6b.txt": msg("r6b", Array.from({ length: 64 }, (_, i) => "group g" + i + " 1 0 0 G")) }, base), "apply");
+    ok("settings apply: 64 groups", r.rd("tmp/settings.state") === "rev r6b\nerr \n" && r.rd("etc/ui.conf") === UI + Array.from({ length: 64 }, (_, i) => "group g" + i + " 1 0 0 G\n").join(""), JSON.stringify(r.rd("tmp/settings.state")));
     r.rm();
-    r = settingsRun(Object.assign({ "var/inbox/r6.txt": msg("r6", ["group g1 3 0 " + "Я".repeat(32), "card sys 1 0 g1", "card qb-2 2 1"]) }, base, { "etc/ui.conf": UI + "col 0 a b\ncol 1\n" }), "apply");
+    r = settingsRun(Object.assign({ "var/inbox/r6.txt": msg("r6", ["group g1 3 0 0 " + "Я".repeat(32), "card sys 1 0 0 g1", "card qb-2 2 1 1"]) }, base, { "etc/ui.conf": UI + "col 0 a b\ncol 1\n" }), "apply");
     ok("settings apply: layout drops col lines, 32-letter name",r.rd("etc/ui.conf") === UI + LAY, JSON.stringify(r.rd("etc/ui.conf")));
     r.rm();
     r = settingsRun(Object.assign({ "var/inbox/r7.txt": msg("r7", ["hide main awg"]) }, base, { "etc/ui.conf": UI + LAY }), "apply");
@@ -521,6 +522,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     r.rm();
     r = settingsRun(Object.assign({ "var/inbox/r7.txt": msg("r7", ["hide main awg"]) }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1\ncol 2 qb-2\n" }), "apply");
     ok("settings apply: hide keeps old col lines", r.rd("etc/ui.conf") === "hide page cron\nhide main awg\nhide main telemt\ncol 0 telemt awg\ncol 1\ncol 2 qb-2\n", JSON.stringify(r.rd("etc/ui.conf")));
+    r.rm();
+    r = settingsRun(Object.assign({ "var/inbox/r7.txt": msg("r7", ["hide main awg"]) }, base, { "etc/ui.conf": UI + "group g1 2 0 Старая\ncard a 1 0 g1\ncard b 2 1\n" }), "apply");
+    ok("settings apply: hide keeps layout lines written before x", r.rd("etc/ui.conf") === "hide page cron\nhide main awg\nhide main telemt\ngroup g1 2 0 Старая\ncard a 1 0 g1\ncard b 2 1\n", JSON.stringify(r.rd("etc/ui.conf")));
     r.rm();
     // a NUL ends an awk record in busybox: the whole file is rejected, the content is not echoed
     r = settingsRun(Object.assign({ "var/inbox/r8.txt": msg("r8", ["set qb-2 pass a\0hide page x"]) }, base), "apply");
@@ -532,9 +536,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("settings apply: quote in TOKEN survives", r.rd("etc/services/pl.conf") === "TYPE='plex'\nNAME='X'\nURL='http://10.0.0.6:32400'\nTOKEN='t'\\''0ken'\n", JSON.stringify(r.rd("etc/services/pl.conf")));
     r.rm();
 
-    r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\ngroup g1 3 0 Дом и сеть\ncard sys 1 0 g1\ncard qb-2 2 1\n" }), "list");
+    r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\ngroup g1 2 0 1 Дом и сеть\ncard sys 1 0 0 g1\ncard qb-2 2 1 1\ngroup g2 2 0 Старая\ncard old 1 0 g2\ncard old2 2 1\n" }), "list");
     ok("settings list", r.out === "vol|v1:\nrev|r1\nerr|\ntype|plex|Plex|Медиа|url,token|\ntype|qb|qBittorrent|Медиа|url,user,pass|\n" +
-      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token||||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass||||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|3|0|Дом и сеть\nlay|c|sys|1|0|g1\nlay|c|qb-2|2|1|\n" &&
+      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token||||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass||||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|2|0|1|Дом и сеть\nlay|c|sys|1|0|0|g1\nlay|c|qb-2|2|1|1|\nlay|g|g2|2|0||Старая\nlay|c|old|1|0||g2\nlay|c|old2|2|1||\n" &&
       !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
     r.rm();
 
@@ -1373,7 +1377,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
     fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b|h.test x.test|15|1\n" +
-      "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|3|0|Дом \"a\" \\b\nlay|c|sys|1|0|\nlay|c|qb-2|2|1|g1\n");
+      "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|3|0|0|Дом \"a\" \\b\nlay|c|sys|1|0|1|\nlay|c|qb-2|2|1||g1\n");
     fs.mkdirSync(path.join(sd, "x"));
     fs.writeFileSync(path.join(sd, "x", "qb-2"), "ok 1\n~dl 5\nlist|a|1\n");
     fs.writeFileSync(path.join(sd, "s.qb-2.dl"), "4\n5\n"); fs.writeFileSync(path.join(sd, "s.qb-2.t"), "7\n"); fs.writeFileSync(path.join(sd, ".s.qb-2.dl.t"), "9\n");
@@ -1392,7 +1396,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: Tailscale", s.ts.run === 1 && s.ts.online === 1 && s.ts.total === 0 && eq(s.ts.self, [["Running", "router", "100.64.0.1", "waw", "", 0, "", ""]]) &&
         eq(s.ts.list, [["pc", "windows", 1, 1, 1, "", "0001-01-01T00:00:00Z", 10, 20, 0, 0, ""]]), JSON.stringify(s.ts));
       ok("keendashd status: newer version", s.upd.new === "9.9.9" && s.upd.busy === 0, JSON.stringify(s.upd));
-      ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]], lay: [["g", "g1", 3, 0, 'Дом "a" \\b'], ["c", "sys", 1, 0, ""], ["c", "qb-2", 2, 1, "g1"]] }), JSON.stringify(s.cfg));
+      ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]], lay: [["g", "g1", 3, 0, "0", 'Дом "a" \\b'], ["c", "sys", 1, 0, "1", ""], ["c", "qb-2", 2, 1, "", "g1"]] }), JSON.stringify(s.cfg));
       ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"], 'Ключ: "x"'], ["pl", "Plex", "Медиа", ["url", "token"], ""]]), JSON.stringify(s.types));
       ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b", "h.test x.test", "15", "1"],
         ["pl", "plex", "Plex", "http://p", "", ["token"], null, "", "", "", ""]]), JSON.stringify(s.inst));
@@ -1879,10 +1883,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
     ok("settings: button disabled while there is no data", d.querySelector(".kd-set").disabled);
   }, w => () => Promise.reject(new Error("down")), URL0);
-  // page layout: the row grid, widths, collapse, the «⋯» menu, «⚙», saving
+  // page layout: columns (x, skyline placement), widths, collapse, the «⋯» menu, «⚙», saving
   const wide = (w, n) => Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { configurable: true, get: () => n || 1200 });
-  const openPage = async (w, n) => {
-    const d = w.document; wide(w, n); d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
+  // hf: the height of an element in px (jsdom has no layout)
+  const openPage = async (w, n, hf) => {
+    const d = w.document; wide(w, n);
+    Object.defineProperty(w.HTMLElement.prototype, "offsetHeight", { configurable: true, get() { return hf ? hf(this) : this.classList.contains("kd-hold") ? parseFloat(this.style.height) || 0 : 100; } });
+    d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
     d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
     return d.querySelector(".kd-page");
   };
@@ -1898,32 +1905,58 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   }
   const withCfg = o => Object.assign({}, full, { cfg: Object.assign({}, full.cfg, o) });
   const top = p => Array.from(p.querySelector(".kd-lay").children), idOf = el => el.getAttribute("data-id") || el.getAttribute("data-g");
-  const span = el => +/span (\d)/.exec(el.getAttribute("style"))[1];
-  const lay0 = [["c", "sys", 3, 0, ""], ["c", "telemt", 2, 0, ""], ["g", "g1", 2, 0, "Дом <b>x</b>"], ["c", "awg", 3, 0, "g1"], ["c", "gone", 1, 0, "g1"]];
+  const kf = (v, cols) => Math.round(+/([\d.]+) \* \(100%/.exec(v)[1] * cols);
+  const span = el => +el.getAttribute("data-w"), dx = el => el.getAttribute("data-x"), px = el => el.getAttribute("data-px");
+  const lay0 = [["c", "sys", 3, 0, "0", ""], ["c", "telemt", 2, 0, "0", ""], ["g", "g1", 2, 0, "1", "Дом <b>x</b>"], ["c", "awg", 3, 0, "0", "g1"], ["c", "gone", 1, 0, "0", "g1"]];
   await run(withCfg({ cols: [["sys", "telemt"], ["awg"]] }), async w => {
     const p = await openPage(w), t = top(p);
     ok("page: cols migrate row by row, new cards follow with span 1", t.length === 15 && t.slice(0, 3).map(idOf).join() === "sys,awg,telemt" && t.every(x => span(x) === 1), t.slice(0, 4).map(idOf).join());
+    ok("page: cols migrate to x = the column, a new card has none and takes the lowest column", t.slice(0, 3).map(dx).join() === "0,1,0" && dx(t[3]) === "" && px(t[3]) === "2", t.slice(0, 4).map(dx).join() + px(t[3]));
+  }, null, URL0);
+  // layout lines from before the x column (empty x): the rows they were laid in give it
+  await run(withCfg({ lay: [["c", "sys", 2, 0, "", ""], ["c", "telemt", 2, 0, "", ""], ["c", "awg", 1, 0, "", ""], ["g", "g1", 3, 0, "", "Дом"], ["c", "hydra", 1, 0, "", "g1"], ["c", "agh", 1, 0, "", "g1"], ["c", "qb", 2, 0, "", "g1"]] }), async w => {
+    const p = await openPage(w), t = top(p), g = p.querySelector('[data-g="g1"]');
+    ok("page: old layout lines get x from the rows", t.slice(0, 4).map(dx).join() === "0,0,2,0" && Array.from(g.querySelectorAll(".kd-card")).map(dx).join() === "0,1,0", t.slice(0, 4).map(dx).join() + "/" + Array.from(g.querySelectorAll(".kd-card")).map(dx).join());
+  }, null, URL0);
+  // the skyline: a card goes right under the one above it in its column; 2/3 and 3/3 start under the lowest column they cover
+  await run(withCfg({ lay: [["c", "telemt", 1, 0, "0", ""], ["c", "sys", 1, 0, "1", ""], ["c", "ascn", 1, 0, "2", ""], ["c", "hydra", 1, 0, "0", ""], ["c", "agh", 2, 0, "0", ""], ["c", "qb", 3, 0, "0", ""]] }), async w => {
+    const H = { telemt: 300, sys: 600, ascn: 200, hydra: 100, agh: 50, qb: 70 };
+    const p = await openPage(w, 1200, el => H[el.getAttribute("data-id")] || 10), card = id => p.querySelector('[data-id="' + id + '"]'), tp = id => card(id).style.top;
+    ok("place: hydra sits right under telemt, not under the tallest card", tp("telemt") === "0px" && tp("sys") === "0px" && tp("ascn") === "0px" && tp("hydra") === "324px", ["telemt", "sys", "ascn", "hydra"].map(tp).join());
+    ok("place: 2/3 starts under the lower of its columns, 3/3 under all three", tp("agh") === "624px" && px(card("agh")) === "0" && tp("qb") === "698px", tp("agh") + tp("qb"));
+    ok("place: absolute positions in columns, the container is as tall as the tallest column", p.querySelector(".kd-lay").classList.contains("kd-abs") && kf(card("sys").style.left, 3) === 1 && kf(card("agh").style.width, 3) === 2 && kf(card("telemt").style.left, 3) === 0 && parseFloat(p.querySelector(".kd-lay").style.height) >= 768, card("sys").style.left + card("agh").style.width + p.querySelector(".kd-lay").style.height);
+    const Q = w.__servicesWidget.placeItems, r = Q([{ w: 1, x: 0 }, { w: 1, x: 1 }, { w: 1, x: 2 }, { w: 1, x: 0 }, { w: 2, x: 0 }, { w: 3, x: 0 }], [300, 600, 200, 100, 50, 70], 3, 24), r2 = Q([{ w: 1, x: 0 }, { w: 1, x: 1 }, { w: 2 }, { w: 1 }], [300, 600, 5, 5], 3, 24);
+    ok("placeItems: skyline, 2/3 under max(col0, col1), 3/3 under all", r.map(x => x.top).join() === "0,0,0,324,624,698" && r[3].x === 0, JSON.stringify(r));
+    ok("placeItems: no x -> the lowest place, a 2/3 where its two columns are lowest", r2.map(x => x.x + "@" + x.top).join() === "0@0,1@0,0@624,2@0", JSON.stringify(r2));
+  }, null, URL0);
+  // a group lays its cards out on its own columns, its height follows them; the next card goes under the group in its column
+  await run(withCfg({ lay: [["g", "g1", 2, 0, "1", "G"], ["c", "awg", 1, 0, "0", "g1"], ["c", "telemt", 1, 0, "1", "g1"], ["c", "hydra", 1, 0, "0", "g1"], ["c", "sys", 1, 0, "1", ""], ["c", "qb", 1, 0, "0", ""]] }), async w => {
+    const H = { awg: 200, telemt: 100, hydra: 50, sys: 10, qb: 10 };
+    const p = await openPage(w, 1200, el => el.classList.contains("kd-grp") ? 40 + (parseFloat(el.querySelector(".kd-lay").style.height) || 0) : H[el.getAttribute("data-id")] || 10), g = p.querySelector('[data-g="g1"]'), inner = g.querySelector(".kd-lay");
+    const c = id => p.querySelector('[data-id="' + id + '"]');
+    ok("place: cards inside a group sit on the group's columns", inner.getAttribute("data-cols") === "2" && c("awg").style.top === "0px" && c("telemt").style.top === "0px" && c("hydra").style.top === "224px" && kf(c("hydra").style.left, 2) === 0 && kf(c("telemt").style.left, 2) === 1, c("hydra").style.top);
+    ok("place: the group is as tall as its content, the card under it starts below that", inner.style.height === "274px" && g.style.top === "0px" && c("sys").style.top === "338px" && c("qb").style.top === "0px", inner.style.height + g.style.top + c("sys").style.top);
   }, null, URL0);
   await run(withCfg({ lay: lay0 }), async w => {
     const p = await openPage(w), t = top(p), g = p.querySelector('[data-g="g1"]'), inner = g.querySelector(".kd-lay");
     ok("page: spans 1/2/3 and appended cards", t.length === 15 && span(t[0]) === 3 && span(t[1]) === 2 && span(g) === 2 && t.slice(3).every(x => span(x) === 1), t.map(x => idOf(x) + span(x)).join());
-    ok("page: group grid has its own columns, card width capped by the group", /repeat\(2,1fr\)/.test(inner.getAttribute("style")) && span(inner.firstElementChild) === 2 && inner.children.length === 1, inner.outerHTML.slice(0, 200));
+    ok("page: group grid has its own columns, card width capped by the group", inner.getAttribute("data-cols") === "2" && kf(inner.firstElementChild.style.width, 2) === 2 && inner.children.length === 1, inner.outerHTML.slice(0, 200));
     ok("page: unknown layout id not rendered; group name is text", !p.querySelector('[data-id="gone"]') && g.querySelector(".kd-gn").textContent === "Дом <b>x</b>" && !g.querySelector(".kd-gh b") && g.querySelector(".kd-gc").textContent === "1");
     ok("page: header controls are buttons with aria-label and title", Array.from(p.querySelectorAll(".kd-ch > button,.kd-gh > button")).every(b => b.tagName === "BUTTON" && b.getAttribute("aria-label") && b.getAttribute("title")) && p.querySelectorAll(".kd-drag").length === 16 && p.querySelectorAll(".kd-gh > button").length === 3);
     ok("page: gear only on service cards", !!p.querySelector('[data-id="qb"] .kd-gear') && !p.querySelector('[data-id="sys"] .kd-gear') && !p.querySelector('[data-id="telemt"] .kd-gear'));
   }, null, URL0);
   await run(withCfg({ lay: lay0 }), async w => {
     const p = await openPage(w, 400), t = top(p);
-    ok("page: under 900 px one column, widths kept in the data", /1fr/.test(p.querySelector(".kd-lay").getAttribute("style")) && !/repeat/.test(p.querySelector(".kd-lay").getAttribute("style")) && t.every(x => span(x) === 1) && /1fr/.test(p.querySelector('[data-g="g1"] .kd-lay').getAttribute("style")));
+    ok("page: under 900 px plain flow in list order, no absolute positions, widths kept in the data", !p.querySelector(".kd-abs") && t.slice(0, 3).map(idOf).join() === "sys,telemt,g1" && t.every(x => !x.style.top && !x.style.left && !x.style.width) && span(t[0]) === 3 && !p.querySelector('[data-g="g1"] .kd-card').style.top);
   }, null, URL0);
-  await run(withCfg({ lay: [["c", "sys", 1, 1, ""], ["g", "g1", 3, 1, "G"], ["c", "awg", 1, 0, "g1"], ["g", "g2", 3, 0, "Пусто"], ["c", "telemt", 1, 0, "g2"]], hide: { page: ["telemt"], main: [] } }), async w => {
+  await run(withCfg({ lay: [["c", "sys", 1, 1, "0", ""], ["g", "g1", 3, 1, "0", "G"], ["c", "awg", 1, 0, "0", "g1"], ["g", "g2", 3, 0, "0", "Пусто"], ["c", "telemt", 1, 0, "0", "g2"]], hide: { page: ["telemt"], main: [] } }), async w => {
     const p = await openPage(w), g1 = p.querySelector('[data-g="g1"]'), g2 = p.querySelector('[data-g="g2"]');
     ok("page: folded card shows only its header", !!p.querySelector('[data-id="sys"] .kd-ch') && !p.querySelector('[data-id="sys"] .us-body') && !!p.querySelector('[data-id="awg"]') === false);
     ok("page: folded group shows header and count only", !g1.querySelector(".kd-lay") && g1.querySelector(".kd-gc").textContent === "1" && !g1.querySelector(".us-body"));
     ok("page: group with all cards hidden shows the drop text", g2.textContent.indexOf("Перетащите сюда карточки") >= 0 && g2.querySelector(".kd-gc").textContent === "0" && !p.querySelector('[data-id="telemt"]'), g2.textContent);
   }, null, URL0);
   fcalls = [];
-  await run(withCfg({ lay: [["c", "sys", 2, 0, ""]] }), async w => {
+  await run(withCfg({ lay: [["c", "sys", 2, 0, "0", ""]] }), async w => {
     const p = await openPage(w), q = s => p.querySelector(s), mws = () => Array.from(p.querySelectorAll(".kd-mw"));
     q('[data-id="sys"] .kd-more').click();
     ok("menu: widths 1/3 2/3 3/3, current marked", mws().map(b => b.textContent).join() === "1/3,2/3,3/3" && mws().filter(b => b.classList.contains("kd-on")).map(b => b.textContent).join() === "2/3" && /Ширина/.test(q(".kd-menu").textContent));
@@ -1939,46 +1972,78 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("menu: a width click closes it and shows the new width at once", !q(".kd-menu") && span(q('[data-id="sys"]')) === 3);
     await wait(200);
     const [rev, txt] = await sent(w, fcalls);
-    ok("menu: the width goes to the router in the new format", /^keendash 1 [a-z0-9]{12}\ncard sys 3 0\ncard /.test(txt) && /\nend\n$/.test(txt) && !/col |group /.test(txt), txt);
-  }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 2, 0, ""]] }) }), URL0);
+    ok("menu: the width goes to the router in the new format", /^keendash 1 [a-z0-9]{12}\ncard sys 3 0 0\ncard /.test(txt) && /\nend\n$/.test(txt) && !/col |group /.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 2, 0, "0", ""]] }) }), URL0);
+  // a width change keeps x + w within 3; every line carries x
   fcalls = [];
-  await run(withCfg({ lay: [["c", "gone", 1, 0, ""], ["c", "sys", 1, 0, ""], ["c", "telemt", 1, 1, ""]] }), async w => {
+  await run(withCfg({ lay: [["c", "sys", 1, 0, "2", ""], ["c", "telemt", 1, 0, "1", ""]] }), async w => {
+    const p = await openPage(w);
+    p.querySelector('[data-id="sys"] .kd-more').click(); p.querySelectorAll(".kd-mw")[1].click(); await wait(200);
+    const [rev, txt] = await sent(w, fcalls), L = txt.split("\n").filter(l => /^(card|group) /.test(l));
+    ok("menu: 2/3 on a card in column 2 moves it to column 1", /^keendash 1 [a-z0-9]{12}\ncard sys 2 0 1\ncard telemt 1 0 1\n/.test(txt) && dx(p.querySelector('[data-id="sys"]')) === "1", txt);
+    ok("message: every line carries x, x + w <= 3", L.length === 15 && L.every(l => { const m = /^(?:card \S+|group g\d+) ([1-3]) [01] ([0-2])( |$)/.exec(l); return m && +m[1] + +m[2] <= 3; }), L.join("|"));
+    ok("message: a card that had no x is sent with the column it was drawn in", L.some(l => /^card awg 1 0 [0-2]$/.test(l)), L.join("|"));
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 1, 0, "2", ""], ["c", "telemt", 1, 0, "1", ""]] }) }), URL0);
+  fcalls = [];
+  await run(withCfg({ lay: [["c", "gone", 1, 0, "0", ""], ["c", "sys", 1, 0, "1", ""], ["c", "telemt", 1, 1, "2", ""]] }), async w => {
     const p = await openPage(w);
     p.querySelector('[data-id="sys"] .kd-fold').click();
     ok("fold: the card closes at once", !p.querySelector('[data-id="sys"] .us-body') && !!p.querySelector('[data-id="telemt"] .us-body') === false);
     await wait(200);
     const [rev, txt] = await sent(w, fcalls);
-    ok("fold: c 1 sent, an unknown id kept in the message", /\ncard gone 1 0\ncard sys 1 1\ncard telemt 1 1\n/.test(txt), txt);
-  }, fm(fcalls, { base: withCfg({ lay: [["c", "gone", 1, 0, ""], ["c", "sys", 1, 0, ""], ["c", "telemt", 1, 1, ""]] }) }), URL0);
+    ok("fold: c 1 sent, an unknown id kept in the message", /\ncard gone 1 0 0\ncard sys 1 1 1\ncard telemt 1 1 2\n/.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "gone", 1, 0, "0", ""], ["c", "sys", 1, 0, "1", ""], ["c", "telemt", 1, 1, "2", ""]] }) }), URL0);
   fcalls = [];
-  await run(withCfg({ lay: [["c", "telemt", 1, 1, ""]] }), async w => {
+  await run(withCfg({ lay: [["c", "telemt", 1, 1, "0", ""]] }), async w => {
     const p = await openPage(w);
     p.querySelector('[data-id="telemt"] .kd-ct').click(); await wait(200);
     const [rev, txt] = await sent(w, fcalls);
-    ok("fold: a click on the title unfolds, c 0", /^keendash 1 [a-z0-9]{12}\ncard telemt 1 0\n/.test(txt), txt);
-  }, fm(fcalls, { base: withCfg({ lay: [["c", "telemt", 1, 1, ""]] }) }), URL0);
+    ok("fold: a click on the title unfolds, c 0", /^keendash 1 [a-z0-9]{12}\ncard telemt 1 0 0\n/.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "telemt", 1, 1, "0", ""]] }) }), URL0);
   await run(full, async w => {
     const p = await openPage(w), d = w.document;
     p.querySelector('[data-id="qb"] .kd-gear').click();
     const dlg = d.querySelector(".kd-dlg");
     ok("gear: opens the settings with that service's form", !!dlg && !!dlg.querySelector('.kd-dlg-i[data-id="qb"] .kd-dlg-form') && !dlg.querySelector('.kd-dlg-i[data-id="agh"] .kd-dlg-form') && dlg.querySelector(".kd-dlg-q").value === "");
   }, null, URL0);
-  // a drag reorders the page list and saves it
+  // a drag: the placeholder takes the column under the pointer, right under the card above it, and the list gets it before the first
+  // card of that column whose middle is below the pointer
+  const ids15 = ["telemt", "awg", "firc", "nfqws", "hydra", "agh", "qb", "plex", "sonarr", "radarr", "prowlarr", "overseerr", "immich", "ascn", "sys"];
+  const only = (lay, ids) => withCfg({ lay, hide: { page: ids15.filter(x => ids.indexOf(x) < 0), main: [] } });
+  const rc = (el, l, t, wd, h) => { el.getBoundingClientRect = () => ({ left: l, top: t, width: wd, height: h, right: l + wd, bottom: t + h }); };
+  const D1 = only([["c", "telemt", 1, 0, "0", ""], ["c", "sys", 1, 0, "1", ""], ["c", "awg", 1, 0, "2", ""], ["c", "hydra", 1, 0, "0", ""]], ["telemt", "sys", "awg", "hydra"]);
   fcalls = [];
-  await run(withCfg({ lay: [["c", "sys", 1, 0, ""], ["c", "telemt", 1, 0, ""], ["c", "awg", 1, 0, ""]] }), async w => {
-    const p = await openPage(w);
-    top(p).forEach((c, i) => { c.getBoundingClientRect = () => ({ left: i * 100, top: 0, width: 90, height: 50, right: i * 100 + 90, bottom: 50 }); });
-    const h = p.querySelector('[data-id="telemt"] .kd-drag'), fire = (t, x) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = x; e.clientY = 25; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
-    fire("pointerdown", 110); fire("pointermove", 280); fire("pointerup", 280); await wait(200);
+  await run(D1, async w => {
+    const p = await openPage(w), c = id => p.querySelector('[data-id="' + id + '"]');
+    Array.from(p.querySelectorAll(".kd-item,.kd-lay")).forEach(e => rc(e, 5000, 5000, 10, 10));
+    rc(p.querySelector(".kd-lay"), 0, 0, 900, 400); rc(c("telemt"), 0, 0, 290, 100); rc(c("sys"), 300, 0, 290, 100); rc(c("awg"), 600, 0, 290, 100); rc(c("hydra"), 0, 124, 290, 100);
+    const h = c("awg").querySelector(".kd-drag"), fire = (t, x, y) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = x; e.clientY = y; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    fire("pointerdown", 650, 10); fire("pointermove", 100, 110);
+    const ph = p.querySelector(".kd-hold");
+    ok("drag: the placeholder takes column 0 under telemt and pushes hydra down", ph && ph.getAttribute("data-x") === "0" && ph.style.top === "124px" && c("hydra").style.top === "248px" && ph.nextElementSibling === c("hydra") && c("awg").style.position === "fixed", ph && ph.style.top + c("hydra").style.top);
+    fire("pointermove", 450, 110);
+    ok("drag: over column 1 the placeholder sits in that column and hydra moves back up", ph.getAttribute("data-x") === "1" && px(ph) === "1" && c("hydra").style.top === "124px", ph.getAttribute("data-x") + c("hydra").style.top);
+    fire("pointermove", 100, 110); fire("pointerup", 100, 110); await wait(200);
     const [rev, txt] = await sent(w, fcalls);
-    ok("page: a drop after awg saves the new order", /^keendash 1 [a-z0-9]{12}\ncard sys 1 0\ncard awg 1 0\ncard telemt 1 0\n/.test(txt), txt);
-    ok("page: the dropped card shows in its new place", top(p).slice(0, 3).map(idOf).join() === "sys,awg,telemt", top(p).slice(0, 3).map(idOf).join());
-  }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 1, 0, ""], ["c", "telemt", 1, 0, ""], ["c", "awg", 1, 0, ""]] }) }), URL0);
+    ok("drag: dropped under telemt in column 0 the card gets x 0 and its place before hydra", /^keendash 1 [a-z0-9]{12}\ncard telemt 1 0 0\ncard sys 1 0 1\ncard awg 1 0 0\ncard hydra 1 0 0\n/.test(txt), txt);
+    ok("drag: the dropped card shows right under telemt", top(p).length === 4 && top(p).slice(0, 4).map(idOf).join() === "telemt,sys,awg,hydra" && c("awg").style.top === "124px" && px(c("awg")) === "0", top(p).slice(0, 4).map(idOf).join());
+  }, fm(fcalls, { base: D1 }), URL0);
+  // dropped below everything in a column: the end of the list; the column is the pointer's, narrowed to fit the card's width
+  fcalls = [];
+  await run(D1, async w => {
+    const p = await openPage(w), c = id => p.querySelector('[data-id="' + id + '"]');
+    Array.from(p.querySelectorAll(".kd-item,.kd-lay")).forEach(e => rc(e, 5000, 5000, 10, 10));
+    rc(p.querySelector(".kd-lay"), 0, 0, 900, 400); rc(c("telemt"), 0, 0, 290, 100); rc(c("sys"), 300, 0, 290, 100); rc(c("awg"), 600, 0, 290, 100); rc(c("hydra"), 0, 124, 290, 100);
+    const h = c("telemt").querySelector(".kd-drag"), fire = (t, x, y) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = x; e.clientY = y; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    fire("pointerdown", 10, 10); fire("pointermove", 450, 390); fire("pointerup", 450, 390); await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("drag: below the cards of column 1 the card goes last with x 1", /^keendash 1 [a-z0-9]{12}\ncard sys 1 0 1\ncard awg 1 0 2\ncard hydra 1 0 0\ncard telemt 1 0 1\nend\n$/.test(txt), txt);
+  }, fm(fcalls, { base: D1 }), URL0);
   // groups: «Новая группа», rename, «Разгруппировать»
   const key = (w, el, k) => el.dispatchEvent(new w.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
-  const L1 = [["c", "sys", 1, 0, ""], ["g", "g1", 3, 0, "Дом"], ["c", "awg", 1, 0, "g1"]];
+  const L1 = [["c", "sys", 1, 0, "0", ""], ["g", "g1", 3, 0, "0", "Дом"], ["c", "awg", 1, 0, "0", "g1"]];
   fcalls = [];
-  await run(withCfg({ lay: [["c", "sys", 1, 0, ""]] }), async w => {
+  await run(withCfg({ lay: [["c", "sys", 1, 0, "0", ""]] }), async w => {
     const p = await openPage(w); p.querySelector(".kd-ng").click();
     const inp = p.querySelector("input.kd-name"), g = top(p)[0];
     ok("group: «Новая группа» is first, 3/3, named, in rename mode with focus", g.getAttribute("data-g") === "g1" && span(g) === 3 && inp && inp.value === "Новая группа" && !inp.hasAttribute("maxlength") && w.document.activeElement === inp && !!g.querySelector(".kd-empty"));
@@ -1986,13 +2051,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("group: the name input keeps its text and focus across a data refresh", p.querySelector("input.kd-name") === inp && inp.value === "Мой дом" && w.document.activeElement === inp);
     await wait(200);
     const [rev, txt] = await sent(w, fcalls);
-    ok("group: creation sends the group first", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 Новая группа\ncard sys 1 0\n/.test(txt) && !/col /.test(txt), txt);
-  }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 1, 0, ""]] }) }), URL0);
+    ok("group: creation sends the group first", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 0 Новая группа\ncard sys 1 0 0\n/.test(txt) && !/col /.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 1, 0, "0", ""]] }) }), URL0);
   fcalls = [];
-  await run(withCfg({ lay: [["g", "g1", 3, 0, "A"], ["g", "g3", 3, 0, "C"]] }), async w => {
+  await run(withCfg({ lay: [["g", "g1", 3, 0, "0", "A"], ["g", "g3", 3, 0, "0", "C"]] }), async w => {
     const p = await openPage(w); p.querySelector(".kd-ng").click();
     ok("group: the lowest free number is taken", top(p).slice(0, 3).map(idOf).join() === "g2,g1,g3");
-  }, fm(fcalls, { base: withCfg({ lay: [["g", "g1", 3, 0, "A"], ["g", "g3", 3, 0, "C"]] }) }), URL0);
+  }, fm(fcalls, { base: withCfg({ lay: [["g", "g1", 3, 0, "0", "A"], ["g", "g3", 3, 0, "0", "C"]] }) }), URL0);
   const renLay = withCfg({ lay: L1 });
   const rename = async (w, name, k) => {
     const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelector(".kd-ren").click();
@@ -2002,17 +2067,17 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   fcalls = [];
   await run(renLay, async w => {
     const p = await rename(w, "  Мой <b>x</b>  "), [rev, txt] = await sent(w, fcalls);
-    ok("rename: Enter sends the trimmed name, shown as text", /\ngroup g1 3 0 Мой <b>x<\/b>\ncard awg 1 0 g1\n/.test(txt) && p.querySelector('[data-g="g1"] .kd-gn').textContent === "Мой <b>x</b>" && !p.querySelector(".kd-gh b") && !p.querySelector("input.kd-name"), txt);
+    ok("rename: Enter sends the trimmed name, shown as text", /\ngroup g1 3 0 0 Мой <b>x<\/b>\ncard awg 1 0 0 g1\n/.test(txt) && p.querySelector('[data-g="g1"] .kd-gn').textContent === "Мой <b>x</b>" && !p.querySelector(".kd-gh b") && !p.querySelector("input.kd-name"), txt);
   }, fm(fcalls, { base: renLay }), URL0);
   fcalls = [];
   await run(renLay, async w => {
     await rename(w, "a\nhide page sys"); const [r2, t2] = await sent(w, fcalls);
-    ok("rename: control characters are removed, no extra line", t2.split("\n").filter(l => /^group /.test(l)).length === 1 && /\ngroup g1 3 0 ahide page sys\n/.test(t2) && !/\nhide /.test(t2), t2);
+    ok("rename: control characters are removed, no extra line", t2.split("\n").filter(l => /^group /.test(l)).length === 1 && /\ngroup g1 3 0 0 ahide page sys\n/.test(t2) && !/\nhide /.test(t2), t2);
   }, fm(fcalls, { base: renLay }), URL0);
   fcalls = [];
   await run(renLay, async w => {
     await rename(w, "x\ty|z\x7f" + "я".repeat(40)); const [rev, txt] = await sent(w, fcalls);
-    ok("rename: tab, | and DEL dropped, cut to 32 characters", txt.indexOf("\ngroup g1 3 0 xyz" + "я".repeat(29) + "\n") > 0, txt);
+    ok("rename: tab, | and DEL dropped, cut to 32 characters", txt.indexOf("\ngroup g1 3 0 0 xyz" + "я".repeat(29) + "\n") > 0, txt);
   }, fm(fcalls, { base: renLay }), URL0);
   for (const [nm, name, k] of [["Esc", "Другое", "Escape"], ["empty", "   ", "Enter"], ["unchanged", "Дом", "Enter"]]) {
     fcalls = [];
@@ -2027,10 +2092,22 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("group menu: widths, rename, ungroup", p.querySelectorAll(".kd-mw").length === 3 && !!p.querySelector(".kd-ren") && !!p.querySelector(".kd-ung"));
     p.querySelector(".kd-ung").click(); await wait(200);
     const [rev, txt] = await sent(w, fcalls);
-    ok("ungroup: the cards take the group's place in order, the group is gone", /^keendash 1 [a-z0-9]{12}\ncard sys 1 0\ncard awg 1 0\ncard /.test(txt) && !/group /.test(txt) && !p.querySelector("[data-g]") && top(p).slice(0, 2).map(idOf).join() === "sys,awg", txt);
+    ok("ungroup: the cards take the group's place in order, the group is gone", /^keendash 1 [a-z0-9]{12}\ncard sys 1 0 0\ncard awg 1 0 0\ncard /.test(txt) && !/group /.test(txt) && !p.querySelector("[data-g]") && top(p).slice(0, 2).map(idOf).join() === "sys,awg", txt);
   }, fm(fcalls, { base: renLay }), URL0);
+  fcalls = [];
+  await run(withCfg({ lay: [["g", "g1", 2, 0, "1", "Дом"], ["c", "awg", 1, 0, "0", "g1"], ["c", "telemt", 3, 0, "0", "g1"], ["c", "hydra", 1, 0, "1", "g1"]] }), async w => {
+    const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelector(".kd-ung").click(); await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("ungroup: x = the group's x + the card's x, kept within the page", /^keendash 1 [a-z0-9]{12}\ncard awg 1 0 1\ncard telemt 3 0 0\ncard hydra 1 0 2\n/.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["g", "g1", 2, 0, "1", "Дом"], ["c", "awg", 1, 0, "0", "g1"], ["c", "telemt", 3, 0, "0", "g1"], ["c", "hydra", 1, 0, "1", "g1"]] }) }), URL0);
+  // a group made narrower pulls its cards' x in
+  fcalls = [];
+  await run(withCfg({ lay: [["g", "g1", 3, 0, "0", "Дом"], ["c", "awg", 1, 0, "2", "g1"], ["c", "telemt", 2, 0, "1", "g1"]] }), async w => {
+    const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelectorAll(".kd-mw")[1].click(); await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("group: a narrower group keeps its cards inside (x + width within the group)", /^keendash 1 [a-z0-9]{12}\ngroup g1 2 0 0 Дом\ncard awg 1 0 1 g1\ncard telemt 2 0 0 g1\n/.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["g", "g1", 3, 0, "0", "Дом"], ["c", "awg", 1, 0, "2", "g1"], ["c", "telemt", 2, 0, "1", "g1"]] }) }), URL0);
   // drag into / out of groups; rects are made up, everything else sits far away
-  const rc = (el, l, t, wd, h) => { el.getBoundingClientRect = () => ({ left: l, top: t, width: wd, height: h, right: l + wd, bottom: t + h }); };
   const gdrag = async (w, p, rects, sel, x, y) => {
     Array.from(p.querySelectorAll(".kd-item,.kd-lay")).forEach(e => rc(e, 5000, 5000, 10, 10));
     rects.forEach(([s, l, t, wd, h]) => rc(p.querySelector(s), l, t, wd, h));
@@ -2039,34 +2116,34 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     return sent(w, fcalls);
   };
   const TOP = [".kd-lay", 0, 0, 1000, 400], G1 = '[data-g="g1"]';
-  const L2 = withCfg({ lay: [["c", "sys", 1, 0, ""], ["g", "g1", 3, 0, "G"], ["c", "awg", 1, 0, "g1"], ["c", "telemt", 1, 0, "g1"]] });
+  const L2 = only([["c", "sys", 1, 0, "0", ""], ["g", "g1", 3, 0, "0", "G"], ["c", "awg", 1, 0, "0", "g1"], ["c", "telemt", 1, 0, "1", "g1"]], ["sys", "awg", "telemt"]);
   fcalls = [];
   await run(L2, async w => {
     const p = await openPage(w);
-    const [rev, txt] = await gdrag(w, p, [TOP, ['[data-id="sys"]', 0, 0, 90, 50], [G1, 0, 100, 300, 200], [G1 + " .kd-lay", 0, 140, 300, 160], ['[data-id="awg"]', 0, 140, 90, 50], ['[data-id="telemt"]', 100, 140, 90, 50]], '[data-id="sys"] .kd-drag', 80, 165);
-    ok("drag: a card goes into a group between its cards", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 G\ncard awg 1 0 g1\ncard sys 1 0 g1\ncard telemt 1 0 g1\n/.test(txt), txt);
+    const [rev, txt] = await gdrag(w, p, [TOP, ['[data-id="sys"]', 0, 0, 90, 50], [G1, 0, 100, 300, 200], [G1 + " .kd-lay", 0, 140, 300, 160], ['[data-id="awg"]', 0, 140, 90, 50], ['[data-id="telemt"]', 100, 140, 90, 50]], '[data-id="sys"] .kd-drag', 80, 150);
+    ok("drag: a card goes into a group in the column under the pointer, before the first card of that column below it", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 0 G\ncard sys 1 0 0 g1\ncard awg 1 0 0 g1\ncard telemt 1 0 1 g1\nend\n$/.test(txt), txt);
     ok("drag: the card shows inside the group", p.querySelector(G1 + ' [data-id="sys"]') && top(p)[0].getAttribute("data-g") === "g1");
   }, fm(fcalls, { base: L2 }), URL0);
-  const L3 = withCfg({ lay: [["c", "sys", 1, 0, ""], ["g", "g1", 3, 0, "G"]] });
+  const L3 = only([["c", "sys", 1, 0, "0", ""], ["g", "g1", 3, 0, "0", "G"]], ["sys"]);
   fcalls = [];
   await run(L3, async w => {
     const p = await openPage(w);
     const [rev, txt] = await gdrag(w, p, [TOP, ['[data-id="sys"]', 0, 0, 90, 50], [G1, 0, 100, 300, 100], [G1 + " .kd-lay", 0, 140, 300, 60]], '[data-id="sys"] .kd-drag', 150, 160);
-    ok("drag: a card goes into an empty group", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 G\ncard sys 1 0 g1\ncard /.test(txt), txt);
+    ok("drag: a card goes into column 1 of an empty group, x 1 within the group", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 0 G\ncard sys 1 0 1 g1\nend\n$/.test(txt), txt);
   }, fm(fcalls, { base: L3 }), URL0);
-  const L4 = withCfg({ lay: [["g", "g1", 3, 0, "G"], ["c", "awg", 1, 0, "g1"], ["c", "telemt", 1, 0, "g1"], ["c", "sys", 1, 0, ""]] });
+  const L4 = only([["g", "g1", 3, 0, "0", "G"], ["c", "awg", 1, 0, "0", "g1"], ["c", "telemt", 1, 0, "1", "g1"], ["c", "sys", 1, 0, "2", ""]], ["awg", "telemt", "sys"]);
   fcalls = [];
   await run(L4, async w => {
     const p = await openPage(w);
-    const [rev, txt] = await gdrag(w, p, [TOP, [G1, 0, 0, 300, 200], [G1 + " .kd-lay", 0, 40, 300, 160], ['[data-id="awg"]', 0, 40, 90, 50], ['[data-id="telemt"]', 100, 40, 90, 50], ['.kd-lay > [data-id="sys"]', 0, 250, 90, 50]], '[data-id="telemt"] .kd-drag', 50, 270);
-    ok("drag: a card goes out of a group to the page", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 G\ncard awg 1 0 g1\ncard sys 1 0\ncard telemt 1 0\n/.test(txt), txt);
+    const [rev, txt] = await gdrag(w, p, [TOP, [G1, 0, 0, 300, 200], [G1 + " .kd-lay", 0, 40, 300, 160], ['[data-id="awg"]', 0, 40, 90, 50], ['[data-id="telemt"]', 100, 40, 90, 50], ['.kd-lay > [data-id="sys"]', 0, 250, 90, 50]], '[data-id="telemt"] .kd-drag', 50, 290);
+    ok("drag: a card goes out of a group to the page, last in its column 0", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 0 G\ncard awg 1 0 0 g1\ncard sys 1 0 2\ncard telemt 1 0 0\nend\n$/.test(txt), txt);
   }, fm(fcalls, { base: L4 }), URL0);
-  const L5 = withCfg({ lay: [["g", "g1", 3, 0, "A"], ["c", "awg", 1, 0, "g1"], ["g", "g2", 3, 0, "B"], ["c", "telemt", 1, 0, "g2"], ["c", "sys", 1, 0, ""]] });
+  const L5 = only([["g", "g1", 3, 0, "0", "A"], ["c", "awg", 1, 0, "0", "g1"], ["g", "g2", 3, 0, "0", "B"], ["c", "telemt", 1, 0, "0", "g2"], ["c", "sys", 1, 0, "0", ""]], ["awg", "telemt", "sys"]);
   fcalls = [];
   await run(L5, async w => {
     const p = await openPage(w);
     const [rev, txt] = await gdrag(w, p, [TOP, [G1, 0, 0, 300, 100], [G1 + " .kd-lay", 0, 40, 300, 60], ['[data-g="g2"]', 0, 150, 300, 100], ['[data-g="g2"] .kd-lay', 0, 190, 300, 60], ['.kd-lay > [data-id="sys"]', 0, 300, 90, 50]], G1 + " .kd-drag", 250, 215);
-    ok("drag: a group dropped over another group's grid stays on the page", /^keendash 1 [a-z0-9]{12}\ngroup g2 3 0 B\ncard telemt 1 0 g2\ngroup g1 3 0 A\ncard awg 1 0 g1\ncard sys 1 0\n/.test(txt) && Array.from(p.querySelector(".kd-lay").children).map(idOf).slice(0, 2).join() === "g2,g1", txt);
+    ok("drag: a group dropped over another group's grid stays on the page", /^keendash 1 [a-z0-9]{12}\ngroup g2 3 0 0 B\ncard telemt 1 0 0 g2\ngroup g1 3 0 0 A\ncard awg 1 0 0 g1\ncard sys 1 0 0\n/.test(txt) && Array.from(p.querySelector(".kd-lay").children).map(idOf).slice(0, 2).join() === "g2,g1", txt);
   }, fm(fcalls, { base: L5 }), URL0);
   const foldTelemt = async w => { const p = await openPage(w); p.querySelector('[data-id="telemt"] .kd-fold').click(); return p; };
   const folded = p => !p.querySelector('[data-id="telemt"] .us-body');
@@ -2117,7 +2194,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelector(".kd-ren").click();
     const inp = p.querySelector("input.kd-name"); typeIn(w, inp, "Новое"); inp.dispatchEvent(new w.Event("blur")); await wait(200);
     const [rev, txt] = await sent(w, fcalls);
-    ok("rename: leaving the field saves the name", /\ngroup g1 3 0 Новое\ncard awg 1 0 g1\n/.test(txt) && !p.querySelector("input.kd-name") && p.querySelector('[data-g="g1"] .kd-gn').textContent === "Новое", txt);
+    ok("rename: leaving the field saves the name", /\ngroup g1 3 0 0 Новое\ncard awg 1 0 0 g1\n/.test(txt) && !p.querySelector("input.kd-name") && p.querySelector('[data-g="g1"] .kd-gn').textContent === "Новое", txt);
   }, fm(fcalls, { base: renLay }), URL0);
   await run(full, async w => {
     const g = w.__servicesWidget.grpName, pair = String.fromCodePoint(0x1F600);
@@ -2133,7 +2210,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   }, fm(fcalls, { base: renLay }), URL0);
   // pointercancel puts everything back
   fcalls = [];
-  const L6 = withCfg({ lay: [["c", "sys", 1, 0, ""], ["c", "telemt", 1, 0, ""], ["c", "awg", 1, 0, ""]] });
+  const L6 = withCfg({ lay: [["c", "sys", 1, 0, "0", ""], ["c", "telemt", 1, 0, "1", ""], ["c", "awg", 1, 0, "2", ""]] });
   await run(L6, async w => {
     const p = await openPage(w);
     top(p).forEach((c, i) => rc(c, i * 100, 0, 90, 50));
@@ -2146,13 +2223,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   await run(renLay, async w => {
     const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-fold').click(); await wait(200);
     const [rev, txt] = await sent(w, fcalls);
-    ok("group: fold sends c 1 on the group line", /\ngroup g1 3 1 Дом\ncard awg 1 0 g1\n/.test(txt) && /^keendash 1 [a-z0-9]{12}\ncard sys 1 0\n/.test(txt), txt);
+    ok("group: fold sends c 1 on the group line", /\ngroup g1 3 1 0 Дом\ncard awg 1 0 0 g1\n/.test(txt) && /^keendash 1 [a-z0-9]{12}\ncard sys 1 0 0\n/.test(txt), txt);
   }, fm(fcalls, { base: renLay }), URL0);
   fcalls = [];
   await run(renLay, async w => {
     const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelectorAll(".kd-mw")[1].click(); await wait(200);
     const [rev, txt] = await sent(w, fcalls);
-    ok("group: width sends w 2 on the group line", /\ngroup g1 2 0 Дом\ncard awg 1 0 g1\n/.test(txt), txt);
+    ok("group: width sends w 2 on the group line", /\ngroup g1 2 0 0 Дом\ncard awg 1 0 0 g1\n/.test(txt), txt);
   }, fm(fcalls, { base: renLay }), URL0);
   // the upload fails: the previous layout comes back with the reason
   fcalls = [];
@@ -2167,7 +2244,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     p.querySelector('[data-id="sys"] .kd-fold').click(); await wait(200);
     const [rev, txt] = await sent(w, fcalls), cards = (txt || "").split("\n").filter(l => /^card /.test(l)).map(l => l.split(" ")[1]);
     ok("page: cols with a repeated id show it once", ids.filter(x => x === "sys").length === 1 && ids.slice(0, 3).join() === "sys,telemt,awg", ids.join());
-    ok("page: the first change after cols migration sends card lines, each id once", /^keendash 1 [a-z0-9]{12}\ncard sys 1 1\ncard telemt 1 0\ncard awg 1 0\n/.test(txt) && !/col /.test(txt) && cards.every((x, i) => cards.indexOf(x) === i), txt);
+    ok("page: the first change after cols migration sends card lines, each id once", /^keendash 1 [a-z0-9]{12}\ncard sys 1 1 0\ncard telemt 1 0 0\ncard awg 1 0 1\n/.test(txt) && !/col /.test(txt) && cards.every((x, i) => cards.indexOf(x) === i), txt);
   }, fm(fcalls, { base: withCfg({ cols: [["sys", "telemt"], ["sys", "awg"]] }) }), URL0);
   // accessibility: names in labels, expanded state, focus back to «⋯»
   await run(withCfg({ lay: lay0 }), async w => {
