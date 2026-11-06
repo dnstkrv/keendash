@@ -56,23 +56,24 @@ if [ -n "$id" ] && [ -d "$PUB" ]; then
     [ -n "${KEENDASH_FRAMES:-}" ] || { printf '%s\n' "$out" | sed -n 's/^frame \([0-9]*\):\(.*\)/\1 \2/p' > "$cm.t" && mv -f "$cm.t" "$cm"; }
     # the server is not trusted (no certificate check): at most 1 MB (one byte more shows it was cut), a JPEG signature, in RAM outside $PUB until then
     get() { dl -qO- --no-check-certificate ${sid:+--header "Cookie: $sid"} "$B/api/$name/latest.jpg?h=240" </dev/null 2>/dev/null | head -c 1048577 > "$t"; }
+    tried=0 good=0
     while read -r i name; do
       case "$i" in [1-8]) ;; *) continue ;; esac
       case "$name" in ""|*[!A-Za-z0-9_-]*) continue ;; esac
       left 0 || break
       have="$have$i "; t=$T/.snap.$id-$i.$$
-      get
-      # a refused fetch in bin/snap: log in again, but not within 30 s of the last login (Frigate limits logins) nor close to the deadline
-      if [ ! -s "$t" ] && [ -n "${KEENDASH_FRAMES:-}" ] && [ -n "${USER:-}" ] && left 3 && [ $(( $(date +%s) - $(date -r "$ck" +%s 2>/dev/null || echo 0) )) -ge 30 ]; then login; get; fi
+      get; tried=$((tried + 1))
       # An empty, failed, cut or not JPEG answer keeps the previous frame; mv is a rename that replaces whatever stands at the target
-      if [ -s "$t" ] && [ "$(wc -c < "$t")" -le 1048576 ] && [ "$(head -c 2 "$t" | od -b | sed -n '1s/^[0-9]* *//p')" = "377 330" ]; then mv -f "$t" "$C/$id-$i.jpg"; else rm -f "$t"; fi
+      if [ -s "$t" ] && [ "$(wc -c < "$t")" -le 1048576 ] && [ "$(head -c 2 "$t" | od -b | sed -n '1s/^[0-9]* *//p')" = "377 330" ]; then mv -f "$t" "$C/$id-$i.jpg"; good=$((good + 1)); else rm -f "$t"; fi
     done < "$cm"
+    # bin/snap: every camera of this run failed, so the cookie may be stale: log in again for the next run, but not within 30 s of the last login (Frigate limits logins) nor close to the deadline
+    if [ -n "${KEENDASH_FRAMES:-}" ] && [ -n "${USER:-}" ] && [ "$tried" -gt 0 ] && [ "$good" = 0 ] && left 3 && [ $(( $(date +%s) - $(date -r "$ck" +%s 2>/dev/null || echo 0) )) -ge 30 ]; then login; fi
   else
     rm -f "$cm" "$ck"
   fi
   if [ -z "${KEENDASH_FRAMES:-}" ]; then
-    # frames of cameras that are gone, skipped (a name the loop refused) or not asked for
-    rm -f "$C/.$id"-[0-9].jpg.t
+    # temps of killed downloads, then frames of cameras that are gone, skipped (a name the loop refused) or not asked for
+    rm -f "$C/.$id"-[0-9].jpg.t "$T/.snap.$id"-[0-9].*
     for f in "$C/$id"-[0-9].jpg; do
       [ -f "$f" ] || continue
       k=${f%.jpg}; k=${k##*-}

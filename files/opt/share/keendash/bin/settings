@@ -218,9 +218,9 @@ apply() {
         # the loop is a pipeline subshell: its exit status says whether every mv/rm worked
         printf '%s\n' "$out" | while read -r op id; do
           case $op in
-            N) rm -f "$TMP/x/$id" "$TMP/s.$id."* "$TMP/chk.$id."* "$TMP/.chk.$id."* "$PUB/cam/$id"-[0-9].jpg "$PUB/cam/.$id"-[0-9].jpg.t || exit 1 ;;
+            N) rm -f "$TMP/x/$id" "$TMP/s.$id."* "$TMP/chk.$id."* "$TMP/.chk.$id."* "$TMP/.cams.$id" "$TMP/.ck.$id" "$PUB/cam/$id"-[0-9].jpg "$PUB/cam/.$id"-[0-9].jpg.t || exit 1 ;;
             M) mv -f "$W/$id.conf" "$ETC/services/$id.conf" || exit 1 ;;
-            R) rm -f "$ETC/services/$id.conf" "$TMP/x/$id" "$TMP/s.$id."* "$TMP/chk.$id."* "$TMP/.chk.$id."* "$PUB/cam/$id"-[0-9].jpg "$PUB/cam/.$id"-[0-9].jpg.t || exit 1 ;;
+            R) rm -f "$ETC/services/$id.conf" "$TMP/x/$id" "$TMP/s.$id."* "$TMP/chk.$id."* "$TMP/.chk.$id."* "$TMP/.cams.$id" "$TMP/.ck.$id" "$PUB/cam/$id"-[0-9].jpg "$PUB/cam/.$id"-[0-9].jpg.t || exit 1 ;;
             U) mv -f "$W/ui.conf" "$ETC/ui.conf" || exit 1 ;;
             # detached, so apply returns at once; KEENDASH_SCAN is for the tests
             S) sh "${KEENDASH_SCAN:-${0%/*}/scan}" </dev/null >/dev/null 2>&1 & ;;

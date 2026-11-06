@@ -76,7 +76,9 @@ done
 # .cams.<id> and .ck.<id>: the camera list and login cookie of ext.d/frigate for bin/snap
 for f in "$TMP"/chk.* "$TMP"/.chk.* "$TMP"/.cams.* "$TMP"/.ck.*; do
   [ -f "$f" ] || continue
-  id=${f##*/}; id=${id#.}; id=${id#chk.}; id=${id#cams.}; id=${id#ck.}; id=${id%%.*}
+  id=${f##*/}
+  case "$id" in .cams.*) id=${id#.cams.} ;; .ck.*) id=${id#.ck.} ;; .chk.*) id=${id#.chk.} ;; *) id=${id#chk.} ;; esac
+  id=${id%%.*}
   case "$ids" in *" $id "*) ;; *) rm -f "$f" ;; esac
 done
 # camera frames <id>-<n>.jpg and their temps .<id>-<n>.jpg.t (ext.d/frigate): the id is what is left of the name without the number

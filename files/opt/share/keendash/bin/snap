@@ -10,15 +10,16 @@ TMP=${KEENDASH_TMP:-/tmp/keendash}
 EXTD=${KEENDASH_EXTD:-/opt/share/keendash/ext.d}
 PUB=${KEENDASH_PUB:-/tmp/mnt/.keendash}
 # a request is cut by dl after DLT; the frames script starts none after END
-LIMIT=${KEENDASH_SNAP_LIMIT:-58} DLT=2
+LIMIT=${KEENDASH_SNAP_LIMIT:-55} DLT=2
 export DLT
 grep -qE "^SNAP='(5|15|30)'$" "$ETC"/services/*.conf 2>/dev/null || exit 0
 L=$TMP/snap.lock
 mkdir -p "$TMP" || exit 1
-# same lock rules as bin/scan: a live pid younger than LIMIT + 60 s holds it, a stale one is taken over by mv (of several runs only one moves it)
+# same lock rules as bin/scan: a lock whose pid is alive (or still empty: a run between create and write) and that is younger than LIMIT + 60 s holds it,
+# any other is taken over by mv (of several runs only one moves it)
 if ! (set -C; echo $$ > "$L") 2>/dev/null; then
   p=$(cat "$L" 2>/dev/null)
-  if [ -z "$p" ] || { kill -0 "$p" 2>/dev/null && [ $(( $(date +%s) - $(date -r "$L" +%s 2>/dev/null || echo 0) )) -lt $((LIMIT + 60)) ]; }; then exit 0; fi
+  if { [ -z "$p" ] || kill -0 "$p" 2>/dev/null; } && [ $(( $(date +%s) - $(date -r "$L" +%s 2>/dev/null || echo 0) )) -lt $((LIMIT + 60)) ]; then exit 0; fi
   mv "$L" "$L.$$" 2>/dev/null || exit 0
   [ "$(cat "$L.$$")" = "$p" ] || { [ -e "$L" ] || mv "$L.$$" "$L"; rm -f "$L.$$"; exit 0; }
   rm -f "$L.$$"; (set -C; echo $$ > "$L") 2>/dev/null || exit 0
@@ -28,7 +29,8 @@ trap '[ "$(cat "$L" 2>/dev/null)" != $$ ] || rm -f "$L"' EXIT
 trap 'exit 1' HUP INT TERM
 END=$(( $(date +%s) + LIMIT ))
 
-# one conf (a subshell: it is sourced): frames of a Frigate instance with SNAP 5, 15 or 30 that are SNAP - 1 s old or missing
+# one conf (a subshell: it is sourced): frames of a Frigate instance with SNAP 5, 15 or 30 when the newest frame or the last attempt (the mtime of its camera
+# list, touched before each fetch, so failed fetches wait SNAP - 1 s too) is that old
 one() {
   unset TYPE URL USER PASS KEY TOKEN MAP HOSTS EVERY SNAP
   . "$1"
@@ -36,16 +38,21 @@ one() {
   case "${SNAP:-}" in 5|15|30) ;; *) return 0 ;; esac
   ID=${1##*/}; ID=${ID%.conf}
   case "$ID" in ""|*[!a-z0-9-]*) return 0 ;; esac
-  new=0
+  cm=$TMP/.cams.$ID
+  [ -f "$cm" ] || return 0
+  new=$(date -r "$cm" +%s 2>/dev/null || echo 0)
   for j in "$PUB/cam/$ID"-[0-9].jpg; do
     [ -f "$j" ] && m=$(date -r "$j" +%s) && [ "${m:-0}" -gt "$new" ] && new=$m
   done
   [ $(( $(date +%s) - new )) -ge $((SNAP - 1)) ] || return 0
+  touch "$cm"
   export ID URL USER PASS SNAP
   KEENDASH_FRAMES=1 KEENDASH_SNAP_END=$END sh "$EXTD/frigate" 2>/dev/null || :
 }
 
-while [ "$(date +%s)" -lt "$END" ]; do
+# at most LIMIT rounds, so a clock set back cannot stretch the run
+n=0
+while [ "$(date +%s)" -lt "$END" ] && [ $((n += 1)) -le "$LIMIT" ]; do
   for f in "$ETC"/services/*.conf; do
     [ -f "$f" ] && ( one "$f" ) &
   done
