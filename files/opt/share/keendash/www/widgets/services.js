@@ -684,7 +684,7 @@
       ".kd-ph h1{font-size:28px;font-weight:700;line-height:36px;margin:0}.kd-pb{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}" +
       ".kd-name{flex:1;min-width:0;padding:4px 8px;border:1px solid #0097dc;border-radius:4px;background:transparent;color:inherit;font:inherit;outline:none}" +
       ".kd-lay{display:grid;gap:24px;grid-template-columns:1fr}.kd-abs{display:block;position:relative}.kd-abs>.kd-item,.kd-abs>.kd-hold{position:absolute}.kd-item{min-width:0}.kd-gh{position:relative;display:flex;align-items:center;gap:8px;min-height:32px;margin-bottom:12px;font-size:16px;font-weight:700}" +
-      ".kd-gn{min-width:0;cursor:pointer}.kd-gc{flex:1;opacity:.55;font-weight:400}.kd-empty{grid-column:1/-1;padding:24px;border:2px dashed rgba(128,128,128,.55);border-radius:8px;text-align:center;opacity:.7}" +
+      ".kd-gn{min-width:0;cursor:pointer}.kd-gc{flex:1;opacity:.55;font-weight:400}.kd-empty{padding:24px;border:2px dashed rgba(128,128,128,.55);border-radius:8px;text-align:center;opacity:.7}" +
       ".kd-ch{position:relative}.kd-c1 .kd-ch{margin-bottom:24px}.kd-ct{cursor:pointer}" +
       ".kd-fold,.kd-gear,.kd-more{flex:none;width:32px;height:32px;margin:-4px 0;padding:0;border:0;border-radius:6px;background:none;color:inherit;font:inherit;font-size:16px;cursor:pointer;opacity:.6}.kd-fold{margin-left:-8px}.kd-fold:hover,.kd-gear:hover,.kd-more:hover{opacity:1;background:rgba(128,128,128,.18)}" +
       ".kd-menu{position:absolute;right:0;top:100%;z-index:50;display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 8px;border:1px solid var(--dashboard-card-border);border-radius:8px;background:var(--dashboard-background);box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:14px;font-weight:400;text-transform:none;letter-spacing:0}" +
@@ -971,17 +971,26 @@
   /* before saving: a card with no x takes the column it was drawn in, every x fits its grid (page: 3 columns, group: its w) */
   function fit(items) {
     function f(it, n) { it.x = Math.max(0, Math.min(it.x || 0, n - Math.min(it.w, n))); }
-    items.forEach(function (it) {
-      if (it.x == null) { var e = page && Array.prototype.filter.call(page.querySelectorAll(".kd-card"), function (k) { return k.getAttribute("data-id") === it.id; })[0]; it.x = e ? +e.getAttribute("data-px") || 0 : 0; }
+    var flat = null;
+    items.forEach(function (it, i) {
+      if (it.x == null) {
+        var e = page && Array.prototype.filter.call(page.querySelectorAll(".kd-card"), function (k) { return k.getAttribute("data-id") === it.id; })[0];
+        if (e && e.hasAttribute("data-px")) it.x = +e.getAttribute("data-px");
+        else { flat = flat || placeItems(items, items.map(function () { return 1; }), 3, 0); it.x = flat[i].x; }
+      }
       f(it, 3); (it.cards || []).forEach(function (c) { f(c, it.w); });
     });
   }
   /* the absolute grids of the page: items sit at x columns of the grid, top from placeItems; a group's own grid goes first (its
-   * height is the group's). Widths first: the heights depend on them. */
+   * height is the group's). Widths first, outer grids first: the heights depend on them. */
   var PGAP = 24;
+  function placed(lay) { return Array.prototype.filter.call(lay.children, function (k) { return k.hasAttribute("data-w") && k.style.position !== "fixed"; }); }
+  function widen(lay) {
+    var cols = +lay.getAttribute("data-cols");
+    placed(lay).forEach(function (k) { k.style.width = "calc((100% + " + PGAP + "px) / " + cols + " * " + Math.min(+k.getAttribute("data-w"), cols) + " - " + PGAP + "px)"; });
+  }
   function placeLay(lay) {
-    var cols = +lay.getAttribute("data-cols"), bottom = 0, ks = Array.prototype.filter.call(lay.children, function (k) { return k.hasAttribute("data-w") && k.style.position !== "fixed"; });
-    ks.forEach(function (k) { k.style.width = "calc((100% + " + PGAP + "px) / " + cols + " * " + Math.min(+k.getAttribute("data-w"), cols) + " - " + PGAP + "px)"; });
+    var cols = +lay.getAttribute("data-cols"), bottom = 0, ks = placed(lay);
     var res = placeItems(ks.map(function (k) { var x = k.getAttribute("data-x"); return { w: +k.getAttribute("data-w"), x: x === "" ? null : +x }; }), ks.map(function (k) { return k.offsetHeight; }), cols, PGAP);
     ks.forEach(function (k, i) {
       k.style.top = res[i].top + "px"; k.style.left = "calc((100% + " + PGAP + "px) / " + cols + " * " + res[i].x + ")"; k.setAttribute("data-px", res[i].x);
@@ -989,7 +998,11 @@
     });
     lay.style.height = ks.length ? bottom + "px" : "";
   }
-  function placeAll() { if (page) Array.prototype.slice.call(page.querySelectorAll(".kd-abs")).reverse().forEach(placeLay); }
+  function placeAll() {
+    if (!page) return;
+    var g = Array.prototype.slice.call(page.querySelectorAll(".kd-abs"));
+    g.forEach(widen); g.reverse().forEach(placeLay);
+  }
   /* a card changing its height (data, frames, folding) places the page again, without drawing it */
   var pageRO = null, roFrame = 0;
   function watchHeights() {
@@ -1135,7 +1148,7 @@
     else if (c(".kd-fold,.kd-ct,.kd-gn")) { it.c = it.c ? 0 : 1; saveLay(items); }
   }
   /* the item's drag handle: a dashed placeholder, placed with the other items, shows where the item lands: in the grid under the
- * pointer (a card also in a group's, the innermost; a group only on the page), in the column under the pointer, in the list before
+ * pointer (a card also in a group's, the innermost; a group only on the page), in the column of its left edge, in the list before
  * the first item of that column whose middle is below the pointer, else last; the drop saves the layout */
   function attachPageDrag(r, handle) {
     handle.style.touchAction = "none"; handle.style.cursor = "grab";
@@ -1160,7 +1173,7 @@
         var ref = null, col = -1;
         grids.forEach(function (g) { var b = g.getBoundingClientRect(); if (e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) lay = g; });
         var abs = lay.classList.contains("kd-abs"), cols = +lay.getAttribute("data-cols"), lb = lay.getBoundingClientRect();
-        if (abs) col = Math.max(0, Math.min(cols - Math.min(rw, cols), lb.width > 0 ? Math.floor((e.clientX - lb.left) / (lb.width / cols)) : 0));
+        if (abs) col = Math.max(0, Math.min(cols - Math.min(rw, cols), lb.width > 0 ? Math.round((e.clientX - offX - lb.left) / ((lb.width + PGAP) / cols)) : 0));
         kids().some(function (k) {
           var b = k.getBoundingClientRect(), px = +k.getAttribute("data-px");
           if ((!abs || (col >= px && col < px + Math.min(+k.getAttribute("data-w"), cols))) && b.top + b.height / 2 > e.clientY) { ref = k; return true; }

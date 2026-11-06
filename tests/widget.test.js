@@ -1977,12 +1977,12 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   // a width change keeps x + w within 3; every line carries x
   fcalls = [];
   await run(withCfg({ lay: [["c", "sys", 1, 0, "2", ""], ["c", "telemt", 1, 0, "1", ""]] }), async w => {
-    const p = await openPage(w);
+    const p = await openPage(w), awgPx = px(p.querySelector('[data-id="awg"]'));
     p.querySelector('[data-id="sys"] .kd-more').click(); p.querySelectorAll(".kd-mw")[1].click(); await wait(200);
     const [rev, txt] = await sent(w, fcalls), L = txt.split("\n").filter(l => /^(card|group) /.test(l));
     ok("menu: 2/3 on a card in column 2 moves it to column 1", /^keendash 1 [a-z0-9]{12}\ncard sys 2 0 1\ncard telemt 1 0 1\n/.test(txt) && dx(p.querySelector('[data-id="sys"]')) === "1", txt);
     ok("message: every line carries x, x + w <= 3", L.length === 15 && L.every(l => { const m = /^(?:card \S+|group g\d+) ([1-3]) [01] ([0-2])( |$)/.exec(l); return m && +m[1] + +m[2] <= 3; }), L.join("|"));
-    ok("message: a card that had no x is sent with the column it was drawn in", L.some(l => /^card awg 1 0 [0-2]$/.test(l)), L.join("|"));
+    ok("message: a card that had no x is sent with the column it was drawn in", L.indexOf("card awg 1 0 " + awgPx) >= 0 && /^[0-2]$/.test(awgPx), L.join("|"));
   }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 1, 0, "2", ""], ["c", "telemt", 1, 0, "1", ""]] }) }), URL0);
   fcalls = [];
   await run(withCfg({ lay: [["c", "gone", 1, 0, "0", ""], ["c", "sys", 1, 0, "1", ""], ["c", "telemt", 1, 1, "2", ""]] }), async w => {
@@ -2120,7 +2120,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   fcalls = [];
   await run(L2, async w => {
     const p = await openPage(w);
-    const [rev, txt] = await gdrag(w, p, [TOP, ['[data-id="sys"]', 0, 0, 90, 50], [G1, 0, 100, 300, 200], [G1 + " .kd-lay", 0, 140, 300, 160], ['[data-id="awg"]', 0, 140, 90, 50], ['[data-id="telemt"]', 100, 140, 90, 50]], '[data-id="sys"] .kd-drag', 80, 150);
+    const [rev, txt] = await gdrag(w, p, [TOP, ['[data-id="sys"]', 0, 0, 90, 50], [G1, 0, 100, 300, 200], [G1 + " .kd-lay", 0, 140, 300, 160], ['[data-id="awg"]', 0, 140, 90, 50], ['[data-id="telemt"]', 100, 140, 90, 50]], '[data-id="sys"] .kd-drag', 40, 150);
     ok("drag: a card goes into a group in the column under the pointer, before the first card of that column below it", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 0 G\ncard sys 1 0 0 g1\ncard awg 1 0 0 g1\ncard telemt 1 0 1 g1\nend\n$/.test(txt), txt);
     ok("drag: the card shows inside the group", p.querySelector(G1 + ' [data-id="sys"]') && top(p)[0].getAttribute("data-g") === "g1");
   }, fm(fcalls, { base: L2 }), URL0);
@@ -2145,6 +2145,15 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const [rev, txt] = await gdrag(w, p, [TOP, [G1, 0, 0, 300, 100], [G1 + " .kd-lay", 0, 40, 300, 60], ['[data-g="g2"]', 0, 150, 300, 100], ['[data-g="g2"] .kd-lay', 0, 190, 300, 60], ['.kd-lay > [data-id="sys"]', 0, 300, 90, 50]], G1 + " .kd-drag", 250, 215);
     ok("drag: a group dropped over another group's grid stays on the page", /^keendash 1 [a-z0-9]{12}\ngroup g2 3 0 0 B\ncard telemt 1 0 0 g2\ngroup g1 3 0 0 A\ncard awg 1 0 0 g1\ncard sys 1 0 0\n/.test(txt) && Array.from(p.querySelector(".kd-lay").children).map(idOf).slice(0, 2).join() === "g2,g1", txt);
   }, fm(fcalls, { base: L5 }), URL0);
+  // the column comes from the dragged item's left edge, not the pointer (the handle is at the right end of the header)
+  const W2 = only([["c", "sys", 2, 0, "0", ""]], ["sys"]);
+  for (const [nm, px2, want] of [["a few px", 15, 0], ["one column width", 10 + 308, 1]]) {
+    fcalls = [];
+    await run(W2, async w => {
+      const p = await openPage(w), [rev, txt] = await gdrag(w, p, [[".kd-lay", 0, 0, 900, 400], ['[data-id="sys"]', 0, 0, 600, 100]], '[data-id="sys"] .kd-drag', px2, 20);
+      ok("drag: a 2/3 card at x 0 dragged " + nm + " lands in x " + want, new RegExp("^keendash 1 [a-z0-9]{12}\\ncard sys 2 0 " + want + "\\nend\\n$").test(txt), txt);
+    }, fm(fcalls, { base: W2 }), URL0);
+  }
   const foldTelemt = async w => { const p = await openPage(w); p.querySelector('[data-id="telemt"] .kd-fold').click(); return p; };
   const folded = p => !p.querySelector('[data-id="telemt"] .us-body');
   fcalls = [];

@@ -52,6 +52,7 @@ list() {
   [ -f "$ETC/ui.conf" ] && awk '$1 == "hide" && NF == 3 && ($2 == "page" || $2 == "main") { print "hide|" $2 "|" $3 }
     $1 == "col" { s = ""; for (i = 3; i <= NF; i++) s = s (i > 3 ? "," : "") $i; print "col|" s }
     # lines from before the x column (a gid or nothing in field 5, a name not led by 0-2) come out with x empty
+    # (an old group named "1 Foo" reads as x 1: the old form only existed in unreleased v2 builds)
     $1 == "group" && match($0, /^group [^ ]+ [^ ]+ [^ ]+ /) { n = substr($0, RLENGTH + 1); x = ""
       if (n ~ /^[0-2] /) { x = substr(n, 1, 1); n = substr(n, 3) }
       print "lay|g|" $2 "|" $3 "|" $4 "|" x "|" n }
