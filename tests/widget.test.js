@@ -1641,7 +1641,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const r = (ok, status, body) => Promise.resolve({ ok, status, json: () => Promise.resolve(body) });
       if (/\/rci\/put$/.test(u)) { if (o.put) return r(false, o.put); rev = JSON.parse(init.body).filename.split("/").pop().replace(".txt", ""); return r(true, 200, { port: { port: "7" } }); }
       if (/\/fui$/.test(u)) { fui = true; return r(true, 200, {}); }
-      return r(true, 200, fui ? Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { rev, err: o.err || "" }) }) : full);
+      const b = o.base || full; return r(true, 200, fui ? Object.assign({}, b, { cfg: Object.assign({}, b.cfg, { rev, err: o.err || "" }) }) : b);
     };
   };
   const post = (fcalls, re) => fcalls.filter(c => re.test(c[0]));
@@ -1871,18 +1871,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
     ok("settings: button disabled while there is no data", d.querySelector(".kd-set").disabled);
   }, w => () => Promise.reject(new Error("down")), URL0);
-  // page layout: fitCols / moveCard, a saved layout with unknown and new ids, a drop that saves it
-  const wide = w => Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { get: () => 900 });
-  const openPage = async w => {
-    const d = w.document; wide(w); d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
+  // page layout: the row grid, widths, collapse, the «⋯» menu, «⚙», saving
+  const wide = (w, n) => Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { configurable: true, get: () => n || 1200 });
+  const openPage = async (w, n) => {
+    const d = w.document; wide(w, n); d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
     d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
     return d.querySelector(".kd-page");
   };
-  await run(full, w => {
-    const W = w.__servicesWidget, j = JSON.stringify, src = [["a", "b"], ["c"], ["d"]];
-    ok("fitCols: fold 3 into 1 and 2", j(W.fitCols(src, 1)) === '[["a","b","c","d"]]' && j(W.fitCols(src, 2)) === '[["a","b"],["c","d"]]' && W.fitCols(src, 5).length === 3);
-    ok("moveCard: into another column, folded view keeps columns", j(W.moveCard(src, "a", "c", null, 0)) === '[["b"],["c","a"],["d"]]' && j(W.moveCard(src, "d", null, "a", 0)) === '[["d","a","b"],["c"],[]]', j(W.moveCard(src, "d", null, "a", 0)));
-  }, null, URL0);
   // frigate frames on the page: the same error listener hides a failed one
   {
     const fp = Object.assign(one("frigate", "Frigate", "Дом", "http://10.0.0.5:5000", { ok: 1, ver: "1", snap: 1793438000, cam: [["a", 5, 0, 0], ["b", 5, 0, 0]] }), { now: Math.floor(Date.now() / 1000) });
@@ -1893,78 +1888,112 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("page: a failed frame hides itself", im[1].style.display === "none" && im[0].style.display !== "none");
     }, w => { w.__keendash = { base: "/storage/.keendash/", st: true, p: "/keendash" }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(fp) }); }, "https://r.example.net/dashboard");
   }
-  await run(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { cols: [["sys", "gone"], ["telemt"]] }) }), async w => {
-    const p = await openPage(w), cs = Array.from(p.querySelectorAll(".kd-col")).map(c => Array.from(c.querySelectorAll(".kd-card")).map(x => x.getAttribute("data-id")));
-    ok("page: saved layout, unknown and new ids", cs.length === 2 && cs[0][0] === "sys" && cs[1][0] === "telemt" && cs[0].length + cs[1].length === 15 && !p.querySelector('[data-id="gone"]'), j2(cs));
-    function j2(x) { return JSON.stringify(x); }
+  const withCfg = o => Object.assign({}, full, { cfg: Object.assign({}, full.cfg, o) });
+  const top = p => Array.from(p.querySelector(".kd-lay").children), idOf = el => el.getAttribute("data-id") || el.getAttribute("data-g");
+  const span = el => +/span (\d)/.exec(el.getAttribute("style"))[1];
+  const lay0 = [["c", "sys", 3, 0, ""], ["c", "telemt", 2, 0, ""], ["g", "g1", 2, 0, "Дом <b>x</b>"], ["c", "awg", 3, 0, "g1"], ["c", "gone", 1, 0, "g1"]];
+  await run(withCfg({ cols: [["sys", "telemt"], ["awg"]] }), async w => {
+    const p = await openPage(w), t = top(p);
+    ok("page: cols migrate row by row, new cards follow with span 1", t.length === 15 && t.slice(0, 3).map(idOf).join() === "sys,awg,telemt" && t.every(x => span(x) === 1), t.slice(0, 4).map(idOf).join());
+  }, null, URL0);
+  await run(withCfg({ lay: lay0 }), async w => {
+    const p = await openPage(w), t = top(p), g = p.querySelector('[data-g="g1"]'), inner = g.querySelector(".kd-lay");
+    ok("page: spans 1/2/3 and appended cards", t.length === 15 && span(t[0]) === 3 && span(t[1]) === 2 && span(g) === 2 && t.slice(3).every(x => span(x) === 1), t.map(x => idOf(x) + span(x)).join());
+    ok("page: group grid has its own columns, card width capped by the group", /repeat\(2,1fr\)/.test(inner.getAttribute("style")) && span(inner.firstElementChild) === 2 && inner.children.length === 1, inner.outerHTML.slice(0, 200));
+    ok("page: unknown layout id not rendered; group name is text", !p.querySelector('[data-id="gone"]') && g.querySelector(".kd-gn").textContent === "Дом <b>x</b>" && !g.querySelector(".kd-gh b") && g.querySelector(".kd-gc").textContent === "1");
+    ok("page: header controls are buttons with aria-label and title", Array.from(p.querySelectorAll(".kd-ch > button,.kd-gh > button")).every(b => b.tagName === "BUTTON" && b.getAttribute("aria-label") && b.getAttribute("title")) && p.querySelectorAll(".kd-drag").length === 16 && p.querySelectorAll(".kd-gh > button").length === 3);
+    ok("page: gear only on service cards", !!p.querySelector('[data-id="qb"] .kd-gear') && !p.querySelector('[data-id="sys"] .kd-gear') && !p.querySelector('[data-id="telemt"] .kd-gear'));
+  }, null, URL0);
+  await run(withCfg({ lay: lay0 }), async w => {
+    const p = await openPage(w, 400), t = top(p);
+    ok("page: under 900 px one column, widths kept in the data", /1fr/.test(p.querySelector(".kd-lay").getAttribute("style")) && !/repeat/.test(p.querySelector(".kd-lay").getAttribute("style")) && t.every(x => span(x) === 1) && /1fr/.test(p.querySelector('[data-g="g1"] .kd-lay').getAttribute("style")));
+  }, null, URL0);
+  await run(withCfg({ lay: [["c", "sys", 1, 1, ""], ["g", "g1", 3, 1, "G"], ["c", "awg", 1, 0, "g1"], ["g", "g2", 3, 0, "Пусто"], ["c", "telemt", 1, 0, "g2"]], hide: { page: ["telemt"], main: [] } }), async w => {
+    const p = await openPage(w), g1 = p.querySelector('[data-g="g1"]'), g2 = p.querySelector('[data-g="g2"]');
+    ok("page: folded card shows only its header", !!p.querySelector('[data-id="sys"] .kd-ch') && !p.querySelector('[data-id="sys"] .us-body') && !!p.querySelector('[data-id="awg"]') === false);
+    ok("page: folded group shows header and count only", !g1.querySelector(".kd-lay") && g1.querySelector(".kd-gc").textContent === "1" && !g1.querySelector(".us-body"));
+    ok("page: group with all cards hidden shows the drop text", g2.textContent.indexOf("Перетащите сюда карточки") >= 0 && g2.querySelector(".kd-gc").textContent === "0" && !p.querySelector('[data-id="telemt"]'), g2.textContent);
   }, null, URL0);
   fcalls = [];
-  await run(full, async w => {
-    const p = await openPage(w), q = w.document, cols = Array.from(p.querySelectorAll(".kd-col"));
-    cols.forEach((c, i) => { c.getBoundingClientRect = () => ({ left: i * 450, top: 0, width: 400, height: 0, right: i * 450 + 400, bottom: 0 }); });
-    const h = p.querySelector('[data-id="telemt"] .kd-drag'), fire = (t, x) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = x; e.clientY = 5; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
-    fire("pointerdown", 10); fire("pointermove", 600); fire("pointerup", 600); await wait(200);
-    const put = post(fcalls, /\/rci\/put$/), msg = post(fcalls, /\/fui$/)[0] && post(fcalls, /\/fui$/)[0][1].body.get("Filedata");
-    const txt = msg ? await new Promise(r => { const f = new w.FileReader(); f.onload = () => r(f.result); f.readAsText(msg); }) : "";
-    ok("page: drop saves the layout", put.length === 1 && /^keendash 1 [a-z0-9]{12}\ncol 0 awg /.test(txt) && /\ncol 1 telemt\ncol 2\nend\n$/.test(txt) && !/col 0 [^\n]*telemt/.test(txt), txt);
-    ok("page: dropped card shows in its new column", p.querySelectorAll(".kd-col")[1].querySelector('[data-id="telemt"]'));
-  }, fm(fcalls, {}), URL0);
-  // drop helper of the layout tests: moves telemt to the column at x, returns the page
-  const dropTelemt = async (w, x) => {
-    const p = await openPage(w), cols = Array.from(p.querySelectorAll(".kd-col"));
-    cols.forEach((c, i) => { c.getBoundingClientRect = () => ({ left: i * 450, top: 0, width: 400, height: 0, right: i * 450 + 400, bottom: 0 }); });
-    const h = p.querySelector('[data-id="telemt"] .kd-drag'), fire = (t, cx) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = cx; e.clientY = 5; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
-    fire("pointerdown", 10); fire("pointermove", x); fire("pointerup", x); await wait(200);
-    return p;
-  };
-  const inCol = (p, k) => !!p.querySelectorAll(".kd-col")[k] && !!p.querySelectorAll(".kd-col")[k].querySelector('[data-id="telemt"]');
-  await run(full, async w => {
-    const d = w.document; d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
-    Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { get: () => 4000 });
-    d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
-    const p = d.querySelector(".kd-page");
-    ok("page: at most 6 columns on a wide screen", p.querySelectorAll(".kd-col").length === 6, p.querySelectorAll(".kd-col").length);
-  }, null, URL0);
-  fcalls = [];
-  await run(full, async w => {
-    const p = await dropTelemt(w, 600);
+  await run(withCfg({ lay: [["c", "sys", 2, 0, ""]] }), async w => {
+    const p = await openPage(w), q = s => p.querySelector(s), mws = () => Array.from(p.querySelectorAll(".kd-mw"));
+    q('[data-id="sys"] .kd-more').click();
+    ok("menu: widths 1/3 2/3 3/3, current marked", mws().map(b => b.textContent).join() === "1/3,2/3,3/3" && mws().filter(b => b.classList.contains("kd-on")).map(b => b.textContent).join() === "2/3" && /Ширина/.test(q(".kd-menu").textContent));
     await w.__servicesWidget.update();
-    ok("page: failed save shows the error and drops the layout", inCol(p, 0) && !inCol(p, 1) && /Не удалось сохранить раскладку: строка 1: неверный номер колонки/.test(p.textContent), p.textContent.slice(0, 200));
-  }, fm(fcalls, { err: "строка 1: неверный номер колонки" }), URL0);
+    ok("menu: a data refresh keeps it open", !!q(".kd-menu"));
+    esc(w);
+    ok("menu: Esc closes", !q(".kd-menu"));
+    q('[data-id="sys"] .kd-more').click(); q(".kd-ph h1").click();
+    ok("menu: a click elsewhere closes", !q(".kd-menu"));
+    q('[data-id="sys"] .kd-more').click(); q('[data-id="sys"] .kd-more').click();
+    ok("menu: the button toggles it", !q(".kd-menu"));
+    q('[data-id="sys"] .kd-more').click(); mws()[2].click();
+    ok("menu: a width click closes it and shows the new width at once", !q(".kd-menu") && span(q('[data-id="sys"]')) === 3);
+    await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("menu: the width goes to the router in the new format", /^keendash 1 [a-z0-9]{12}\ncard sys 3 0\ncard /.test(txt) && /\nend\n$/.test(txt) && !/col |group /.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 2, 0, ""]] }) }), URL0);
+  fcalls = [];
+  await run(withCfg({ lay: [["c", "gone", 1, 0, ""], ["c", "sys", 1, 0, ""], ["c", "telemt", 1, 1, ""]] }), async w => {
+    const p = await openPage(w);
+    p.querySelector('[data-id="sys"] .kd-fold').click();
+    ok("fold: the card closes at once", !p.querySelector('[data-id="sys"] .us-body') && !!p.querySelector('[data-id="telemt"] .us-body') === false);
+    await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("fold: c 1 sent, an unknown id kept in the message", /\ncard gone 1 0\ncard sys 1 1\ncard telemt 1 1\n/.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "gone", 1, 0, ""], ["c", "sys", 1, 0, ""], ["c", "telemt", 1, 1, ""]] }) }), URL0);
+  fcalls = [];
+  await run(withCfg({ lay: [["c", "telemt", 1, 1, ""]] }), async w => {
+    const p = await openPage(w);
+    p.querySelector('[data-id="telemt"] .kd-ct').click(); await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("fold: a click on the title unfolds, c 0", /^keendash 1 [a-z0-9]{12}\ncard telemt 1 0\n/.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "telemt", 1, 1, ""]] }) }), URL0);
+  await run(full, async w => {
+    const p = await openPage(w), d = w.document;
+    p.querySelector('[data-id="qb"] .kd-gear').click();
+    const dlg = d.querySelector(".kd-dlg");
+    ok("gear: opens the settings with that service's form", !!dlg && !!dlg.querySelector('.kd-dlg-i[data-id="qb"] .kd-dlg-form') && !dlg.querySelector('.kd-dlg-i[data-id="agh"] .kd-dlg-form') && dlg.querySelector(".kd-dlg-q").value === "");
+  }, null, URL0);
+  // a drag reorders the page list and saves it
+  fcalls = [];
+  await run(withCfg({ lay: [["c", "sys", 1, 0, ""], ["c", "telemt", 1, 0, ""], ["c", "awg", 1, 0, ""]] }), async w => {
+    const p = await openPage(w);
+    top(p).forEach((c, i) => { c.getBoundingClientRect = () => ({ left: i * 100, top: 0, width: 90, height: 50, right: i * 100 + 90, bottom: 50 }); });
+    const h = p.querySelector('[data-id="telemt"] .kd-drag'), fire = (t, x) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = x; e.clientY = 25; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    fire("pointerdown", 110); fire("pointermove", 280); fire("pointerup", 280); await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("page: a drop after awg saves the new order", /^keendash 1 [a-z0-9]{12}\ncard sys 1 0\ncard awg 1 0\ncard telemt 1 0\n/.test(txt), txt);
+    ok("page: the dropped card shows in its new place", top(p).slice(0, 3).map(idOf).join() === "sys,awg,telemt", top(p).slice(0, 3).map(idOf).join());
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 1, 0, ""], ["c", "telemt", 1, 0, ""], ["c", "awg", 1, 0, ""]] }) }), URL0);
+  const foldTelemt = async w => { const p = await openPage(w); p.querySelector('[data-id="telemt"] .kd-fold').click(); return p; };
+  const folded = p => !p.querySelector('[data-id="telemt"] .us-body');
   fcalls = [];
   await run(full, async w => {
-    const p = await dropTelemt(w, 600);
-    ok("page: no Entware disk -> nothing uploaded, said so", !post(fcalls, /rci|fui/).length && /Не найден диск Entware/.test(p.textContent) && !inCol(p, 1), p.textContent.slice(0, 200));
+    const p = await foldTelemt(w); await wait(200);
+    await w.__servicesWidget.update();
+    ok("page: failed save shows the error and drops the layout", !folded(p) && /Не удалось сохранить раскладку: строка 1: неверная ширина/.test(p.textContent), p.textContent.slice(0, 200));
+  }, fm(fcalls, { err: "строка 1: неверная ширина" }), URL0);
+  fcalls = [];
+  await run(full, async w => {
+    const p = await foldTelemt(w);
+    ok("page: no Entware disk -> nothing uploaded, said so", !post(fcalls, /rci|fui/).length && /Не найден диск Entware/.test(p.textContent) && !folded(p), p.textContent.slice(0, 200));
   }, w => (u, i) => { fcalls.push([u, i || {}]); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { vol: "" }) })) }); }, URL0);
-  // the upload hangs: the dropped layout stays until another rev shows in status.json or 45 s pass
+  // the upload hangs: the saved layout stays until another rev shows in status.json or 45 s pass
   let seen = "r1";
   const hang = w => u => /rci/.test(u) ? new Promise(() => {}) : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { rev: seen }) })) });
   await run(full, async w => {
-    const p = await dropTelemt(w, 600), kept = inCol(p, 1);
+    const p = await foldTelemt(w), kept = folded(p);
     seen = "other"; await w.__servicesWidget.update();
-    ok("page: dropped layout is forgotten when another rev appears", kept && inCol(p, 0) && !inCol(p, 1), kept + " " + inCol(p, 0));
+    ok("page: saved layout is forgotten when another rev appears", kept && !folded(p), kept);
   }, hang, URL0);
   seen = "r1";
   await run(full, async w => {
-    const p = await dropTelemt(w, 600), kept = inCol(p, 1), now = w.Date.now;
-    await w.__servicesWidget.update(); const still = inCol(p, 1);
+    const p = await foldTelemt(w), kept = folded(p), now = w.Date.now;
+    await w.__servicesWidget.update(); const still = folded(p);
     w.Date.now = () => now() + 46000; await w.__servicesWidget.update();
-    ok("page: dropped layout is forgotten after 45 s", kept && still && inCol(p, 0) && !inCol(p, 1), kept + " " + still);
+    ok("page: saved layout is forgotten after 45 s", kept && still && !folded(p), kept + " " + still);
   }, hang, URL0);
-  // no saved layout, one visible column: the drop still saves three columns
-  fcalls = [];
-  await run(full, async w => {
-    const d = w.document; d.body.insertAdjacentHTML("beforeend", layout); await wait(100);
-    Object.defineProperty(w.HTMLElement.prototype, "clientWidth", { get: () => 400 });
-    d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
-    const p = d.querySelector(".kd-page");
-    p.querySelector(".kd-col").getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 0, right: 400, bottom: 0 });
-    const h = p.querySelector('[data-id="telemt"] .kd-drag'), fire = (t, y) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = 10; e.clientY = y; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
-    fire("pointerdown", 5); fire("pointermove", 300); fire("pointerup", 300); await wait(200);
-    const f = post(fcalls, /\/fui$/)[0], blob = f && f[1].body.get("Filedata");
-    const txt = blob ? await new Promise(r => { const fr = new w.FileReader(); fr.onload = () => r(fr.result); fr.readAsText(blob); }) : "";
-    ok("page: first drop on a narrow screen saves 3 columns", p.querySelectorAll(".kd-col").length === 1 && /\ncol 0 /.test(txt) && /\ncol 1(\n|$)/.test(txt) && /\ncol 2(\n|$)/.test(txt) && !/\ncol 3/.test(txt), txt);
-  }, fm(fcalls, {}), URL0);
   // the volume comes from the freshest status, not the snapshot the dialog opened with
   fcalls = []; let novol = true;
   await run(full, async w => {
