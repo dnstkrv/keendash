@@ -63,13 +63,18 @@
 | | Frigate | версия, детектор, занятое место, камеры: FPS, детекции, упавшие |
 | | Moonraker | состояние печати, прогресс, сколько осталось, температуры сопла и стола |
 | | Spoolman | катушек, остаток в граммах, сколько почти кончилось |
-| Серверы | Uptime Kuma | сколько мониторов работает и упало, список с процентом за сутки и полосой последних опросов |
+| Серверы | Uptime Kuma | сколько мониторов работает и упало, список с процентом за сутки и полосой последних 30 опросов (своя история за 24 часа хранится в памяти роутера) |
 | | Grafana | версия, дашборды, сработавшие алерты |
 | | Glances | CPU, память, swap, нагрузка |
 | | Proxmox | узлы в сети, работающие ВМ и LXC, CPU |
 | | Portainer | контейнеры: запущено, остановлено, всего |
 | | TrueNAS | пулы, предупреждения, нагрузка, время работы |
 | | OpenMediaVault | время работы, нагрузка, память |
+| Сеть | Pi-hole | запросы и блокировки с графиками за сутки, топ заблокированных доменов, активные клиенты (только Pi-hole v6) |
+| | NextDNS | запросов за сутки, заблокировано, доля блокировок |
+| | Speedtest Tracker | загрузка, отдача, пинг, сколько прошло с последнего замера |
+| | Nginx Proxy Manager | прокси-хосты (включённые из всех), перенаправления, потоки, когда истекает ближайший сертификат |
+| | Traefik | роутеры, сервисы, предупреждения и ошибки |
 | Доступность | Доступность сайтов | отвечают ли ваши домены и адреса: код и время ответа, доступность за 24 часа |
 
 Если на вкладке «Медиа» больше одного сервиса, у каждого своя подвкладка.
@@ -110,13 +115,15 @@ telemt=hide
 
 Сервисы AdGuard Home, qBittorrent, Plex, Sonarr, Radarr, Prowlarr, Overseerr и Immich (а также новые типы из таблицы выше) больше не настраиваются в `keendash.conf`. Их добавляют, правят и удаляют в окне «Настройки» на странице «Сервисы». Тип можно добавить несколько раз (например, два qBittorrent). При обновлении старые ключи `ADGUARD_*`, `QBIT_*` и т. д. сами переезжают в `/opt/etc/keendash/services/<id>.conf`.
 
-Поля окна: «Адрес» (веб-интерфейс сервиса), «Логин» и «Пароль» (AdGuard Home, qBittorrent, Transmission, NZBGet, Frigate (порт 8971), Glances, OpenMediaVault; Deluge только пароль; у Proxmox в «Логине» ID токена; логин и пароль можно не задавать там, где сервис пускает адрес роутера без них: белые списки qBittorrent и NZBGet; в Transmission логин не нужен, если выключен вход, `rpc-authentication-required`), «API-ключ» (Sonarr, Radarr, Prowlarr, Overseerr, Immich, Jellyfin, Jellyseerr, Lidarr, Bazarr, Tautulli, SABnzbd, Uptime Kuma, Proxmox, Portainer, TrueNAS), «Токен» (Plex, Home Assistant, Grafana), «Что показывать» (Home Assistant и «Свой API»; до 8 пар), «Адреса» и «Интервал» («Доступность сайтов»). Где взять ключи:
+Поля окна: «Адрес» (веб-интерфейс сервиса), «Логин» и «Пароль» (AdGuard Home, Pi-hole (только пароль, можно пустой, если в Pi-hole не задан), Nginx Proxy Manager (e-mail пользователя), Traefik (только при basicAuth), qBittorrent, Transmission, NZBGet, Frigate (порт 8971), Glances, OpenMediaVault; Deluge только пароль; у Proxmox в «Логине» ID токена; логин и пароль можно не задавать там, где сервис пускает адрес роутера без них: белые списки qBittorrent и NZBGet; в Transmission логин не нужен, если выключен вход, `rpc-authentication-required`), «API-ключ» (NextDNS, Sonarr, Radarr, Prowlarr, Overseerr, Immich, Jellyfin, Jellyseerr, Lidarr, Bazarr, Tautulli, SABnzbd, Uptime Kuma, Proxmox, Portainer, TrueNAS), «Токен» (Speedtest Tracker, Plex, Home Assistant, Grafana), «Что показывать» (Home Assistant и «Свой API»; до 8 пар), «Адреса» и «Интервал» («Доступность сайтов»). Где взять ключи:
 
 - Sonarr, Radarr, Prowlarr, Overseerr: Settings → General → API Key, в поле «API-ключ»;
 - Jellyfin: Панель управления → API-ключи → +; Jellyseerr, Lidarr, Bazarr: Settings → General (Bazarr: Security) → API Key; Tautulli: Settings → Web Interface → API Key; SABnzbd: Config → General → API Key;
 - Immich: Настройки аккаунта → API-ключи, ключ администратора с правом `server.statistics`, в поле «API-ключ»;
 - Plex: токен виден в адресе страницы «View XML» у любого фильма ([инструкция Plex](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)), в поле «Токен»;
 - Uptime Kuma: Settings → API Keys; Portainer: My account → Access tokens; TrueNAS: Credentials → API Keys (TrueNAS до 25.10); Grafana: Administration → Service accounts, роль Viewer, в поле «Токен»; Home Assistant: Профиль → Безопасность → Долгосрочные токены, в поле «Токен»;
+- NextDNS: в «Логин» ID профиля (Setup, 6 символов), API-ключ внизу страницы Account; Speedtest Tracker: Settings → API Tokens, право `results:read`;
+- Pi-hole: только v6; пароль веб-интерфейса или пароль приложения (Settings → Web interface / API → App password). keendash входит на время опроса и выходит сам, иначе сессии копились бы до лимита и Pi-hole отвечал бы 429; Nginx Proxy Manager: лучше отдельный пользователь с правом только просмотра; Traefik: адрес API (`api.insecure`, порт 8080, или роутер на `api@internal`);
 - Proxmox: Datacenter → Permissions → API Tokens, роль PVEAuditor; в «Логин» ID токена (`root@pam!keendash`), в «API-ключ» его секрет. **Сертификат Proxmox, Frigate и TrueNAS не проверяется** (обычно он самоподписанный); остальные типы проверяют сертификат, для самоподписанного используйте http-адрес. TrueNAS — только https, ключ, отправленный по http, TrueNAS отзывает; Frigate — `https://хост:8971` с логином или `http://хост:5000` без.
 
 #### Доступность сайтов
@@ -125,7 +132,7 @@ telemt=hide
 
 #### Свой API и плитки
 
-Тип «Свой API» читает любой адрес с JSON (GET). Поля: «Адрес», при необходимости «Логин» и «Пароль», «API-ключ», «Токен». В поле «Что показывать» через `;` (до 8 пар) пишут `Подпись=путь[:формат]`, например `Задачи=queue.total; Скорость=speed:bs`. Формат: `n` число, `b` байты, `bs` байты в секунду, `p` проценты, `s` секунды, без формата просто текст.
+Тип «Свой API» читает любой адрес с JSON (GET). Поля: «Адрес», при необходимости «Логин» и «Пароль», «API-ключ», «Токен». В поле «Что показывать» через `;` (до 8 пар) пишут `Подпись=путь[:формат]`, например `Задачи=queue.total; Скорость=speed:bs`. Формат: `n` число, `b` байты, `bs` байты в секунду, `bit` биты в секунду (Мбит/с), `p` проценты, `s` секунды, без формата просто текст.
 
 Ключ, вписанный в адрес (`?apikey=…`), хранится как обычное поле и виден в окне: лучше использовать поле «API-ключ» или «Токен».
 
