@@ -1,9 +1,9 @@
 #!/bin/sh
 # name: Frigate
 # group: Дом
-# fields: url user pass snap
+# fields: url user pass snap stream
 # probe: 5000,https:8971 / Frigate
-# hint: Адрес https://хост:8971 и логин Frigate либо http://хост:5000 без логина. Сертификат не проверяется. Кадры — при входе в роутер по https, живой поток — по http в домашней сети
+# hint: Адрес https://хост:8971 и логин Frigate либо http://хост:5000 без логина. Сертификат не проверяется. Кадры с камер — с выбранным интервалом, живой поток — по http в домашней сети
 # Frigate NVR (certificate not checked, 8971 is usually self-signed): version, detector speed, cameras (fps 0 = no stream), storage; the login (only with USER) goes in a JSON body, its cookie into the stats request.
 # SNAP=1, 5, 15, 30 or 60 (1 is the old "yes" = 60): a frame of every camera (up to 8) into $PUB/cam/<ID>-<n>.jpg, n = place in the sorted list; $PUB is tmpfs, the web UI serves it only to a logged-in user.
 # The minute run also writes the camera list $TMP/.cams.<ID> ("<n> <name>") and, for SNAP 5/15/30, the login cookie $TMP/.ck.<ID> (mode 600). With KEENDASH_FRAMES=1 (bin/snap, every SNAP seconds) only the frames
@@ -18,8 +18,8 @@ esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 login() {
   sid=$(dl -S -O /dev/null --no-check-certificate --header 'Content-Type: application/json' --post-data "{\"user\":\"$(esc "$USER")\",\"password\":\"$(esc "${PASS:-}")\"}" "$B/api/login" </dev/null 2>&1 |
     sed -n 's/.*[Ss]et-[Cc]ookie: *\(frigate_token=[^;[:space:]]*\).*/\1/p' | head -n 1)
-  # kept for bin/snap; written even when the login failed, so that it is not repeated every second
-  case "${SNAP:-}" in 5|15|30) [ -z "$id" ] || (umask 077; mkdir -p "$T" && echo "$sid" > "$ck.t" && mv -f "$ck.t" "$ck") ;; esac
+  # kept for bin/snap; written even when the login failed, so that it is not repeated every second. Frigate down (no sid) must not replace a valid cookie: only touch it
+  case "${SNAP:-}" in 5|15|30) [ -z "$id" ] || { [ -z "$sid" ] && [ -f "$ck" ] && touch "$ck"; } || (umask 077; mkdir -p "$T" && echo "$sid" > "$ck.t" && mv -f "$ck.t" "$ck") ;; esac
 }
 left() { [ -z "${KEENDASH_SNAP_END:-}" ] || [ $(( $(date +%s) + $1 )) -lt "$KEENDASH_SNAP_END" ]; }
 if [ -n "${KEENDASH_FRAMES:-}" ]; then
@@ -73,7 +73,9 @@ if [ -n "$id" ] && [ -d "$PUB" ]; then
   fi
   if [ -z "${KEENDASH_FRAMES:-}" ]; then
     # temps of killed downloads, then frames of cameras that are gone, skipped (a name the loop refused) or not asked for
-    rm -f "$C/.$id"-[0-9].jpg.t "$T/.snap.$id"-[0-9].*
+    # (a temp whose pid, the last dot field, is alive is bin/snap's download in progress)
+    rm -f "$C/.$id"-[0-9].jpg.t
+    for f in "$T/.snap.$id"-[0-9].*; do [ -f "$f" ] && ! kill -0 "${f##*.}" 2>/dev/null && rm -f "$f"; done
     for f in "$C/$id"-[0-9].jpg; do
       [ -f "$f" ] || continue
       k=${f%.jpg}; k=${k##*-}

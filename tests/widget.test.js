@@ -208,10 +208,10 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     gclick(w, m, "Дом");
     ok("frigate: a camera name with markup is text, no detector and storage -> dashes", !m.querySelector("img") && m.querySelector(".us-row .us-nm").textContent === "<img src=x onerror=alert(1)>" && vals(m) === "1|—|—", vals(m));
   });
-  // frigate frames (x.snap): over https an <img> under each camera row, its src made of the instance id and the row number only; over http one note
+  // frigate frames (x.snap): an <img> under each camera row, its src made of the instance id and the row number only, from the web UI's own /storage/ path (http too)
   {
     const fnow = Math.floor(Date.now() / 1000), SN = fnow - 77, cams = [["front|door", 5, 0.4, 0], ["<b>x</b>", 0, 0, 1]];
-    const fgs = x => Object.assign(fg(x), { now: fnow }), SNOTE = "Кадры с камер видны при входе в роутер по https";
+    const fgs = x => { const d = Object.assign(fg(x), { now: fnow }); d.inst[0].push("", "", "", "1"); return d; }, SNOTE = "Кадры с камер видны при входе в роутер по https";
     const https = d => w => { w.__keendash = { base: "/storage/.keendash/", st: true }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(d) }); };
     await run(fgs({ ok: 1, ver: "1", snap: SN, cam: cams }), (w, m) => {
       gclick(w, m, "Дом");
@@ -221,17 +221,103 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("frigate snap, https: the img sits right under its row, no http note", rows[0].nextElementSibling === im[0] && rows[1].nextElementSibling === im[1] && !m.textContent.includes(SNOTE), m.innerHTML);
       im[0].dispatchEvent(new w.Event("error"));
       ok("frigate snap: a failed image hides itself, the other stays", im[0].style.display === "none" && im[1].style.display !== "none");
-      ok("frigate snap: the image reserves its space (aspect-ratio) so the card doesn't jump", /\.us-snap\{[^}]*aspect-ratio:16\/9/.test(w.document.getElementById("us-style").textContent));
+      ok("frigate snap: the image reserves its space (aspect-ratio) so the card doesn't jump", /\.us-snap,\.us-stream\{[^}]*aspect-ratio:16\/9/.test(w.document.getElementById("us-style").textContent));
       ok("frigate snap: nothing from the API in the src", !/%3C|<b>|front|door/.test(im.map(i => i.getAttribute("src")).join()));
     }, https(fgs({ ok: 1, ver: "1", snap: SN, cam: cams })), "https://r.example.net/");
     await run(fgs({ ok: 1, ver: "1", cam: cams }), (w, m) => {
       gclick(w, m, "Дом");
       ok("frigate no snap, https: no img, no note", !m.querySelector("img") && !m.textContent.includes(SNOTE), m.innerHTML);
     }, https(fgs({ ok: 1, ver: "1", cam: cams })), "https://r.example.net/");
-    await run(fgs({ ok: 1, ver: "1", snap: SN, cam: cams }), (w, m) => {
+    // the live stream (a[11] = go2rtc's address): http + stream -> go2rtc iframes; http + Frigate http:// without a login -> its MJPEG; otherwise the frames (https too)
+    const SAND = "allow-scripts allow-same-origin", GO = "http://go2.test:1984", FR = "http://10.0.0.5:5000";
+    const fgw = (o, x) => { const d = fgs(x || { ok: 1, ver: "1", snap: SN, cam: cams }), i = d.inst[0]; if (o.url) i[3] = o.url; i[4] = o.user || ""; if (o.sn !== undefined) i[10] = o.sn; i[11] = o.stream || ""; return d; };
+    const ifr = m => Array.from(m.querySelectorAll("iframe")), mj = m => Array.from(m.querySelectorAll("img.us-stream")), fr = m => Array.from(m.querySelectorAll("img.us-snap"));
+    const at = e => Array.from(e.attributes).map(a => a.name).sort().join(), srcs = a => a.map(e => e.getAttribute("src"));
+    await run(fgw({ user: "admin" }), (w, m) => {
       gclick(w, m, "Дом");
-      ok("frigate snap, http: no img, one note", !m.querySelector("img") && m.textContent.split(SNOTE).length === 2 && !!m.querySelector(".us-note"), m.innerHTML);
+      const im = fr(m), rows = Array.from(m.querySelectorAll(".us-row"));
+      ok("frigate snap, http (a login, no stream): frames from the web UI's own /storage/ path, right under the rows, no note, no stream nodes", im.length === 2 && srcs(im).join() === "/storage/.keendash/cam/frigate-1.jpg?" + SN + ",/storage/.keendash/cam/frigate-2.jpg?" + SN &&
+        rows[0].nextElementSibling === im[0] && rows[1].nextElementSibling === im[1] && !m.textContent.includes(SNOTE) && !m.querySelector(".us-stream,iframe"), m.innerHTML);
     });
+    await run(fgw({ url: "https://10.0.0.5:8971" }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate snap, http, Frigate over https and no stream: frames, not MJPEG", fr(m).length === 2 && !m.querySelector(".us-stream,iframe"), m.innerHTML);
+    });
+    await run(fgw({}), (w, m) => {
+      gclick(w, m, "Дом");
+      const im = mj(m), rows = Array.from(m.querySelectorAll(".us-row"));
+      ok("frigate stream, http, Frigate http:// without a login: an MJPEG img per camera row, the name encoded, no frames", im.length === 2 && im.every(e => at(e) === "alt,class,src" && e.getAttribute("alt") === "") &&
+        srcs(im).join() === FR + "/api/front%7Cdoor?fps=5&height=240," + FR + "/api/%3Cb%3Ex%3C%2Fb%3E?fps=5&height=240" && rows[0].nextElementSibling === im[0] && !fr(m).length && !ifr(m).length && !m.textContent.includes(SNOTE), m.innerHTML);
+    });
+    await run(fgw({ url: FR + "/" }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate stream, MJPEG: a trailing slash of the address is dropped", srcs(mj(m))[0] === FR + "/api/front%7Cdoor?fps=5&height=240", srcs(mj(m)).join());
+    });
+    await run(fgw({ stream: GO + "/" }), (w, m) => {
+      gclick(w, m, "Дом");
+      const f = ifr(m), rows = Array.from(m.querySelectorAll(".us-row"));
+      ok("frigate stream, http: a go2rtc iframe per camera row with exactly these attributes, the name encoded, a trailing slash dropped", f.length === 2 && f.every(e => at(e) === "allow,class,referrerpolicy,sandbox,src" && e.className === "us-stream" && e.getAttribute("sandbox") === SAND && e.getAttribute("referrerpolicy") === "no-referrer" && e.getAttribute("allow") === "autoplay") &&
+        srcs(f).join() === GO + "/stream.html?src=front%7Cdoor&mode=mse,webrtc," + GO + "/stream.html?src=%3Cb%3Ex%3C%2Fb%3E&mode=mse,webrtc", f.map(e => e.outerHTML).join(" "));
+      ok("frigate stream, http: the iframe sits right under its row and wins over MJPEG and frames; no note", rows[0].nextElementSibling === f[0] && rows[1].nextElementSibling === f[1] && !m.querySelector("img") && !m.textContent.includes(SNOTE), m.innerHTML);
+      ok("frigate stream: the stream nodes reserve their space too", /\.us-snap,\.us-stream\{[^}]*aspect-ratio:16\/9/.test(w.document.getElementById("us-style").textContent));
+    });
+    await run(fgw({ stream: GO }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate stream, https: frames only, no iframe, no MJPEG", fr(m).length === 2 && !m.querySelector("iframe,.us-stream"), m.innerHTML);
+    }, https(fgw({ stream: GO })), "https://r.example.net/");
+    await run(fgw({}), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate stream, https and Frigate http://: frames, no MJPEG", fr(m).length === 2 && !m.querySelector("iframe,.us-stream"), m.innerHTML);
+    }, https(fgw({})), "https://r.example.net/");
+    await run(fgw({ stream: GO, sn: "0" }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate SNAP 0: no stream, no frames, no note", !m.querySelector("img,iframe") && !m.textContent.includes(SNOTE), m.innerHTML);
+    });
+    await run(fgw({ sn: "0" }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate SNAP 0 (Frigate http://): no MJPEG either", !m.querySelector("img,iframe"), m.innerHTML);
+    });
+    // a camera name from Frigate is data: only encodeURIComponent in the URL, only esc() in the HTML
+    const EVIL = ["a\"b<c>&d/e?f g#h", "x\" onload=\"alert(1)", "<img src=x onerror=alert(1)>"], ecams = EVIL.map(n => [n, 5, 0, 0]);
+    for (const [nm, o, sel, pre, post] of [["iframe", { stream: GO }, "iframe", GO + "/stream.html?src=", "&mode=mse,webrtc"], ["MJPEG", {}, "img.us-stream", FR + "/api/", "?fps=5&height=240"]]) {
+      await run(fgw(o, { ok: 1, ver: "1", snap: SN, cam: ecams }), (w, m) => {
+        gclick(w, m, "Дом");
+        const e = Array.from(m.querySelectorAll(sel));
+        ok("frigate stream " + nm + ": hostile camera names go through encodeURIComponent, no attribute break-out", e.length === 3 && e.every((x, i) => x.getAttribute("src") === pre + encodeURIComponent(EVIL[i]) + post && at(x) === (nm === "iframe" ? "allow,class,referrerpolicy,sandbox,src" : "alt,class,src")) &&
+          !m.querySelector("[onload],[onerror]") && m.querySelectorAll("img").length === (nm === "iframe" ? 0 : 3) &&
+          Array.from(m.querySelectorAll(".us-nm")).map(x => x.textContent).join("|") === EVIL.join("|"), m.innerHTML);
+      });
+    }
+    // an address that is not http(s):// never reaches an iframe src (bin/settings refuses it too)
+    for (const bs of ["javascript:alert(1)", "data:text/html,<b>x", "ftp://go2.test", "//go2.test", " http://go2.test", "HTTP://go2.test", "go2.test:1984", "vbscript:x"]) {
+      await run(fgw({ stream: bs }), (w, m) => {
+        gclick(w, m, "Дом");
+        ok("frigate stream " + JSON.stringify(bs) + ": ignored by the widget, no iframe, falls back to MJPEG", !m.querySelector("iframe") && !/javascript:|data:text|vbscript:|ftp:|go2\.test/.test(m.innerHTML) && mj(m).length === 2, m.innerHTML);
+      });
+    }
+    // status updates every few seconds: the same stream nodes after the re-render (no reconnect), hidden page -> src cleared, visible -> restored; a tab left -> the nodes go
+    for (const [nm, o, sel, off] of [["iframe", { stream: GO }, "iframe", "about:blank"], ["MJPEG", {}, "img.us-stream", ""]]) {
+      const d1 = fgw(o), d2 = fgw(o, { ok: 1, ver: "2", snap: SN, cam: [["front|door", 9, 1, 0], ["<b>x</b>", 0, 0, 1]] });
+      let cur = d1, hid = false;
+      await run(d1, async (w, m) => {
+        gclick(w, m, "Дом");
+        const d = w.document, a = Array.from(m.querySelectorAll(sel)), row = m.querySelector(".us-row"), src0 = srcs(a), now = () => Array.from(m.querySelectorAll(sel));
+        Object.defineProperty(d, "hidden", { configurable: true, get: () => hid });
+        cur = d2; await w.__servicesWidget.update();
+        ok("frigate stream " + nm + ": a status update re-renders the card but the stream nodes are the same objects, in place, same src", m.querySelector(".us-row") !== row && /FPS 9/.test(m.textContent) && a.length === 2 && now().length === 2 && a.every((e, i) => e === now()[i] && e.isConnected && e.getAttribute("src") === src0[i]) &&
+          Array.from(m.querySelectorAll(".us-row"))[0].nextElementSibling === a[0], srcs(now()).join());
+        hid = true; d.dispatchEvent(new w.Event("visibilitychange"));
+        ok("frigate stream " + nm + ": a hidden page clears the src", a.every(e => e.isConnected && e.getAttribute("src") === off), srcs(a).join());
+        await w.__servicesWidget.update();
+        ok("frigate stream " + nm + ": a re-render while hidden keeps the same nodes cleared", now().length === 2 && a.every((e, i) => e === now()[i] && e.getAttribute("src") === off), srcs(now()).join());
+        hid = false; d.dispatchEvent(new w.Event("visibilitychange"));
+        ok("frigate stream " + nm + ": visible again restores the src", a.every((e, i) => e.getAttribute("src") === src0[i]), srcs(a).join());
+        m.querySelector('[data-tab="sys"]').dispatchEvent(new w.Event("click", { bubbles: true }));
+        ok("frigate stream " + nm + ": a card that is not shown has no stream (nodes detached, src cleared)", a.every(e => !e.isConnected && e.getAttribute("src") === off) && !m.querySelector(sel), srcs(a).join());
+        gclick(w, m, "Дом");
+        ok("frigate stream " + nm + ": shown again -> a fresh node with the src", now().length === 2 && now().every((e, i) => e !== a[i] && e.getAttribute("src") === src0[i]), srcs(now()).join());
+      }, w => () => Promise.resolve({ ok: true, json: () => Promise.resolve(cur) }));
+    }
     await run(fgs({ ok: 1, ver: "1", snap: SN, cam: Array.from({ length: 10 }, (_, i) => ["c" + i, 5, 0, 0]) }), (w, m) => {
       gclick(w, m, "Дом");
       ok("frigate snap, https: at most 8 images", m.querySelectorAll("img").length === 8 && m.querySelectorAll("img")[7].getAttribute("src") === "/storage/.keendash/cam/frigate-8.jpg?" + SN, m.querySelectorAll("img").length);
@@ -240,7 +326,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     // 1 and 60 (a minute): the src moves only with x.snap
     const wt = ms => new Promise(r => setTimeout(r, ms));
     const clk = { t: 1800000000000 };
-    const live = (sn, x) => { const d = fgs(x); d.now = clk.t / 1000; d.inst[0].push("", "", "", sn); return d; };
+    const live = (sn, x) => { const d = fgs(x); d.now = clk.t / 1000; d.inst[0][10] = sn; return d; };
     const httpsAt = d => w => { w.__keendash = { base: "/storage/.keendash/", st: true }; w.Date.now = () => clk.t; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(d) }); };
     for (const sn of ["5", "15", "30"]) {
       clk.t = 1800000000000;
@@ -567,7 +653,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
 
     r = settingsRun(Object.assign({ "tmp/vol": "v1:\n", "tmp/settings.state": "rev r1\nerr \n" }, base, { "etc/ui.conf": UI + "col 0 telemt awg\ncol 1 qb-2\ngroup g1 2 0 1 Дом и сеть\ncard sys 1 0 0 g1\ncard qb-2 2 1 1\ngroup g2 2 0 Старая\ncard old 1 0 g2\ncard old2 2 1\n" }), "list");
     ok("settings list", r.out === "vol|v1:\nrev|r1\nerr|\ntype|plex|Plex|Медиа|url,token|\ntype|qb|qBittorrent|Медиа|url,user,pass|\n" +
-      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token||||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass||||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|2|0|1|Дом и сеть\nlay|c|sys|1|0|0|g1\nlay|c|qb-2|2|1|1|\nlay|g|g2|2|0||Старая\nlay|c|old|1|0||g2\nlay|c|old2|2|1||\n" &&
+      "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token|||||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass|||||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|2|0|1|Дом и сеть\nlay|c|sys|1|0|0|g1\nlay|c|qb-2|2|1|1|\nlay|g|g2|2|0||Старая\nlay|c|old|1|0||g2\nlay|c|old2|2|1||\n" &&
       !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
     r.rm();
 
@@ -638,13 +724,13 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/settings apply: map limits (32 characters, 8 pairs, spaces)", /^rev m3\nerr \n$/.test(r.rd("tmp/settings.state")) && /^MAP=/m.test(r.rd("etc/services/c.conf")), r.rd("tmp/settings.state"));
     r.rm();
     r = settingsRun({ "ext.d/mp": MP, "etc/services/c.conf": MC + "MAP='A=x.y'\n", "etc/services/d.conf": MC }, "list");
-    ok("bin/settings list: map", /\ninst\|c\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|A=x.y\|\|\|\n/.test(r.out) && /\ninst\|d\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|\|\|\|\n/.test(r.out), JSON.stringify(r.out));
+    ok("bin/settings list: map", /\ninst\|c\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|A=x.y\|\|\|\|\n/.test(r.out) && /\ninst\|d\|mp\|M\|http:\/\/10.0.0.7:1\|\|\|\|\|\|\|\n/.test(r.out), JSON.stringify(r.out));
     r.rm();
 
     // hosts and every (the check type): types() keeps the fields, apply checks them like the browser does, list prints them last
     const CK = "#!/bin/sh\n# name: CK\n# group: Доступность\n# fields: hosts every\n", KC = "TYPE='ck'\nNAME='K'\n", kbase = { "ext.d/ck": CK, "etc/services/k.conf": KC };
     r = settingsRun({ "ext.d/ck": CK, "etc/services/k.conf": KC + "HOSTS='a.test b.test:81'\nEVERY='15'\n" }, "list");
-    ok("bin/settings types and list: hosts, every", r.out.startsWith("type|ck|CK|Доступность|hosts,every|\n") && r.out.includes("\ninst|k|ck|K|||||a.test b.test:81|15|\n"), JSON.stringify(r.out));
+    ok("bin/settings types and list: hosts, every", r.out.startsWith("type|ck|CK|Доступность|hosts,every|\n") && r.out.includes("\ninst|k|ck|K|||||a.test b.test:81|15||\n"), JSON.stringify(r.out));
     r.rm();
     const HOK = "a.test b.test:8443,https://c.test/x?y=1&z=%20 http://d.test:8080", hfail = [];
     [HOK, "  a.test  ", "a.test,", ["a.test", "b-c.test", "1.2.3.4:80"].concat(Array.from({ length: 17 }, (_, i) => "h" + i + ".test")).join(" ")].forEach(v => {
@@ -684,7 +770,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     // snap (the Frigate type): the last field of an inst line, the frame interval 0 1 5 15 30 60 (1 is the old "yes" = 60)
     const FG = "#!/bin/sh\n# name: FG\n# group: Дом\n# fields: url snap\n", FC = "TYPE='fg'\nNAME='F'\nURL='http://h'\n", fbase = { "ext.d/fg": FG, "etc/services/f.conf": FC };
     r = settingsRun({ "ext.d/fg": FG, "etc/services/f.conf": FC + "SNAP='1'\n" }, "list");
-    ok("bin/settings types and list: snap after every", r.out.startsWith("type|fg|FG|Дом|url,snap|\n") && r.out.includes("\ninst|f|fg|F|http://h||||||1\n"), JSON.stringify(r.out));
+    ok("bin/settings types and list: snap after every", r.out.startsWith("type|fg|FG|Дом|url,snap|\n") && r.out.includes("\ninst|f|fg|F|http://h||||||1|\n"), JSON.stringify(r.out));
     r.rm();
     const sfail = [];
     ["0", "1", "5", "15", "30", "60"].forEach(v => {
@@ -700,6 +786,28 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/settings apply: snap is 0, 1, 5, 15, 30 or 60", !sfail.length, sfail.join("; "));
     r = settingsRun({ "var/inbox/s3.txt": msg("s3", ["set qb-2 snap 1"]), "etc/services/qb-2.conf": QB }, "apply");
     ok("bin/settings apply: snap only for types that list it", r.rd("tmp/settings.state") === "rev s3\nerr строка 2: неизвестное поле snap\n" && r.rd("etc/services/qb-2.conf") === QB, r.rd("tmp/settings.state"));
+    r.rm();
+
+    // stream (the Frigate type, go2rtc's address): field 12 of an inst line; empty or http(s)://host[:port][/path], up to 256 bytes, none of @ ' " | $ ` < > \ , spaces and control characters
+    const GF = "#!/bin/sh\n# name: FG\n# group: Дом\n# fields: url snap stream\n", gbase = { "ext.d/fg": GF, "etc/services/f.conf": FC };
+    r = settingsRun({ "ext.d/fg": GF, "etc/services/f.conf": FC + "SNAP='5'\nSTREAM='http://g.test:1984'\n" }, "list");
+    ok("bin/settings types and list: stream is the 12th field of inst", r.out.startsWith("type|fg|FG|Дом|url,snap,stream|\n") && r.out.includes("\ninst|f|fg|F|http://h||||||5|http://g.test:1984\n") && r.out.split("\n").filter(l => /^inst\|/.test(l))[0].split("|").length === 12, JSON.stringify(r.out));
+    r.rm();
+    const gfail = [];
+    ["http://g.test:1984", "https://g.test", "http://10.0.0.9:1984/", "http://g.test:1984/sub/path?a=1&b=%20#x", "http://h/" + "a".repeat(240), ""].forEach(v => {
+      r = settingsRun(Object.assign({ "var/inbox/g1.txt": msg("g1", ["set f stream " + v]) }, gbase), "apply");
+      if (r.rd("tmp/settings.state") !== "rev g1\nerr \n" || r.rd("etc/services/f.conf") !== FC + (v ? "STREAM='" + v + "'\n" : "")) gfail.push(v.slice(0, 40) + " -> " + r.rd("tmp/settings.state"));
+      r.rm();
+    });
+    ok("bin/settings apply: stream accepted (http, https, port, path, empty)", !gfail.length, gfail.join("; "));
+    ["http://user:pw@h:1984", "javascript:alert(1)", "http://h:1984/\"><b>", "http://" + "h".repeat(600), "http://" + "h".repeat(250), "ftp://h", "h:1984", "//h:1984", "http://", "http:///x", "http://h:1984/a b", "http://h'x", "http://h|x", "http://h$x", "http://h`x", "http://h<x", "http://h>x", "http://h\\x", "http://h@x", "http://h:99999999", "http://h:", "http://h:1984x", "HTTP://h", "http://h:19 84"].forEach(v => {
+      r = settingsRun(Object.assign({ "var/inbox/g2.txt": msg("g2", ["set f stream " + v]) }, gbase), "apply");
+      if (r.rd("tmp/settings.state") !== "rev g2\nerr строка 2: неверный адрес go2rtc\n" || r.rd("etc/services/f.conf") !== FC) gfail.push(JSON.stringify(v.slice(0, 40)) + " -> " + r.rd("tmp/settings.state"));
+      r.rm();
+    });
+    ok("bin/settings apply: bad stream rejected with «неверный адрес go2rtc», nothing written", !gfail.length, gfail.join("; "));
+    r = settingsRun({ "var/inbox/g3.txt": msg("g3", ["set qb-2 stream http://g.test:1984"]), "etc/services/qb-2.conf": QB }, "apply");
+    ok("bin/settings apply: stream only for types that list it", r.rd("tmp/settings.state") === "rev g3\nerr строка 2: неизвестное поле stream\n" && r.rd("etc/services/qb-2.conf") === QB, r.rd("tmp/settings.state"));
     r.rm();
 
     // a deleted or newly added id starts without the cache and history of an earlier one with the same id
@@ -1113,6 +1221,12 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       fs1("http://frigate.test:5000/snap");
       ok("ext.d/frigate snap: stale download temps of this instance are removed, other instances' stay", fs.readdirSync(sd).filter(n => /^\.snap\./.test(n)).sort().join() === ".snap.fg-1-2-3.4242,.snap.fg-2-1.4242", fs.readdirSync(sd).join());
       for (const n of [".snap.fg-1-2-3.4242", ".snap.fg-2-1.4242"]) fs.rmSync(path.join(sd, n));
+      // a temp of a live process (the bin/snap loop is downloading into it) stays, the same instance's dead one goes
+      const livetmp = ".snap.fg-1-4." + process.pid;
+      for (const n of [livetmp, ".snap.fg-1-4.4242"]) fs.writeFileSync(path.join(sd, n), "j");
+      fs1("http://frigate.test:5000/snap");
+      ok("ext.d/frigate snap: the minute run keeps a download temp whose pid is alive", fs.readdirSync(sd).filter(n => /^\.snap\./.test(n)).join() === livetmp, fs.readdirSync(sd).join());
+      fs.rmSync(path.join(sd, livetmp));
       for (const v of ["5", "15", "30", "60"]) {
         o = fs1("http://frigate.test:5000/snap", "ID=fg-1 SNAP=" + v + " ");
         ok("ext.d/frigate snap: SNAP=" + v + " fetches the frames in the minute run as SNAP=1 does", ls() === "fg-1-1.jpg,fg-1-2-1.jpg,fg-1-2.jpg,fg-2-1.jpg,other.txt" && lgs().length === 2 && o.split("\n").pop() === snapLine() && sf(".cams.fg-1") === "1 front\n2 garage\n", ls() + " / " + o);
@@ -1140,7 +1254,15 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       o = fs1("http://frigate.test:8971", "ID=fg-1 SNAP=5 USER=admin PASS='p\"a\\ss' ");
       ok("ext.d/frigate snap: SNAP=5 and a login -> the cookie file in the tmp dir, not under $PUB", sf(".ck.fg-1") === "frigate_token=abc\n" && !fs.readdirSync(pub).concat(fs.readdirSync(cam)).some(n => /ck|cams/.test(n)), sf(".ck.fg-1"));
       ok("ext.d/frigate snap: the cookie file is mode 600", sf(".ck.fg-1") !== null && (fs.statSync(path.join(sd, ".ck.fg-1")).mode & 0o777) === 0o600);
-      fs.rmSync(path.join(sd, ".ck.fg-1")); fs.rmSync(cam, { recursive: true });
+      // Frigate is down at the next minute run: a valid cookie is kept (only touched, so that bin/snap does not log in at once), no cookie yet -> an empty file
+      const ck = path.join(sd, ".ck.fg-1"), at = Date.now() / 1000 - 1000;
+      fs.utimesSync(ck, at, at);
+      fs1("http://frigate.test:8971", "ID=fg-1 SNAP=5 USER=admin PASS=wrong ");
+      ok("ext.d/frigate snap: a failed re-login keeps the valid cookie and touches it", sf(".ck.fg-1") === "frigate_token=abc\n" && Date.now() / 1000 - fs.statSync(ck).mtimeMs / 1000 < 100, sf(".ck.fg-1") + " " + (Date.now() / 1000 - fs.statSync(ck).mtimeMs / 1000));
+      fs.rmSync(ck);
+      fs1("http://frigate.test:8971", "ID=fg-1 SNAP=5 USER=admin PASS=wrong ");
+      ok("ext.d/frigate snap: a failed login with no cookie yet leaves an empty cookie file", sf(".ck.fg-1") === "\n", JSON.stringify(sf(".ck.fg-1")));
+      fs.rmSync(ck); fs.rmSync(cam, { recursive: true });
       fs1("http://frigate.test:8971", "ID=fg-1 SNAP=1 USER=admin PASS='p\"a\\ss' ");
       ok("ext.d/frigate snap: SNAP=1 and a login -> no cookie file", sf(".ck.fg-1") === null, sf(".ck.fg-1"));
       // SNAP not 1, 5, 15, 30 or 60: this id's frames, temps, camera list and cookie go, nothing printed, no frame requests, other ids stay
@@ -1523,8 +1645,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-x-")), pub = fs.mkdtempSync(path.join(os.tmpdir(), "kd-p-")), cam = path.join(pub, "cam");
       fs.mkdirSync(cam); ["s1-1.jpg", "s2-3.jpg", "gone-1.jpg", ".gone-2.jpg.t", "s1-9-1.jpg", "gone-2-1.jpg", ".s2-4.jpg.t", "README.jpg", "n.txt"].forEach(n => fs.writeFileSync(path.join(cam, n), "j"));
-      collect("ext", "", "", { state: sd, env: "SNAP=leak KEENDASH_PUB=" + unix(pub) + " ", files: { "ext.d/snapt": "#!/bin/sh\necho ok 1\necho \"s=$SNAP\"\n", "etc/services/s1.conf": "TYPE='snapt'\nSNAP='1'\n", "etc/services/s2.conf": "TYPE='snapt'\n" } });
-      ok("bin/ext: SNAP exported from the conf, unset when the conf has none", rd(sd, "x/s1") === "ok 1\ns=1\n" && rd(sd, "x/s2") === "ok 1\ns=\n", JSON.stringify([rd(sd, "x/s1"), rd(sd, "x/s2")]));
+      collect("ext", "", "", { state: sd, env: "SNAP=leak STREAM=leak KEENDASH_PUB=" + unix(pub) + " ", files: { "ext.d/snapt": "#!/bin/sh\necho ok 1\necho \"s=$SNAP$STREAM\"\n", "etc/services/s1.conf": "TYPE='snapt'\nSNAP='1'\nSTREAM='http://g.test:1984'\n", "etc/services/s2.conf": "TYPE='snapt'\n" } });
+      ok("bin/ext: SNAP and STREAM exported from the conf, unset when the conf has none", rd(sd, "x/s1") === "ok 1\ns=1http://g.test:1984\n" && rd(sd, "x/s2") === "ok 1\ns=\n", JSON.stringify([rd(sd, "x/s1"), rd(sd, "x/s2")]));
       ok("bin/ext: removed instance -> its frames and temps go, other ids and files stay", fs.readdirSync(cam).sort().join() === ".s2-4.jpg.t,README.jpg,n.txt,s1-1.jpg,s2-3.jpg", fs.readdirSync(cam).sort().join());
       fs.rmSync(sd, { recursive: true, force: true }); fs.rmSync(pub, { recursive: true, force: true });
     }
@@ -1718,7 +1840,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
-    fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b|h.test x.test|15|1\n" +
+    fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b|h.test x.test|15|1|http://g.test:1984\n" +
       "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|3|0|0|Дом \"a\" \\b\nlay|c|sys|1|0|1|\nlay|c|qb-2|2|1||g1\n" +
       "scan|state|run|3|12|1700000000\nscan|found|192.168.1.5|a \"q\" \\b|jellyfin|http://192.168.1.5:8096\nscan|found|192.168.1.1|Роутер|metube|http://192.168.1.1:8081\n");
     fs.mkdirSync(path.join(sd, "x"));
@@ -1748,8 +1870,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       try { s0 = JSON.parse(cp.execFileSync(kd, ["status"], { env: Object.assign({}, env, { KEENDASH_SETTINGS: "printf 'scan|state|run\\nscan|found|10.0.0.5|n\\n'" }), encoding: "utf8" })); } catch (e) { s0 = e.message; }
       ok("keendashd status: cfg.scan with a cut-short line is valid JSON", s0 && s0.cfg && s0.cfg.scan && s0.cfg.scan.state === "run" && s0.cfg.scan.n === 0 && s0.cfg.scan.of === 0 && s0.cfg.scan.at === 0 && JSON.stringify(s0.cfg.scan.found) === '[["10.0.0.5","n","",""]]', JSON.stringify(s0 && s0.cfg));
       ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"], 'Ключ: "x"'], ["pl", "Plex", "Медиа", ["url", "token"], ""]]), JSON.stringify(s.types));
-      ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b", "h.test x.test", "15", "1"],
-        ["pl", "plex", "Plex", "http://p", "", ["token"], null, "", "", "", ""]]), JSON.stringify(s.inst));
+      ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b", "h.test x.test", "15", "1", "http://g.test:1984"],
+        ["pl", "plex", "Plex", "http://p", "", ["token"], null, "", "", "", "", ""]]), JSON.stringify(s.inst));
       ok("keendashd status: instance series (a key named t too), no old third-party keys", eq(s.series["qb-2.dl"], [4, 5]) && eq(s.series["qb-2.t"], [7]) && !("agh" in s) && !("media" in s) && !("qb_dl" in s.series), JSON.stringify(s.series));
     }
 
@@ -2243,6 +2365,46 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const [rev, txt] = await sent(w, fcalls);
     ok("dialog: a new instance sends snap 0", txt === "keendash 1 " + rev + "\nadd frigate frigate\nset frigate name Frigate\nset frigate url http://h:5000\nset frigate snap 0\nend\n", JSON.stringify(txt));
   }, cf(fcalls, frg), URL0);
+  // stream (Frigate): «Адрес go2rtc», empty by default, checked like the router does; a change goes as set <id> stream <value>, clearing sends an empty value
+  const frs = Object.assign({}, full, { types: [["frigate", "Frigate", "Дом", ["url", "snap", "stream"], ""]], inst: [["fg", "frigate", "Камеры", "http://h:5000", "", [], null, "", "", "", "5", "http://g.test:1984"], ["fg-2", "frigate", "Двор", "http://h:5001", "", [], null, "", "", "", "5", ""]] });
+  fcalls = [];
+  await run(frs, async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s), st = id => q('input[data-f="stream"][data-id="' + id + '"]');
+    q('.kd-dlg-i[data-id="fg"] .kd-dlg-hd').click();
+    ok("dialog: stream is a text field «Адрес go2rtc» with the example as placeholder, filled from the router", !!st("fg") && st("fg").parentNode.querySelector("span").textContent === "Адрес go2rtc" && st("fg").getAttribute("placeholder") === "http://хост:1984" && st("fg").value === "http://g.test:1984" && !q(".kd-dlg-save"));
+    typeIn(w, st("fg"), "");
+    q(".kd-dlg-save").click(); await wait(100);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("dialog: a cleared stream is sent as an empty value", txt === "keendash 1 " + rev + "\nset fg stream \nend\n", JSON.stringify(txt));
+  }, cf(fcalls, frs), URL0);
+  fcalls = [];
+  await run(frs, async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s), st = id => q('input[data-f="stream"][data-id="' + id + '"]'), hh = id => st(id).parentNode.querySelector(".kd-dlg-hint").textContent;
+    q('.kd-dlg-i[data-id="fg-2"] .kd-dlg-hd').click();
+    ok("dialog: an unset stream is empty", st("fg-2").value === "");
+    for (const v of ["javascript:alert(1)", "http://u:p@h:1984", "ftp://h", "http://h/a b", "http://h|x", "http://h:1984/" + "a".repeat(260), "http://h'x"]) {
+      typeIn(w, st("fg-2"), v);
+      if (hh("fg-2") !== "Неверный адрес go2rtc") ok("dialog: bad stream " + JSON.stringify(v.slice(0, 30)) + " is flagged", false, hh("fg-2"));
+    }
+    typeIn(w, st("fg-2"), "http://h:1984/x?y=1");
+    ok("dialog: a good stream address has no error", hh("fg-2") === "");
+    typeIn(w, st("fg-2"), "ftp://h"); q(".kd-dlg-save").click(); await wait(100);
+    ok("dialog: a bad stream is not sent", !post(fcalls, /\/rci\/put$/).length);
+    typeIn(w, st("fg-2"), "https://go.test");
+    q(".kd-dlg-save").click(); await wait(100);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("dialog: stream sent as set <id> stream <value>", txt === "keendash 1 " + rev + "\nset fg-2 stream https://go.test\nend\n", JSON.stringify(txt));
+  }, cf(fcalls, frs), URL0);
+  fcalls = [];
+  await run(frs, async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s);
+    q('.kd-dlg-add[data-type="frigate"]').click();
+    ok("dialog: a new instance has an empty stream", q('input[data-f="stream"][data-id="frigate"]').value === "");
+    typeIn(w, q('input[data-f="url"][data-id="frigate"]'), "http://h:5000");
+    q(".kd-dlg-save").click(); await wait(100);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("dialog: a new instance sends no empty stream", txt === "keendash 1 " + rev + "\nadd frigate frigate\nset frigate name Frigate\nset frigate url http://h:5000\nset frigate snap 0\nend\n", JSON.stringify(txt));
+  }, cf(fcalls, frs), URL0);
   await run(full, async w => {
     const dlg = await openDlg(w);
     dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
@@ -2275,12 +2437,26 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   // frigate frames on the page: the same error listener hides a failed one
   {
     const fp = Object.assign(one("frigate", "Frigate", "Дом", "http://10.0.0.5:5000", { ok: 1, ver: "1", snap: 1793438000, cam: [["a", 5, 0, 0], ["b", 5, 0, 0]] }), { now: Math.floor(Date.now() / 1000) });
+    fp.inst[0].push("", "", "", "1", "");
     await run(fp, async w => {
       const p = await openPage(w), im = p.querySelectorAll('[data-id="frigate"] img.us-snap');
       ok("page: frigate frames are there over https", im.length === 2 && im[1].getAttribute("src") === "/storage/.keendash/cam/frigate-2.jpg?1793438000", p.innerHTML.slice(0, 300));
       im[1].dispatchEvent(new w.Event("error"));
       ok("page: a failed frame hides itself", im[1].style.display === "none" && im[0].style.display !== "none");
     }, w => { w.__keendash = { base: "/storage/.keendash/", st: true, p: "/keendash" }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(fp) }); }, "https://r.example.net/dashboard");
+    const fq = Object.assign(one("frigate", "Frigate", "Дом", "http://10.0.0.5:5000", { ok: 1, ver: "1", snap: 1793438000, cam: [["a b", 5, 0, 0], ["b", 5, 0, 0]] }), { now: Math.floor(Date.now() / 1000) });
+    fq.inst[0].push("", "", "", "1", "http://go2.test:1984");
+    fq.cfg = full.cfg;
+    await run(fq, async w => {
+      const mm = w.document.querySelector('[data-services="1"]'); gclick(w, mm, "Дом"); const own = mm.querySelectorAll("iframe").length;
+      const p = await openPage(w), f = Array.from(p.querySelectorAll('[data-id="frigate"] iframe'));
+      ok("page, http: the card has a go2rtc iframe per camera", f.length === 2 && f[0].getAttribute("src") === "http://go2.test:1984/stream.html?src=a%20b&mode=mse,webrtc" && f.every(e => e.getAttribute("sandbox") === "allow-scripts allow-same-origin"), p.innerHTML.slice(0, 300));
+      ok("page: the dashboard's own card is hidden behind the page and has no stream", own === 2 && !w.document.querySelector('[data-services="1"] iframe'), own + " " + w.document.querySelector('[data-services="1"]').innerHTML.slice(0, 300));
+      p.querySelector('[data-id="frigate"] .kd-fold').click(); await wait(200);
+      ok("page: a folded card has no stream, the nodes are detached and their src cleared", !p.querySelector('[data-id="frigate"] iframe') && f.every(e => !e.isConnected && e.getAttribute("src") === "about:blank"), p.innerHTML.slice(0, 300));
+      p.querySelector('[data-id="frigate"] .kd-fold').click(); await wait(200);
+      ok("page: unfolded again -> the stream is back", p.querySelectorAll('[data-id="frigate"] iframe').length === 2 && p.querySelector('[data-id="frigate"] iframe').getAttribute("src").startsWith("http://go2.test:1984/stream.html?src=a%20b"), p.innerHTML.slice(0, 300));
+    }, w => { w.__keendash = { p: "/keendash" }; return u => /rci/.test(u) ? new Promise(() => {}) : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fq) }); }, "http://192.168.0.1/dashboard");
   }
   const withCfg = o => Object.assign({}, full, { cfg: Object.assign({}, full.cfg, o) });
   const top = p => Array.from(p.querySelector(".kd-lay").children), idOf = el => el.getAttribute("data-id") || el.getAttribute("data-g");

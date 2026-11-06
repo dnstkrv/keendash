@@ -28,7 +28,7 @@ types() {
     FNR <= 20 && /^# name: / { n = substr($0, 9) }
     FNR <= 20 && /^# group: / { g = substr($0, 10) }
     FNR <= 20 && /^# hint: / { h = substr($0, 9); gsub("[|]", "", h); h = chars(h, 200) }
-    FNR <= 20 && /^# fields: / { f = ""; k = split(substr($0, 11), a, " "); for (i = 1; i <= k; i++) if (a[i] ~ /^(url|user|pass|key|token|map|hosts|every|snap)$/) f = f (f == "" ? "" : ",") a[i] }
+    FNR <= 20 && /^# fields: / { f = ""; k = split(substr($0, 11), a, " "); for (i = 1; i <= k; i++) if (a[i] ~ /^(url|user|pass|key|token|map|hosts|every|snap|stream)$/) f = f (f == "" ? "" : ",") a[i] }
     END { out() }' "$@"
 }
 
@@ -47,7 +47,7 @@ list() {
     match($0, /^[A-Z]+=/) && substr($0, RLENGTH + 1, 1) == q { v = substr($0, RLENGTH + 2); if (substr(v, length(v)) == q) v = substr(v, 1, length(v) - 1)
       gsub(q "\\\\" q q, q, v); V[substr($0, 1, RLENGTH - 1)] = v }
     function out(  s) { s = (V["PASS"] != "" ? ",pass" : "") (V["KEY"] != "" ? ",key" : "") (V["TOKEN"] != "" ? ",token" : "")
-      print "inst|" id "|" V["TYPE"] "|" V["NAME"] "|" V["URL"] "|" V["USER"] "|" substr(s, 2) "|" V["MAP"] "|" V["HOSTS"] "|" V["EVERY"] "|" V["SNAP"] }
+      print "inst|" id "|" V["TYPE"] "|" V["NAME"] "|" V["URL"] "|" V["USER"] "|" substr(s, 2) "|" V["MAP"] "|" V["HOSTS"] "|" V["EVERY"] "|" V["SNAP"] "|" V["STREAM"] }
     END { if (id != "") out() }' "$@"
   [ -f "$TMP/scan" ] && sed 's/^/scan|/' "$TMP/scan"
   [ -f "$ETC/ui.conf" ] && awk '$1 == "hide" && NF == 3 && ($2 == "page" || $2 == "main") { print "hide|" $2 "|" $3 }
@@ -91,6 +91,12 @@ function okhosts(v,  n, a, i, e, k, b, j, g) {
     if (!g) { bad("неверный адрес: " e); return }
   }
 }
+# stream (go2rtc): http(s)://host[:port][/path] of up to 256 ASCII characters, none of the hbad ones or @
+function okstream(v,  i) {
+  if (length(v) > 256 || v !~ /^https?:\/\/[A-Za-z0-9.-]+(:[0-9][0-9]?[0-9]?[0-9]?[0-9]?)?(\/[!-~]*)?$/ || index(v, "@")) return 0
+  for (i = 1; i <= length(hbad); i++) if (index(v, substr(hbad, i, 1))) return 0
+  return 1
+}
 function clr(id,  k, p) { for (k in V) { split(k, p, SUBSEP); if (p[1] == id) delete V[k] } }
 function sq(v,  o, i) { o = ""; while ((i = index(v, q)) > 0) { o = o substr(v, 1, i - 1) q "\\" q q; v = substr(v, i + 1) } return q o v q }
 function hides(w, o,  n, a, k, p, i, j, t) {
@@ -117,6 +123,7 @@ $1 == "set" { s = substr($0, 5); id = s; sub(/ .*/, "", id); s = substr(s, lengt
   c = v; gsub(cont, "", c)
   if (!(id in E)) bad("нет сервиса " id)
   else if (f != "name" && (f !~ /^[a-z]+$/ || !index(F[V[id, "TYPE"]], " " f " "))) bad("неизвестное поле " f)
+  else if (f == "stream" && v != "" && !okstream(v)) bad("неверный адрес go2rtc")
   else if (length(v) > 512) bad("значение длиннее 512 байт")
   else if (v ~ ctl) bad("управляющий символ в значении")
   else if ((f == "name" || f == "url" || f == "user") && index(v, "|")) bad("символ | в поле " f)

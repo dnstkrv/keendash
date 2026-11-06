@@ -426,18 +426,49 @@
       if (s !== n) i.setAttribute("src", n);
     });
   }
+  /* live stream nodes of the Frigate cards. The markup has a slot per camera (.us-lv: key instance-row, kind i = iframe / m = img, the address); attachLive puts the node of that
+   * key in its place, the same object as the render before (ctx m = the card, p = the page). A hidden page has no src; a node whose slot is gone (tab left, card folded or hidden) is detached */
+  var LIVE = /^https?:\/\//, live = {};
+  function liveSlot(k, t, s) { return '<div class="us-lv" data-lk="' + k + '" data-lt="' + t + '" data-ls="' + esc(s) + '"></div>'; }
+  /* setting an iframe's src again would reload it: only when it differs */
+  function liveSrc(e) { var w = document.hidden ? e.off : e.s; if (e.el.getAttribute("src") !== w) e.el.setAttribute("src", w); }
+  function liveGone(k) { var e = live[k]; e.el.setAttribute("src", e.off); if (e.el.parentNode) e.el.parentNode.removeChild(e.el); delete live[k]; }
+  function liveDrop(ctx, seen) { Object.keys(live).forEach(function (k) { if (k.charAt(0) === ctx && !seen[k]) liveGone(k); }); }
+  function attachLive(root, ctx) {
+    var seen = {};
+    Array.prototype.forEach.call(root.querySelectorAll(".us-lv"), function (ph) {
+      var k = ctx + ph.getAttribute("data-lk"), t = ph.getAttribute("data-lt"), s = ph.getAttribute("data-ls"), e = live[k], el;
+      /* the address is checked here too, the iframe src is never made of anything else */
+      if (!LIVE.test(s) || (t !== "i" && t !== "m")) { ph.parentNode.removeChild(ph); return; }
+      if (e && (e.s !== s || e.t !== t)) { liveGone(k); e = null; }
+      if (!e) {
+        el = document.createElement(t === "i" ? "iframe" : "img"); el.className = "us-stream";
+        if (t === "i") { el.setAttribute("sandbox", "allow-scripts allow-same-origin"); el.setAttribute("referrerpolicy", "no-referrer"); el.setAttribute("allow", "autoplay"); } else el.setAttribute("alt", "");
+        e = live[k] = { t: t, s: s, off: t === "i" ? "about:blank" : "", el: el };
+      }
+      seen[k] = 1; liveSrc(e); ph.parentNode.replaceChild(e.el, ph);
+    });
+    liveDrop(ctx, seen);
+  }
   /* x.ver, x.det + x.inf (detector, ms), x.used/x.total (bytes); x.cam = [[name, fps, detections/s, 1 when fps is 0]]; x.snap: the time (epoch) of the newest frame in the router's
-   * $PUB/cam (ext.d/frigate), shown over https only: the src is made of the instance id, the row number and x.snap (the cache key; the time bucket with SNAP 5/15/30), never of the API's text */
+   * $PUB/cam (ext.d/frigate). With SNAP set (inst.snap not 0), up to 8 cameras get under their row: over http a go2rtc iframe (inst.stream, http(s):// only) or, with no stream, Frigate's own MJPEG
+   * (an http:// address, no login); otherwise the frame, whose src is the web UI's own /storage/ path made of the instance id, the row number and x.snap (the cache key; the time bucket with
+   * SNAP 5/15/30), never of the API's text. A camera's name goes into the stream URL only through encodeURIComponent */
   VIEW.frigate = function (x, ser, d, inst) {
-    var sn = /^(5|15|30)$/.test(inst.snap) ? +inst.snap : 0;
+    var on = inst.snap !== "0", sn = /^(5|15|30)$/.test(inst.snap) ? +inst.snap : 0, nsn = 0;
+    var go = !ST && LIVE.test(inst.stream || "") ? inst.stream.replace(/\/+$/, "") : "", mj = !ST && !go && /^http:\/\//.test(inst.url || "") && !inst.user ? inst.url.replace(/\/+$/, "") : "";
     var h = '<div class="us-grid">' + blk("Версия", x.ver ? esc(x.ver) : "—", null) + blk("Детектор", x.det ? esc(x.det) + " · " + (+x.inf || 0) + " мс" : "—", null) +
       blk("Занято", x.total > 0 ? fmtBytes(x.used) + " из " + fmtBytes(x.total) : "—", null) + "</div>";
     (x.cam || []).forEach(function (c, n) {
       h += c[3] ? line(BAD, esc(c[0]), "нет потока") : line(OK, esc(c[0]), "FPS " + (+c[1] || 0) + " · детекций " + (+c[2] || 0) + "/с");
-      if (x.snap && ST && n < 8) h += '<img class="us-snap" loading="lazy" alt="" src="' + BASE + "cam/" + esc(inst.id) + "-" + (n + 1) + ".jpg?" + (sn ? Math.floor(Date.now() / 1000 / sn) : +x.snap || 0) + '"' + (sn ? ' data-sn="' + sn + '"' : "") + ">";
+      if (!on || n >= 8) return;
+      var nm = encodeURIComponent(c[0]), k = esc(inst.id) + "-" + (n + 1);
+      if (go) h += liveSlot(k, "i", go + "/stream.html?src=" + nm + "&mode=mse,webrtc");
+      else if (mj) h += liveSlot(k, "m", mj + "/api/" + nm + "?fps=5&height=240");
+      else if (x.snap) { nsn++; h += '<img class="us-snap" loading="lazy" alt="" src="/storage/.keendash/cam/' + k + ".jpg?" + (sn ? Math.floor(Date.now() / 1000 / sn) : +x.snap || 0) + '"' + (sn ? ' data-sn="' + sn + '"' : "") + ">"; }
     });
-    if (sn && x.snap && ST && !snapTm) snapTm = setInterval(snapTick, 1000);
-    return x.snap && !ST ? h + note("Кадры с камер видны при входе в роутер по https") : h;
+    if (sn && nsn && !snapTm) snapTm = setInterval(snapTick, 1000);
+    return h;
   };
   /* x.e = [[label, state, unit]] */
   VIEW.ha = function (x) {
@@ -453,7 +484,7 @@
   };
   VIEW.jellyfin = VIEW.plex; VIEW.jellyseerr = VIEW.overseerr;
   function instOf(d) {
-    return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "", hosts: a[8] || "", every: a[9] || "", snap: a[10] || "0" }; });
+    return (d.inst || []).map(function (a) { return { id: a[0], type: a[1], name: a[2], url: a[3], user: a[4], set: a[5], x: a[6], map: a[7] || "", hosts: a[8] || "", every: a[9] || "", snap: a[10] || "0", stream: a[11] || "" }; });
   }
   function typeOf(d, type) {
     var t = (d.types || []).filter(function (e) { return e[0] === type; })[0] || [];
@@ -628,6 +659,8 @@
       h += cur ? instBody(cur, d) : note(WAIT);
     }
     bodyEl.innerHTML = h;
+    /* the dashboard is hidden while the page is open: no stream on it */
+    if (page) liveDrop("m", {}); else attachLive(bodyEl, "m");
     /* re-rendering resets the tab strip's scroll: keep the active tab visible */
     var tl = bodyEl.querySelector(".us-tl"), on = tl && tl.querySelector(".us-on");
     if (on) { var a = on.getBoundingClientRect(), b = tl.getBoundingClientRect(); if (a.right > b.right) tl.scrollLeft += a.right - b.right; }
@@ -648,6 +681,7 @@
         /* our web server restarts during an upgrade: keep the last view and retry */
         if (upRun) { clearTimeout(upTimer); upTimer = setTimeout(update, 3000); return; }
         lastData = false; if (bodyEl) bodyEl.innerHTML = note(NODATA);
+        liveDrop("m", {});
         renderPage();
         /* keendash restarting: over https status.json is back ~6 s after the start, don't wait for the next 30 s poll */
         clearTimeout(upTimer); upTimer = setTimeout(update, 5000);
@@ -686,7 +720,7 @@
       ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +
-      ".us-snap{display:block;width:100%;aspect-ratio:16/9;max-height:240px;object-fit:cover;border-radius:6px}" +
+      ".us-snap,.us-stream{display:block;width:100%;aspect-ratio:16/9;max-height:240px;object-fit:cover;border:0;border-radius:6px}" +
       ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}" +
       ".us-upd{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:8px;background:rgba(0,151,220,.1);font-size:13px}" +
       ".us-upd-t b{font-weight:600}.us-upd-b{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}" +
@@ -1064,7 +1098,7 @@
     if (!main || busy()) return;
     var top = main.scrollTop;
     page.innerHTML = '<div class="kd-ph"><h1>' + PTITLE + '</h1><div class="kd-pb"><button type="button" class="kd-btn kd-ng"' + (d ? "" : " disabled") + '>Новая группа</button><button type="button" class="kd-btn kd-set"' + (d ? "" : " disabled") + ">Настройки</button></div></div>";
-    if (!d) { page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
+    if (!d) { liveDrop("p", {}); page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
     var cf = d.cfg || {};
     if (pendingLay && cf.rev === pendingRev && cf.err) pageNote = "Не удалось сохранить раскладку: " + cf.err;
     if (pendingLay && (cf.rev === pendingRev || (cf.rev !== pendingFrom && !sentRevs[cf.rev]) || Date.now() - pendingAt > 45000)) pendingLay = null;
@@ -1094,6 +1128,7 @@
         (it.c ? "" : '<div class="kd-lay' + ab + '" data-cols="' + it.w + '">' + (inner || '<div class="kd-empty">Перетащите сюда карточки</div>') + "</div>") + "</div>";
     });
     page.insertAdjacentHTML("beforeend", h + "</div>");
+    attachLive(page, "p");
     if (!one) { placeAll(); watchHeights(); } else if (pageRO) pageRO.disconnect();
     Array.prototype.forEach.call(page.querySelectorAll(".kd-ch > .kd-drag,.kd-gh > .kd-drag"), function (b) { attachPageDrag(b.parentNode.parentNode, b); });
     if (refocus) {
@@ -1227,8 +1262,8 @@
   }
   /* ---------- settings dialog: edits pile up in a draft; "Сохранить" sends them as one message (bin/settings reads it) through
    * the firmware file manager: /rci/put names the file in keendash's inbox, /fui takes its content; status.json confirms ---------- */
-  var FLD = { name: "Имя", url: "Адрес", user: "Логин", pass: "Пароль", token: "Токен", key: "API-ключ", map: "Что показывать", hosts: "Адреса", every: "Интервал", snap: "Кадры с камер" };
-  var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user|map|hosts|every|snap)$/, NOSAVE = "Не удалось сохранить";
+  var FLD = { name: "Имя", url: "Адрес", user: "Логин", pass: "Пароль", token: "Токен", key: "API-ключ", map: "Что показывать", hosts: "Адреса", every: "Интервал", snap: "Кадры с камер", stream: "Адрес go2rtc" };
+  var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user|map|hosts|every|snap|stream)$/, NOSAVE = "Не удалось сохранить";
   var CHOICE = { every: [["1", "1 мин"], ["5", "5 мин"], ["15", "15 мин"], ["30", "30 мин"], ["60", "1 ч"]], snap: [["0", "Нет"], ["5", "5 с"], ["15", "15 с"], ["30", "30 с"], ["60", "1 мин"]] };
   var TRASH = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 9h12l-1 12H7L6 9z"/></svg>';
   /* dd: the status the dialog works from (taken when it opens, again after a save), so a failed poll changes nothing;
@@ -1262,6 +1297,8 @@
       return /^https?:\/\/[^ |'"\\$`<>]+$/.test(e) || (/^[A-Za-z0-9.-]+(:[0-9]{1,5})?$/.test(e) && e.charAt(0) !== "-");
     });
   }
+  /* bin/settings okstream: http(s)://host[:port][/path], up to 256 ASCII characters, none of @ ' " | $ ` < > \ or a space */
+  function okstream(v) { return v.length <= 256 && /^https?:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?(\/[!-~]*)?$/.test(v) && !/[@'"|$`<>\\]/.test(v); }
   /* what the router would reject, said before sending: "" if the value is fine; req: empty is an error too */
   function bad(f, v, req) {
     if (!v) return req ? "Заполните поле" : "";
@@ -1270,13 +1307,14 @@
     if (f === "name" && v.replace(/[\ud800-\udbff][\udc00-\udfff]/g, "x").length > 64) return "Не длиннее 64 символов";
     if (f === "map") return okmap(v) ? "" : "Формат: Подпись=путь[:формат]; до 8 пар";
     if (f === "hosts") return okhosts(v) ? "" : "Домен или http(s)://адрес, через пробел, до 20";
+    if (f === "stream") return okstream(v) ? "" : "Неверный адрес go2rtc";
     if (PLAIN.test(f) && v.indexOf("|") >= 0) return "Символ | недопустим";
     if (f === "url" && !/^https?:\/\//.test(v)) return "Адрес должен начинаться с http:// или https://";
     return "";
   }
   function fresh(d) {
     var h = (d.cfg || {}).hide || {};
-    return { inst: instOf(d).map(function (i) { return { id: i.id, type: i.type, name: i.name, url: i.url || "", user: i.user || "", map: i.map, hosts: i.hosts, every: i.every, snap: i.snap, vals: {} }; }),
+    return { inst: instOf(d).map(function (i) { return { id: i.id, type: i.type, name: i.name, url: i.url || "", user: i.user || "", map: i.map, hosts: i.hosts, every: i.every, snap: i.snap, stream: i.stream, vals: {} }; }),
       del: [], hide: { page: (h.page || []).slice(), main: (h.main || []).slice() } };
   }
   function fv(e, f) { return PLAIN.test(f) ? e[f] : e.vals[f] || ""; }
@@ -1360,7 +1398,7 @@
     var sec = SECRET.test(f), at = ' data-f="' + f + '" data-id="' + esc(e.id) + '"';
     return '<label class="kd-dlg-f"><span>' + FLD[f] + "</span>" + (CHOICE[f] ?
       "<select" + at + ">" + CHOICE[f].map(function (o) { return '<option value="' + o[0] + '">' + o[1] + "</option>"; }).join("") + "</select>" :
-      '<input type="' + (sec ? "password" : "text") + '"' + at + ' autocomplete="' + (sec ? "new-password" : "off") + '"' + (isSet ? ' placeholder="задан"' : "") + ">") +
+      '<input type="' + (sec ? "password" : "text") + '"' + at + ' autocomplete="' + (sec ? "new-password" : "off") + '"' + (isSet ? ' placeholder="задан"' : f === "stream" ? ' placeholder="http://хост:1984"' : "") + ">") +
       '<span class="kd-dlg-hint"></span></label>';
   }
   function hint(inp) {
@@ -1478,7 +1516,7 @@
     var d = dd, taken = {}, id, n, e;
     instOf(d).concat(draft.inst).forEach(function (i) { taken[i.id] = 1; });
     id = newId(type, taken); n = id.slice(type.length + 1);
-    e = { id: id, type: type, name: o ? o.name : typeOf(d, type).name + (n ? " " + n : ""), url: o ? o.url : "", user: "", map: "", hosts: "", every: "5", snap: "0", vals: {} };
+    e = { id: id, type: type, name: o ? o.name : typeOf(d, type).name + (n ? " " + n : ""), url: o ? o.url : "", user: "", map: "", hosts: "", every: "5", snap: "0", stream: "", vals: {} };
     draft.inst.push(e);
     return e;
   }
@@ -1585,16 +1623,17 @@
     }
     if (location.pathname !== PAGE) history[replace ? "replaceState" : "pushState"]({ keendash: 1 }, "", PAGE);
     fold(); ensureMenu();
-    main.scrollTop = 0; renderPage();
+    main.scrollTop = 0; liveDrop("m", {}); renderPage();
   }
   /* back: to the page Angular still has underneath, its menu item active again; the title is Angular's latest anyway */
   function closePage(back) {
     if (!page) return;
-    page.parentNode.removeChild(page); page = null;
+    page.parentNode.removeChild(page); page = null; liveDrop("p", {});
     Array.prototype.forEach.call(document.querySelectorAll("[data-kd-hidden]"), function (c) { c.removeAttribute("data-kd-hidden"); });
     if (back) stripped.forEach(function (x) { x.classList.add(ACT); });
     holdTitle(false);
     ensureMenu();
+    render();
   }
   function ensureMenu() {
     var ul = document.getElementById("menu.main"), ref = ul && ul.querySelector('a[href="/dashboard"]');
@@ -1634,6 +1673,7 @@
     }, true);
     var rs = 0;
     window.addEventListener("resize", function () { clearTimeout(rs); rs = setTimeout(renderPage, 150); });
+    document.addEventListener("visibilitychange", function () { Object.keys(live).forEach(function (k) { liveSrc(live[k]); }); });
     new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
     setInterval(update, 30000);
     update();
