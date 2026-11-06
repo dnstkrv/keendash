@@ -224,7 +224,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       {
         const css = w.document.getElementById("us-style").textContent, rule = (css.match(/\.us-snap,\.us-stream\{[^}]*\}/) || [""])[0];
         ok("frigate snap: the picture is whole (natural ratio, full width), never cropped: no object-fit, aspect-ratio or max-height; rounded", /width:100%;height:auto/.test(rule) && !/object-fit|aspect-ratio|max-height/.test(rule) && /border-radius:6px/.test(rule), rule);
-        ok("frigate cameras: a grid of tiles whose columns follow the card's width", /\.us-cams\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(260px,1fr\)\)/.test(css));
+        ok("frigate cameras: a grid of tiles whose columns follow the card's width", /\.us-cams\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(min\(260px,100%\),1fr\)\)/.test(css));
         const tiles = Array.from(m.querySelectorAll(".us-cams > .us-cam"));
         ok("frigate cameras: every camera is a .us-cams > .us-cam tile with its line and its frame", tiles.length === 2 && m.querySelectorAll(".us-cams").length === 1 && tiles.every(t => t.querySelectorAll(".us-row").length === 1 && t.querySelectorAll("img.us-snap").length === 1 && t.firstElementChild.classList.contains("us-row") && t.lastElementChild.tagName === "IMG"), m.innerHTML);
       }
@@ -300,6 +300,36 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
         gclick(w, m, "Дом");
         ok("frigate stream " + JSON.stringify(bs) + ": ignored by the widget, no iframe, falls back to MJPEG", !m.querySelector("iframe") && !/javascript:|data:text|vbscript:|ftp:|go2\.test/.test(m.innerHTML) && mj(m).length === 2, m.innerHTML);
       });
+    }
+    // a go2rtc address on the web UI's own origin would void the sandbox: ignored (MJPEG or frames instead); another port is another origin
+    for (const bs of ["http://192.168.0.1", "http://192.168.0.1:80/", "http://3232235521", "http://192.168.0.1/go2rtc"]) {
+      await run(fgw({ stream: bs }), (w, m) => {
+        gclick(w, m, "Дом");
+        ok("frigate stream " + bs + " (the web UI's own origin): ignored, no iframe, MJPEG instead", !m.querySelector("iframe") && mj(m).length === 2, m.innerHTML);
+      });
+    }
+    await run(fgw({ stream: "http://192.168.0.1:1984" }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate stream: the same host on another port is another origin, an iframe", ifr(m).length === 2, m.innerHTML);
+    });
+    // browsers allow 6 connections per host: MJPEG for 6 cameras at most, the others get their frames
+    await run(fgw({}, { ok: 1, ver: "1", snap: SN, cam: Array.from({ length: 8 }, (_, i) => ["c" + i, 5, 0, 0]) }), (w, m) => {
+      gclick(w, m, "Дом");
+      ok("frigate stream: MJPEG for the first 6 cameras only, frames for the 7th and 8th", mj(m).length === 6 && fr(m).length === 2 && srcs(fr(m)).join() === "/storage/.keendash/cam/frigate-7.jpg?" + SN + ",/storage/.keendash/cam/frigate-8.jpg?" + SN, m.innerHTML);
+    });
+    // Angular left the dashboard (the row is out of the document): the streams stop, a new render creates none
+    for (const [nm, o, sel, off] of [["iframe", { stream: GO }, "iframe", "about:blank"], ["MJPEG", {}, "img.us-stream", ""]]) {
+      let cur = fgw(o);
+      await run(cur, async (w, m) => {
+        gclick(w, m, "Дом");
+        const a = Array.from(m.querySelectorAll(sel)), wt2 = ms => new Promise(r => setTimeout(r, ms));
+        w.document.getElementById("c0").remove(); await wt2(100);
+        ok("frigate stream " + nm + ": the dashboard gone -> the nodes are detached and their src cleared", a.length === 2 && a.every(e => !e.isConnected && e.getAttribute("src") === off), srcs(a).join());
+        cur = fgw(o, { ok: 1, ver: "2", snap: SN, cam: cams }); await w.__servicesWidget.update();
+        ok("frigate stream " + nm + ": an update with the dashboard gone creates no stream node and restores nothing", !m.querySelector(sel) && a.every(e => e.getAttribute("src") === off), srcs(a).join());
+        w.document.dispatchEvent(new w.Event("visibilitychange"));
+        ok("frigate stream " + nm + ": visibilitychange does not restore a detached node", a.every(e => e.getAttribute("src") === off), srcs(a).join());
+      }, w => () => Promise.resolve({ ok: true, json: () => Promise.resolve(cur) }));
     }
     // status updates every few seconds: the same stream nodes after the re-render (no reconnect), hidden page -> src cleared, visible -> restored; a tab left -> the nodes go
     for (const [nm, o, sel, off] of [["iframe", { stream: GO }, "iframe", "about:blank"], ["MJPEG", {}, "img.us-stream", ""]]) {
@@ -2480,6 +2510,20 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       p.querySelector('[data-id="frigate"] .kd-fold').click(); await wait(200);
       ok("page: unfolded again -> the stream is back", p.querySelectorAll('[data-id="frigate"] iframe').length === 2 && p.querySelector('[data-id="frigate"] iframe').getAttribute("src").startsWith("http://go2.test:1984/stream.html?src=a%20b"), p.innerHTML.slice(0, 300));
     }, w => { w.__keendash = { p: "/keendash" }; return u => /rci/.test(u) ? new Promise(() => {}) : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fq) }); }, "http://192.168.0.1/dashboard");
+  }
+  // a folded group on the page: its cards are not drawn, so the page is still "the same" on a status update and the streams of the other card stay in the DOM
+  {
+    const fz = Object.assign(one("frigate", "Frigate", "Дом", "http://10.0.0.5:5000", { ok: 1, ver: "1", snap: 1793438000, cam: [["a", 5, 0, 0], ["b", 5, 0, 0]] }), { now: Math.floor(Date.now() / 1000) });
+    fz.inst[0].push("", "", "", "1", "http://go2.test:1984");
+    fz.cfg = Object.assign({}, full.cfg, { lay: [["g", "g1", 3, 1, "0", "Свёрнутая"], ["c", "sys", 1, 0, "0", "g1"], ["c", "frigate", 1, 0, "0", ""]] });
+    await run(fz, async w => {
+      const p = await openPage(w), f = Array.from(p.querySelectorAll('[data-id="frigate"] iframe'));
+      const gone = [], mo = new w.MutationObserver(rs => rs.forEach(r => r.removedNodes.forEach(n => { if (n.nodeType === 1 && (n.matches("iframe") || n.querySelector("iframe"))) gone.push(n); })));
+      mo.observe(p, { childList: true, subtree: true });
+      const t = []; for (const fps of [8, 6]) { fz.inst[0][6].cam[0][1] = fps; await w.__servicesWidget.update(); t.push(p.textContent.includes("FPS " + fps + " ·")); }
+      await wait(50); mo.disconnect();
+      ok("page: a folded group does not make every status update a full redraw (streams stay in the DOM)", f.length === 2 && !p.querySelector('[data-g="g1"] .us-body') && !gone.length && t.join() === "true,true" && f.every((e, i) => e === p.querySelectorAll('[data-id="frigate"] iframe')[i] && e.isConnected), f.length + " " + gone.length + " " + t.join());
+    }, w => { w.__keendash = { p: "/keendash" }; return u => /rci/.test(u) ? new Promise(() => {}) : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fz) }); }, "http://192.168.0.1/dashboard");
   }
   const withCfg = o => Object.assign({}, full, { cfg: Object.assign({}, full.cfg, o) });
   const top = p => Array.from(p.querySelector(".kd-lay").children), idOf = el => el.getAttribute("data-id") || el.getAttribute("data-g");

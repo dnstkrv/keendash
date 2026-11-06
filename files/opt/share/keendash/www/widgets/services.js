@@ -429,6 +429,8 @@
   /* live stream nodes of the Frigate cards. The markup has a slot per camera (.us-lv: key instance-row, kind i = iframe / m = img, the address); attachLive puts the node of that
    * key in its place, the same object as the render before (ctx m = the card, p = the page). A hidden page has no src; a node whose slot is gone (tab left, card folded or hidden) is detached */
   var LIVE = /^https?:\/\//, live = {};
+  /* a go2rtc page on the web UI's own origin would run with its rights (allow-same-origin voids the sandbox): the browser's own parsing decides (http://3232235521, :80 ...) */
+  function sameOrigin(u) { var a = document.createElement("a"); a.href = u; return a.protocol === location.protocol && a.host === location.host; }
   function liveSlot(k, t, s) { return '<div class="us-lv" data-lk="' + k + '" data-lt="' + t + '" data-ls="' + esc(s) + '"></div>'; }
   /* setting an iframe's src again would reload it: only when it differs */
   function liveSrc(e) { var w = document.hidden ? e.off : e.s; if (e.el.getAttribute("src") !== w) e.el.setAttribute("src", w); }
@@ -439,7 +441,7 @@
     Array.prototype.forEach.call(root.querySelectorAll(".us-lv"), function (ph) {
       var k = ctx + ph.getAttribute("data-lk"), t = ph.getAttribute("data-lt"), s = ph.getAttribute("data-ls"), e = live[k], el;
       /* the address is checked here too, the iframe src is never made of anything else */
-      if (!LIVE.test(s) || (t !== "i" && t !== "m")) { ph.parentNode.removeChild(ph); return; }
+      if (!LIVE.test(s) || (t !== "i" && t !== "m") || (t === "i" && sameOrigin(s))) { ph.parentNode.removeChild(ph); return; }
       if (e && (e.s !== s || e.t !== t)) { liveGone(k); e = null; }
       if (!e) {
         el = document.createElement(t === "i" ? "iframe" : "img"); el.className = "us-stream";
@@ -479,7 +481,7 @@
    * SNAP 5/15/30), never of the API's text. A camera's name goes into the stream URL only through encodeURIComponent */
   VIEW.frigate = function (x, ser, d, inst) {
     var on = inst.snap !== "0", sn = /^(5|15|30)$/.test(inst.snap) ? +inst.snap : 0, nsn = 0;
-    var go = !ST && LIVE.test(inst.stream || "") ? inst.stream.replace(/\/+$/, "") : "", mj = !ST && !go && /^http:\/\//.test(inst.url || "") && !inst.user ? inst.url.replace(/\/+$/, "") : "";
+    var go = !ST && LIVE.test(inst.stream || "") && !sameOrigin(inst.stream) ? inst.stream.replace(/\/+$/, "") : "", mj = !ST && !go && /^http:\/\//.test(inst.url || "") && !inst.user ? inst.url.replace(/\/+$/, "") : "";
     var h = '<div class="us-grid">' + blk("Версия", x.ver ? esc(x.ver) : "—", null) + blk("Детектор", x.det ? esc(x.det) + " · " + (+x.inf || 0) + " мс" : "—", null) +
       blk("Занято", x.total > 0 ? fmtBytes(x.used) + " из " + fmtBytes(x.total) : "—", null) + "</div>";
     /* a tile per camera (its line and its media) in a grid whose columns follow the card's width */
@@ -489,7 +491,7 @@
       if (!on || n >= 8) { h += "</div>"; return; }
       var nm = encodeURIComponent(c[0]), k = esc(inst.id) + "-" + (n + 1);
       if (go) h += liveSlot(k, "i", go + "/stream.html?src=" + nm + "&mode=mse,webrtc");
-      else if (mj) h += liveSlot(k, "m", mj + "/api/" + nm + "?fps=5&height=240");
+      else if (mj && n < 6) h += liveSlot(k, "m", mj + "/api/" + nm + "?fps=5&height=240");
       else if (x.snap) { nsn++; h += '<img class="us-snap" loading="lazy" alt="" src="/storage/.keendash/cam/' + k + ".jpg?" + (sn ? Math.floor(Date.now() / 1000 / sn) : +x.snap || 0) + '"' + (sn ? ' data-sn="' + sn + '"' : "") + ">"; }
       h += "</div>";
     });
@@ -687,7 +689,7 @@
     }
     morph(bodyEl, tplOf(h), "m");
     /* the dashboard is hidden while the page is open: no stream on it */
-    if (page) liveDrop("m", {}); else attachLive(bodyEl, "m");
+    if (page || !(row && row.isConnected)) liveDrop("m", {}); else attachLive(bodyEl, "m");
     /* re-rendering resets the tab strip's scroll: keep the active tab visible */
     var tl = bodyEl.querySelector(".us-tl"), on = tl && tl.querySelector(".us-on");
     if (on) { var a = on.getBoundingClientRect(), b = tl.getBoundingClientRect(); if (a.right > b.right) tl.scrollLeft += a.right - b.right; }
@@ -748,7 +750,7 @@
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +
       /* the whole picture at its own ratio, never cropped or stretched (an iframe has none: 16/9) */
-      ".us-cams{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px 16px}.us-cam{min-width:0}" +
+      ".us-cams{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:12px 16px}.us-cam{min-width:0}" +
       ".us-snap,.us-stream{display:block;width:100%;height:auto;border:0;border-radius:6px}iframe.us-stream{aspect-ratio:16/9}" +
       ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}" +
       ".us-upd{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:8px;background:rgba(0,151,220,.1);font-size:13px}" +
@@ -974,6 +976,8 @@
   function ensure() {
     if (dragging) return;
     if (row && row.isConnected) return;
+    /* the dashboard is gone (Angular left it): its streams must not go on downloading */
+    if (row) liveDrop("m", {});
     var tpl = templateRow();
     if (!tpl) return;
     if (!row) { addStyle(); row = buildRow(tpl); if (!row) return; }
@@ -985,7 +989,7 @@
     pending = true;
     requestAnimationFrame(function () { pending = false; try { ensure(); } catch (e) { } try { ensurePage(); } catch (e) { } });
   }
-  /* ---------- "Сервисы" page: an item of the side menu under "Системный монитор" opens a page of the web UI with
+  /* ---------- «Дашборд» page: an item of the side menu under "Системный монитор" opens a page of the web UI with
    * a card for every tab that has data. Angular's router doesn't know it: the page covers what Angular shows, at
    * /keendash, and Angular showing another page closes it. Angular sends an unknown path to the dashboard, so for a
    * reload the loader keeps the address asked for (window.__keendash.p) and the page opens again over the dashboard. */
@@ -1152,7 +1156,7 @@
     var ab = one ? "" : " kd-abs", h = '<div class="kd-lay' + ab + '" data-cols="3">';
     items.forEach(function (it) {
       if (!it.g) { h += card(it); return; }
-      var inner = it.cards.map(function (c) { return card(c); }).join("");
+      var inner = it.c ? "" : it.cards.map(function (c) { return card(c); }).join("");
       h += '<div class="kd-item kd-grp" data-g="' + esc(it.g) + '"' + pos(it) + '><div class="kd-gh">' + fold(it, it.name) + (renaming === it.g ? '<input class="kd-name" aria-label="Имя группы" value="' + esc(it.name) + '">' : '<span class="kd-gn">' + esc(it.name) + "</span>") +
         '<span class="kd-gc">' + it.cards.filter(function (c) { return cards[c.id]; }).length + "</span>" + more(it.name) + drag(it.name) + "</div>" +
         (it.c ? "" : '<div class="kd-lay' + ab + '" data-cols="' + it.w + '">' + (inner || '<div class="kd-empty">Перетащите сюда карточки</div>') + "</div>") + "</div>";
@@ -1713,7 +1717,7 @@
     }, true);
     var rs = 0;
     window.addEventListener("resize", function () { clearTimeout(rs); rs = setTimeout(renderPage, 150); });
-    document.addEventListener("visibilitychange", function () { Object.keys(live).forEach(function (k) { liveSrc(live[k]); }); });
+    document.addEventListener("visibilitychange", function () { Object.keys(live).forEach(function (k) { if (document.hidden || live[k].el.isConnected) liveSrc(live[k]); }); });
     new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
     setInterval(update, 30000);
     update();
