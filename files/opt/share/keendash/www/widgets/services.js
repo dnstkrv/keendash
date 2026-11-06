@@ -13,7 +13,7 @@
   var API = BASE + (ST ? "status.json" : "cgi-bin/status.cgi");
   var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip", MTABKEY = "ui.services.media";
   var ORDKEY = "ui.services.order", MORDKEY = "ui.services.morder";
-  var TITLE = "Сервисы";
+  var TITLE = "Сервисы", PTITLE = "Дашборд";
   var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["tailscale", "Tailscale"], ["ascn", "Antiscan"], ["sys", "Система"]];
   /* the group tabs (one per service group) go in front of this tab by default */
   var GRPAT = "ascn";
@@ -1063,7 +1063,7 @@
     var main = page && page.parentNode, d = lastData;
     if (!main || busy()) return;
     var top = main.scrollTop;
-    page.innerHTML = '<div class="kd-ph"><h1>' + TITLE + '</h1><div class="kd-pb"><button type="button" class="kd-btn kd-ng"' + (d ? "" : " disabled") + '>Новая группа</button><button type="button" class="kd-btn kd-set"' + (d ? "" : " disabled") + ">Настройки</button></div></div>";
+    page.innerHTML = '<div class="kd-ph"><h1>' + PTITLE + '</h1><div class="kd-pb"><button type="button" class="kd-btn kd-ng"' + (d ? "" : " disabled") + '>Новая группа</button><button type="button" class="kd-btn kd-set"' + (d ? "" : " disabled") + ">Настройки</button></div></div>";
     if (!d) { page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
     var cf = d.cfg || {};
     if (pendingLay && cf.rev === pendingRev && cf.err) pageNote = "Не удалось сохранить раскладку: " + cf.err;
@@ -1562,7 +1562,7 @@
   var TD = Object.getOwnPropertyDescriptor(Document.prototype, "title");
   function holdTitle(on) {
     if (!on) { delete document.title; document.title = pageTitle; return; }
-    var set = function (v) { pageTitle = v; TD.set.call(document, v.replace(/\s[–-]\s.*$/, "") + " – " + TITLE); };
+    var set = function (v) { pageTitle = v; TD.set.call(document, v.replace(/\s[–-]\s.*$/, "") + " – " + PTITLE); };
     Object.defineProperty(document, "title", { configurable: true, get: TD.get, set: set });
     set(document.title);
   }
@@ -1603,7 +1603,7 @@
     if (!a) {
       var li = ref.parentNode.cloneNode(true);
       a = li.querySelector("a"); a.id = "kd-menu"; a.setAttribute("href", PAGE);
-      (a.querySelector(".page-link__label") || a).textContent = " " + TITLE + " ";
+      (a.querySelector(".page-link__label") || a).textContent = " " + PTITLE + " ";
       a.addEventListener("click", function (e) { e.preventDefault(); openPage(); });
       ref.parentNode.parentNode.insertBefore(li, ref.parentNode.nextSibling);
     }

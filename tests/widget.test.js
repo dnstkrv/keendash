@@ -1897,11 +1897,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     d.title = "Keenetic – Системный монитор"; d.body.insertAdjacentHTML("beforeend", layout);
     await wait(100);
     const a = d.getElementById("kd-menu"), dash = d.querySelector('a[href="/dashboard"]'), n = w.history.length;
-    ok("page: menu item right after Системный монитор", a && a.parentNode.previousElementSibling === dash.parentNode && a.textContent.trim() === "Сервисы" && !a.classList.contains(act));
+    ok("page: menu item right after Системный монитор", a && a.parentNode.previousElementSibling === dash.parentNode && a.textContent.trim() === "Дашборд" && !a.classList.contains(act));
     click(a);
     const p = d.querySelector(".kd-page"), t = p && Array.from(p.querySelectorAll(".kd-ct")).map(x => x.textContent).join();
     ok("page: opens at /keendash over the hidden dashboard, its item active", p && w.location.pathname === "/keendash" && w.history.length === n + 1 && d.querySelector("ng-component").hasAttribute("data-kd-hidden") &&
-      a.classList.contains(act) && !dash.classList.contains(act) && d.title === "Keenetic – Сервисы", d.title);
+      a.classList.contains(act) && !dash.classList.contains(act) && d.title === "Keenetic – Дашборд", d.title);
     ok("page: a card per tab with data, media per service", t === "telemt,AWG,firc,nfqws,Hydra,AdGuard Home,Торренты,Plex,Sonarr,Radarr,Prowlarr,Overseerr,Immich,Antiscan,Система", t);
     ok("page: card id = tab or instance id", Array.from(p.querySelectorAll(".kd-card")).map(x => x.getAttribute("data-id")).join() === "telemt,awg,firc,nfqws,hydra,agh,qb,plex,sonarr,radarr,prowlarr,overseerr,immich,ascn,sys");
     ok("page: no chips, tabs or update bar", p && !p.querySelector(".us-chip,.us-tab,.us-mt,.us-upd"));
@@ -1921,7 +1921,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     await wait(100);
     ok("page: reopens after a reload, in place of the redirect", !!d.querySelector(".kd-page") && w.location.pathname === "/keendash" && w.history.length === n, w.location.pathname);
     d.title = "Keenetic Hopper – Системный монитор";
-    ok("page: Angular's titles keep the page's own", d.title === "Keenetic Hopper – Сервисы", d.title);
+    ok("page: Angular's titles keep the page's own", d.title === "Keenetic Hopper – Дашборд", d.title);
   }, w => { w.__keendash = { p: "/keendash" }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(full) }); }, "http://192.168.0.1/dashboard");
   // the expanded side menu: docked on a wide screen (overlay and menu button hidden) it stays; on a tablet a tap on the
   // overlay folds it, on a phone the menu button
