@@ -1,0 +1,16 @@
+#!/bin/sh
+# name: Gitea / Forgejo
+# group: Другое
+# fields: url key
+# hint: Токен: Настройки → Приложения, права read на repository, issue, notification
+# Gitea/Forgejo: every count is the X-Total-Count response header of a limit=1 list (read from dl -S, digits only, else empty); repos/search is the reference
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}
+cnt() { o=$(dl -S -O /dev/null --header "Authorization: token ${KEY:-}" "$B$1" 2>&1) || return 1
+  printf '%s\n' "$o" | awk 'tolower($1) == "x-total-count:" { h = 1; v = $2; sub(/\r$/, "", v); r = v ~ /^[0-9]+$/ ? sprintf("%.0f", v) : "" } END { if (!h) exit 1; print r }'; }
+r=$(cnt "/api/v1/repos/search?limit=1") || { echo "ok 0"; exit; }
+echo "ok 1"
+echo "t|Уведомлений|$(cnt "/api/v1/notifications?limit=1")|n"
+echo "t|Открытых задач|$(cnt "/api/v1/repos/issues/search?type=issues&state=open&limit=1")|n"
+echo "t|Открытых PR|$(cnt "/api/v1/repos/issues/search?type=pulls&state=open&limit=1")|n"
+echo "t|Репозиториев|$r|n"

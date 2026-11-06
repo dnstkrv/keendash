@@ -1,0 +1,16 @@
+#!/bin/sh
+# name: Syncthing
+# group: Файлы
+# fields: url key
+# hint: API-ключ: Действия → Настройки → Общие. Адрес GUI должен слушать сеть (0.0.0.0:8384), не 127.0.0.1. Сертификат не проверяется
+# Syncthing REST: global completion is the reference field; certificate not checked (https is usually self-signed). The three answers are prefixed c. n. f.
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}; set -- --no-check-certificate --header "X-Api-Key: ${KEY:-}"
+{ J "$@" "$B/rest/db/completion" | sed 's/^/c./'; J "$@" "$B/rest/system/connections" | sed 's/^/n./'; JN "$@" "$B/rest/config/folders" | sed 's/^/f./'; } | awk "$LOAD"'
+function n(k) { return (k in V) && V[k] != "null" ? sprintf("%.0f", V[k]) : "" }
+END {
+  if (!("c.completion" in V)) { print "ok 0"; exit }
+  for (k in V) { if (k ~ /^n\.connections\.[^.]+\.connected$/) { dn++; if (V[k] == "true") up++ } if (k ~ /^f\.[0-9]+\./) { split(k, a, "."); F[a[2]] = 1 } }
+  for (k in F) fn++
+  print "ok 1"; print "t|Синхронизировано|" sprintf("%.1f", V["c.completion"]) "|p"; print "t|Осталось|" n("c.needBytes") "|b"
+  print "t|Устройств в сети|" up + 0 " из " dn + 0 "|t"; print "t|Папок|" fn + 0 "|n" }'

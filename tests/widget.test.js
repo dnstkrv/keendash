@@ -997,6 +997,27 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/paperless: wrong token -> ok 0, no answer -> ok 0, key not printed", run("paperless", "URL=http://paperless.test KEY=bad ") === "ok 0" && run("paperless", "URL=http://nohost.test KEY=testkey ") === "ok 0" && !/testkey/.test(run("paperless", pl)));
       fs.rmSync(sd, { recursive: true, force: true });
     }
+    // syncthing: three REST answers, no certificate check; gitea: counts from X-Total-Count only
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-g-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";
+      const run = (s, e) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/" + s, "", "", { state: sd, env: e }).trim(); };
+      const st = "URL=http://syncthing.test KEY=testkey ";
+      const stWant = ["ok 1", "t|Синхронизировано|98.8|p", "t|Осталось|1610612736|b", "t|Устройств в сети|2 из 3|t", "t|Папок|2|n"].join("\n");
+      ok("ext.d/syncthing: exact tiles (2 из 3, one decimal, needBytes, folders)", run("syncthing", st) === stWant, run("syncthing", st));
+      ok("ext.d/syncthing: three requests, each with X-Api-Key and --no-check-certificate", lg().split("\n").filter(Boolean).length === 3 && lg().split("\n").filter(Boolean).every(l => / --no-check-certificate /.test(l) && / --header X-Api-Key: testkey /.test(l)) &&
+        /rest\/db\/completion \n/.test(lg()) && /rest\/system\/connections \n/.test(lg()) && /rest\/config\/folders \n/.test(lg()), lg());
+      ok("ext.d/syncthing: no devices and no folders -> 0 из 0, 0, still ok 1", run("syncthing", "URL=http://syncthing.test/zero KEY=testkey ") === ["ok 1", "t|Синхронизировано|98.8|p", "t|Осталось|1610612736|b", "t|Устройств в сети|0 из 0|t", "t|Папок|0|n"].join("\n"));
+      ok("ext.d/syncthing: wrong key -> ok 0, no answer -> ok 0, key not printed", run("syncthing", "URL=http://syncthing.test KEY=bad ") === "ok 0" && run("syncthing", "URL=http://nohost.test KEY=testkey ") === "ok 0" && !/testkey/.test(run("syncthing", st)));
+      const gt = "URL=http://gitea.test KEY=testkey ";
+      const gtWant = ["ok 1", "t|Уведомлений|3|n", "t|Открытых задач|14|n", "t|Открытых PR|2|n", "t|Репозиториев|27|n"].join("\n");
+      ok("ext.d/gitea: exact counts from the headers (lowercase CRLF header too)", run("gitea", gt) === gtWant, run("gitea", gt));
+      ok("ext.d/gitea: four requests, token only as a header, headers read with dl -S", lg().split("\n").filter(Boolean).length === 4 && lg().split("\n").filter(Boolean).every(l => /^gitea -S -O \/dev\/null --header Authorization: token testkey http:\/\/gitea\.test\/api\/v1\/\S+ $/.test(l)) &&
+        /repos\/issues\/search\?type=pulls&state=open&limit=1 \n/.test(lg()) && /notifications\?limit=1 \n/.test(lg()), lg());
+      ok("ext.d/gitea: non-numeric or missing X-Total-Count -> empty tile, never text", run("gitea", "URL=http://gitea.test/odd KEY=testkey ") === ["ok 1", "t|Уведомлений||n", "t|Открытых задач||n", "t|Открытых PR|2|n", "t|Репозиториев|27|n"].join("\n"));
+      ok("ext.d/gitea: repos/search without the header -> ok 0; 401 -> ok 0; no answer -> ok 0", run("gitea", "URL=http://gitea.test/norepo KEY=testkey ") === "ok 0" && run("gitea", "URL=http://gitea.test KEY=bad ") === "ok 0" && run("gitea", "URL=http://nohost.test KEY=testkey ") === "ok 0");
+      ok("ext.d/gitea: key not printed", !/testkey/.test(run("gitea", gt) + run("gitea", "URL=http://gitea.test/odd KEY=testkey ")));
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
     // nextdns: the profile ID is a path segment, so anything but [A-Za-z0-9]{1,32} is refused before the request
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-n-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";

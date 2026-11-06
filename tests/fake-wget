@@ -105,6 +105,18 @@ case "$u" in
     case "$a" in *" NC-Token: testkey "* | *" Authorization: Basic YWRtaW46cCJhXHNz "*) ;; *) exit 8 ;; esac ;;
   # Paperless-ngx: Token testkey; requests go to $LOG; /two has no tag_count and correspondent_count
   *//paperless.test/*) echo "paperless$a" >> "${LOG:-/dev/null}"; need "Authorization: Token testkey" ;;
+  # Syncthing: X-Api-Key testkey and no certificate check are required; requests go to $LOG; /zero has no devices and no folders
+  *//syncthing.test/*) echo "syncthing$a" >> "${LOG:-/dev/null}"; need "X-Api-Key: testkey"; need "--no-check-certificate" ;;
+  # Gitea: token testkey, answers only headers (the count in X-Total-Count); /odd has abc for notifications and none for issues, /norepo none for repos/search; pulls come lowercase with CRLF. Requests go to $LOG
+  *//gitea.test/*) echo "gitea$a" >> "${LOG:-/dev/null}"; need "Authorization: token testkey"
+    n=; case "$u" in *notifications*) n=3 ;; *type=issues*) n=14 ;; *type=pulls*) n=2 ;; *repos/search*) n=27 ;; esac
+    case "$u" in *//gitea.test/odd/*) case "$u" in *notifications*) n=abc ;; *type=issues*) n= ;; esac ;; *//gitea.test/norepo/*) case "$u" in *repos/search*) n= ;; esac ;; esac
+    printf '  HTTP/1.1 200 OK
+  Content-Type: application/json
+' >&2
+    case "$u" in *type=pulls*) [ -z "$n" ] || printf '  x-total-count: %s
+' "$n" >&2 ;; *) [ -z "$n" ] || printf '  X-Total-Count: %s
+' "$n" >&2 ;; esac; exit 0 ;;
   # Home Assistant: Bearer token only; every request goes to $LOG, an entity without a fixture is a 404
   *//ha.test/*) echo "ha$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
@@ -205,6 +217,11 @@ case "$u" in
   *//nextcloud.test/*) f=files/nextcloud_info ;;
   *//paperless.test/two/*) f=files/paperless_two ;;
   *//paperless.test/*) f=files/paperless_stats ;;
+  *//syncthing.test/zero/rest/system/connections) f=files/syncthing_conn_zero ;;
+  *//syncthing.test/zero/rest/config/folders) f=files/syncthing_folders_zero ;;
+  *//syncthing.test/*rest/db/completion) f=files/syncthing_completion ;;
+  *//syncthing.test/*rest/system/connections) f=files/syncthing_connections ;;
+  *//syncthing.test/*rest/config/folders) f=files/syncthing_folders ;;
   *//npm.test/*api/tokens) f=net/npm_tokens ;;
   *//npm.test/empty/*) f=net/npm_empty ;;
   *//npm.test/norh/*redirection-hosts) exit 8 ;;
