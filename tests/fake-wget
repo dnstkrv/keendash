@@ -100,6 +100,11 @@ case "$u" in
       */api/tokens) need '--post-data {"identity":"me@example.test","secret":"p\"a\\ss"}' ;;
       *) need "Authorization: Bearer T0K-test" ;;
     esac ;;
+  # Nextcloud serverinfo: OCS-APIRequest plus either NC-Token testkey or Basic admin / p"a\ss; requests go to $LOG. /nofree has no freespace
+  *//nextcloud.test/*) echo "nextcloud$a" >> "${LOG:-/dev/null}"; need "OCS-APIRequest: true"
+    case "$a" in *" NC-Token: testkey "* | *" Authorization: Basic YWRtaW46cCJhXHNz "*) ;; *) exit 8 ;; esac ;;
+  # Paperless-ngx: Token testkey; requests go to $LOG; /two has no tag_count and correspondent_count
+  *//paperless.test/*) echo "paperless$a" >> "${LOG:-/dev/null}"; need "Authorization: Token testkey" ;;
   # Home Assistant: Bearer token only; every request goes to $LOG, an entity without a fixture is a 404
   *//ha.test/*) echo "ha$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
@@ -196,6 +201,10 @@ case "$u" in
   *//speedtest.test/*) f=net/speedtest_latest ;;
   *//traefik.test/none/*) f=net/traefik_none ;;
   *//traefik.test/*) f=net/traefik_overview ;;
+  *//nextcloud.test/nofree/*) f=files/nextcloud_nofree ;;
+  *//nextcloud.test/*) f=files/nextcloud_info ;;
+  *//paperless.test/two/*) f=files/paperless_two ;;
+  *//paperless.test/*) f=files/paperless_stats ;;
   *//npm.test/*api/tokens) f=net/npm_tokens ;;
   *//npm.test/empty/*) f=net/npm_empty ;;
   *//npm.test/norh/*redirection-hosts) exit 8 ;;

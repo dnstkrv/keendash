@@ -978,6 +978,25 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/traefik: no http.routers -> ok 0, no answer -> ok 0", run("/none", "USER=") === "ok 0" && run("", "USER=").length > 4 && collect("ext.d/traefik", "", "", { env: "URL=http://nohost.test USER= " }).trim() === "ok 0");
       fs.rmSync(sd, { recursive: true, force: true });
     }
+    // nextcloud: KEY -> NC-Token only, else Basic; paperless: Token header, tiles only for the fields present
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-f-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";
+      const run = (s, e) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/" + s, "", "", { state: sd, env: e }).trim(); };
+      const nc = "URL=http://nextcloud.test", pw = "PASS='p\"a\\ss' ";
+      const ncWant = ["ok 1", "t|Свободно|512110190592|b", "t|Активных за сутки|3|n", "t|Файлов|48213|n", "t|Общих ссылок|17|n"].join("\n");
+      ok("ext.d/nextcloud: exact tiles with KEY", run("nextcloud", nc + " KEY=testkey ") === ncWant, run("nextcloud", nc + " KEY=testkey "));
+      ok("ext.d/nextcloud: KEY -> OCS-APIRequest and NC-Token, no Authorization, serverinfo path", / OCS-APIRequest: true /.test(lg()) && / NC-Token: testkey /.test(lg()) && !/Authorization/.test(lg()) && / http:\/\/nextcloud\.test\/ocs\/v2\.php\/apps\/serverinfo\/api\/v1\/info\?format=json \n$/.test(lg()), lg());
+      ok("ext.d/nextcloud: KEY and USER -> only NC-Token", run("nextcloud", nc + " KEY=testkey USER=admin " + pw) === ncWant && / NC-Token: testkey /.test(lg()) && !/Authorization/.test(lg()), lg());
+      ok("ext.d/nextcloud: no KEY, USER -> Basic with the JSON-hostile password, no NC-Token", run("nextcloud", nc + " USER=admin " + pw) === ncWant && / Authorization: Basic YWRtaW46cCJhXHNz /.test(lg()) && !/NC-Token/.test(lg()), lg());
+      ok("ext.d/nextcloud: no credentials or a wrong KEY -> ok 0", run("nextcloud", nc + " ") === "ok 0" && run("nextcloud", nc + " KEY=bad ") === "ok 0");
+      ok("ext.d/nextcloud: no freespace -> ok 0; no answer -> ok 0", run("nextcloud", nc + "/nofree KEY=testkey ") === "ok 0" && run("nextcloud", "URL=http://nohost.test KEY=testkey ") === "ok 0");
+      ok("ext.d/nextcloud: secrets not printed", !/testkey|a\\ss|YWRtaW46/.test(run("nextcloud", nc + " KEY=testkey USER=admin " + pw) + run("nextcloud", nc + " USER=admin " + pw)));
+      const pl = "URL=http://paperless.test KEY=testkey ", plWant = ["ok 1", "t|Документов|1284|n", "t|Во входящих|6|n", "t|Тегов|23|n", "t|Корреспондентов|41|n"].join("\n");
+      ok("ext.d/paperless: exact tiles, Token header, statistics path", run("paperless", pl) === plWant && / --header Authorization: Token testkey http:\/\/paperless\.test\/api\/statistics\/ \n$/.test(lg()), run("paperless", pl) + lg());
+      ok("ext.d/paperless: no tag_count and correspondent_count -> two tiles", run("paperless", "URL=http://paperless.test/two KEY=testkey ") === ["ok 1", "t|Документов|1284|n", "t|Во входящих|6|n"].join("\n"));
+      ok("ext.d/paperless: wrong token -> ok 0, no answer -> ok 0, key not printed", run("paperless", "URL=http://paperless.test KEY=bad ") === "ok 0" && run("paperless", "URL=http://nohost.test KEY=testkey ") === "ok 0" && !/testkey/.test(run("paperless", pl)));
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
     // nextdns: the profile ID is a path segment, so anything but [A-Za-z0-9]{1,32} is refused before the request
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-n-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";

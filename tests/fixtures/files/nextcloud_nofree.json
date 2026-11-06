@@ -1,0 +1,1 @@
+{"ocs":{"meta":{"status":"ok","statuscode":200,"message":"OK"},"data":{"nextcloud":{"system":{"version":"30.0.1.2"},"storage":{"num_files":48213},"shares":{"num_shares":17}},"activeUsers":{"last24hours":3}}}}

@@ -1,0 +1,1 @@
+{"ocs":{"meta":{"status":"ok","statuscode":200,"message":"OK"},"data":{"nextcloud":{"system":{"version":"30.0.1.2","freespace":512110190592,"cpuload":[0.4,0.3,0.2]},"storage":{"num_users":3,"num_files":48213,"num_storages":5},"shares":{"num_shares":17,"num_shares_link":4}},"server":{"webserver":"nginx"},"activeUsers":{"last5minutes":1,"last1hour":2,"last24hours":3}}}}

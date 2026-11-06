@@ -1,0 +1,12 @@
+#!/bin/sh
+# name: Paperless-ngx
+# group: Файлы
+# fields: url key
+# hint: Токен: профиль → API Auth Token
+# Paperless-ngx /api/statistics/: documents_total is the reference field; a tile whose field is absent is not printed
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+J --header "Authorization: Token ${KEY:-}" "${URL%/}/api/statistics/" | awk "$LOAD"'
+function t(l, k) { if (k in V) print "t|" l "|" sprintf("%.0f", V[k]) "|n" }
+END {
+  if (!("documents_total" in V)) { print "ok 0"; exit }
+  print "ok 1"; t("Документов", "documents_total"); t("Во входящих", "documents_inbox"); t("Тегов", "tag_count"); t("Корреспондентов", "correspondent_count") }'
