@@ -7,6 +7,8 @@ PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 D=/tmp/keendash NEW=/tmp/keendash/upd.new BUSY=/tmp/keendash/upd.busy LOG=/tmp/keendash/upd.log
 mkdir -p "$D"
+# opkg's wget has no timeout of its own: a stalled feed kept the opkg lock (and tick 5) busy for good
+printf 'timeout = 20\ntries = 2\n' > "$D/wgetrc" && WGETRC=$D/wgetrc && export WGETRC
 running() { [ -f "$BUSY" ] && kill -0 "$(cat "$BUSY")" 2>/dev/null; }
 
 case "$1" in
