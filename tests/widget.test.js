@@ -1973,7 +1973,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   await run(withCfg({ lay: [["c", "sys", 1, 0, ""]] }), async w => {
     const p = await openPage(w); p.querySelector(".kd-ng").click();
     const inp = p.querySelector("input.kd-name"), g = top(p)[0];
-    ok("group: «Новая группа» is first, 3/3, named, in rename mode with focus", g.getAttribute("data-g") === "g1" && span(g) === 3 && inp && inp.value === "Новая группа" && inp.getAttribute("maxlength") === "32" && w.document.activeElement === inp && !!g.querySelector(".kd-empty"));
+    ok("group: «Новая группа» is first, 3/3, named, in rename mode with focus", g.getAttribute("data-g") === "g1" && span(g) === 3 && inp && inp.value === "Новая группа" && !inp.hasAttribute("maxlength") && w.document.activeElement === inp && !!g.querySelector(".kd-empty"));
     typeIn(w, inp, "Мой дом"); await w.__servicesWidget.update();
     ok("group: the name input keeps its text and focus across a data refresh", p.querySelector("input.kd-name") === inp && inp.value === "Мой дом" && w.document.activeElement === inp);
     await wait(200);
@@ -2088,6 +2088,93 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     w.Date.now = () => now() + 46000; await w.__servicesWidget.update();
     ok("page: saved layout is forgotten after 45 s", kept && still && !folded(p), kept + " " + still);
   }, hang, URL0);
+  // two quick saves: the first rev landing is this tab's own, not another browser's
+  {
+    let seen2 = "", puts = [];
+    await run(full, async w => {
+      const p = await foldTelemt(w); p.querySelector('[data-id="sys"] .kd-fold').click();
+      const both = () => !p.querySelector('[data-id="telemt"] .us-body') && !p.querySelector('[data-id="sys"] .us-body');
+      const k0 = both(); seen2 = puts[0]; await w.__servicesWidget.update();
+      const k1 = both(); seen2 = puts[1]; await w.__servicesWidget.update();
+      ok("page: the first rev of two quick saves keeps the second layout, the second rev clears it", puts.length === 2 && k0 && k1 && !both() && !folded(p), [puts.length, k0, k1, both()].join());
+    }, w => (u, i) => {
+      const r = (b) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) });
+      if (/\/rci\/put$/.test(u)) { puts.push(JSON.parse(i.body).filename.split("/").pop().replace(".txt", "")); return r({ port: { port: "7" } }); }
+      if (/\/fui$/.test(u)) return new Promise(() => {});
+      return r(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { rev: seen2 }) }));
+    }, URL0);
+  }
+  fcalls = [];
+  await run(renLay, async w => {
+    const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelector(".kd-ren").click();
+    const inp = p.querySelector("input.kd-name"); typeIn(w, inp, "Новое"); inp.dispatchEvent(new w.Event("blur")); await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("rename: leaving the field saves the name", /\ngroup g1 3 0 Новое\ncard awg 1 0 g1\n/.test(txt) && !p.querySelector("input.kd-name") && p.querySelector('[data-g="g1"] .kd-gn').textContent === "Новое", txt);
+  }, fm(fcalls, { base: renLay }), URL0);
+  await run(full, async w => {
+    const g = w.__servicesWidget.grpName, pair = String.fromCodePoint(0x1F600);
+    ok("grpName: newline, CR, tab, | and DEL removed, pairs kept whole, 32 code points", g("a\nb\rc|d\te\x7f") === "abcde" && g(pair.repeat(40)) === pair.repeat(32) && g("  x  ") === "x");
+  }, null, URL0);
+  // a drag handle does nothing while a name is typed (the field would hold back the redraw)
+  fcalls = [];
+  await run(renLay, async w => {
+    const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelector(".kd-ren").click();
+    const sys = p.querySelector('[data-id="sys"]'), h = sys.querySelector(".kd-drag"), f = (t, x) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = x; e.clientY = 10; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    f("pointerdown", 10); f("pointermove", 200); f("pointerup", 200); await wait(200);
+    ok("drag: with a name field open nothing floats and nothing is saved", sys.style.position !== "fixed" && !!p.querySelector("input.kd-name") && !post(fcalls, /rci.put$/).length, sys.getAttribute("style"));
+  }, fm(fcalls, { base: renLay }), URL0);
+  // pointercancel puts everything back
+  fcalls = [];
+  const L6 = withCfg({ lay: [["c", "sys", 1, 0, ""], ["c", "telemt", 1, 0, ""], ["c", "awg", 1, 0, ""]] });
+  await run(L6, async w => {
+    const p = await openPage(w);
+    top(p).forEach((c, i) => rc(c, i * 100, 0, 90, 50));
+    const h = p.querySelector('[data-id="telemt"] .kd-drag'), fire = (t, x) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = x; e.clientY = 25; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    fire("pointerdown", 110); fire("pointermove", 280); fire("pointercancel", 280); await wait(200);
+    ok("drag: pointercancel keeps the layout and sends nothing", top(p).slice(0, 3).map(idOf).join() === "sys,telemt,awg" && !post(fcalls, /rci.put$/).length && !p.querySelector('[data-id="telemt"]').style.position, top(p).slice(0, 3).map(idOf).join());
+  }, fm(fcalls, { base: L6 }), URL0);
+  // group fold and width
+  fcalls = [];
+  await run(renLay, async w => {
+    const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-fold').click(); await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("group: fold sends c 1 on the group line", /\ngroup g1 3 1 Дом\ncard awg 1 0 g1\n/.test(txt) && /^keendash 1 [a-z0-9]{12}\ncard sys 1 0\n/.test(txt), txt);
+  }, fm(fcalls, { base: renLay }), URL0);
+  fcalls = [];
+  await run(renLay, async w => {
+    const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelectorAll(".kd-mw")[1].click(); await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("group: width sends w 2 on the group line", /\ngroup g1 2 0 Дом\ncard awg 1 0 g1\n/.test(txt), txt);
+  }, fm(fcalls, { base: renLay }), URL0);
+  // the upload fails: the previous layout comes back with the reason
+  fcalls = [];
+  await run(full, async w => {
+    const p = await foldTelemt(w); await wait(200);
+    ok("page: a failed upload restores the layout and says so", folded(p) === false && /Не удалось сохранить раскладку: ошибка/.test(p.textContent), p.textContent.slice(0, 200));
+  }, fm(fcalls, { put: 500 }), URL0);
+  // the same id in two old col lines is one card, and the first change sends card lines only
+  fcalls = [];
+  await run(withCfg({ cols: [["sys", "telemt"], ["sys", "awg"]] }), async w => {
+    const p = await openPage(w), ids = top(p).map(idOf);
+    p.querySelector('[data-id="sys"] .kd-fold').click(); await wait(200);
+    const [rev, txt] = await sent(w, fcalls), cards = (txt || "").split("\n").filter(l => /^card /.test(l)).map(l => l.split(" ")[1]);
+    ok("page: cols with a repeated id show it once", ids.filter(x => x === "sys").length === 1 && ids.slice(0, 3).join() === "sys,telemt,awg", ids.join());
+    ok("page: the first change after cols migration sends card lines, each id once", /^keendash 1 [a-z0-9]{12}\ncard sys 1 1\ncard telemt 1 0\ncard awg 1 0\n/.test(txt) && !/col /.test(txt) && cards.every((x, i) => cards.indexOf(x) === i), txt);
+  }, fm(fcalls, { base: withCfg({ cols: [["sys", "telemt"], ["sys", "awg"]] }) }), URL0);
+  // accessibility: names in labels, expanded state, focus back to «⋯»
+  await run(withCfg({ lay: lay0 }), async w => {
+    const p = await openPage(w), g = p.querySelector('[data-g="g1"]'), sys = p.querySelector('[data-id="sys"]'), al = (el, s) => el.querySelector(s).getAttribute("aria-label");
+    const t = sys.querySelector(".kd-ct").textContent;
+    ok("a11y: header labels carry the name, escaped", al(sys, ".kd-more") === "Ещё: " + t && al(sys, ".kd-drag") === "Перетащить: " + t && al(sys, ".kd-fold") === "Свернуть: " + t && al(g, ".kd-more") === "Ещё: Дом <b>x</b>" && al(g, ".kd-drag") === "Перетащить: Дом <b>x</b>" && !g.querySelector(".kd-gh b") && al(p.querySelector('[data-id="qb"]'), ".kd-gear") === "Настроить: " + p.querySelector('[data-id="qb"] .kd-ct').textContent);
+    const more = sys.querySelector(".kd-more");
+    ok("a11y: «⋯» and fold carry the state", more.getAttribute("aria-haspopup") === "true" && more.getAttribute("aria-expanded") === "false" && sys.querySelector(".kd-fold").getAttribute("aria-expanded") === "true");
+    more.click();
+    ok("a11y: the open menu is marked on «⋯», has no menu role", sys.querySelector(".kd-more").getAttribute("aria-expanded") === "true" && !p.querySelector(".kd-menu").hasAttribute("role"));
+    esc(w);
+    ok("a11y: Esc returns the focus to «⋯»", w.document.activeElement === p.querySelector('[data-id="sys"] .kd-more') && !p.querySelector(".kd-menu"));
+    p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelector(".kd-ph h1").click();
+    ok("a11y: an outside click returns the focus to the group's «⋯»", w.document.activeElement === p.querySelector('[data-g="g1"] > .kd-gh > .kd-more'));
+  }, null, URL0);
   // the volume comes from the freshest status, not the snapshot the dialog opened with
   fcalls = []; let novol = true;
   await run(full, async w => {

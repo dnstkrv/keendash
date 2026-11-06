@@ -934,7 +934,7 @@
       else if (r[4] && gm[r[4]]) gm[r[4]].cards.push({ id: r[1], w: r[2], c: r[3] });
       else items.push({ id: r[1], w: r[2], c: r[3] });
     });
-    else for (k = 0; k < 99; k++) cols.forEach(function (c) { if (k < c.length) items.push({ id: c[k], w: 1, c: 0 }); });
+    else for (k = 0; k < 99; k++) cols.forEach(function (c) { if (k < c.length && !have[c[k]]) { have[c[k]] = 1; items.push({ id: c[k], w: 1, c: 0 }); } });
     items.forEach(function (it) { if (it.id) have[it.id] = 1; (it.cards || []).forEach(function (c) { have[c.id] = 1; }); });
     (all || pageCards(d)).forEach(function (c) { if (!have[c[3]]) { have[c[3]] = 1; items.push({ id: c[3], w: 1, c: 0 }); } });
     return items;
@@ -949,14 +949,17 @@
     return L.join("\n");
   }
   /* pendingLay: the layout just saved, shown until status.json carries its rev (or another one, or 45 s pass: pendingFrom
-   * is the rev it was saved over, pendingAt the time); pageNote: why saving it failed */
-  var pendingLay = null, pendingRev = "", pendingFrom, pendingAt = 0, pageNote = "";
+   * is the rev it was saved over, pendingAt the time); sentRevs: the revs this tab sent, not another browser's save;
+   * pageNote: why saving it failed */
+  var pendingLay = null, pendingRev = "", pendingFrom, pendingAt = 0, pageNote = "", sentRevs = {};
   /* renaming: the gid whose name becomes an input on the next draw */
   var renaming = "";
+  /* refocus: [attribute, value] of the item whose «⋯» takes the focus back after the menu closes and the page is redrawn */
+  var refocus = null;
   function saveLay(items) {
     var cf = (lastData || {}).cfg || {}, rev = newRev(), old = pendingLay;
     if (!cf.vol) { pageNote = "Не найден диск Entware"; renderPage(); return; }
-    pendingLay = items; pendingRev = rev; pendingFrom = cf.rev; pendingAt = Date.now(); pageNote = "";
+    sentRevs[rev] = 1; pendingLay = items; pendingRev = rev; pendingFrom = cf.rev; pendingAt = Date.now(); pageNote = "";
     renderPage();
     upload("keendash 1 " + rev + "\n" + layMsg(items) + "\nend\n", rev).then(null, function (m) {
       if (pendingRev !== rev) return;
@@ -974,7 +977,8 @@
     });
     return r;
   }
-  function btn(cls, label, text) { return '<button type="button" class="' + cls + '" aria-label="' + label + '" title="' + label + '">' + text + "</button>"; }
+  /* label is HTML-safe already (esc() on the name); extra: more attributes */
+  function btn(cls, label, text, extra) { return '<button type="button" class="' + cls + '" aria-label="' + label + '" title="' + label + '"' + (extra || "") + ">" + text + "</button>"; }
   function renderPage() {
     var main = page && page.parentNode, d = lastData;
     if (!main || busy()) return;
@@ -983,7 +987,7 @@
     if (!d) { page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
     var cf = d.cfg || {};
     if (pendingLay && cf.rev === pendingRev && cf.err) pageNote = "Не удалось сохранить раскладку: " + cf.err;
-    if (pendingLay && (cf.rev === pendingRev || cf.rev !== pendingFrom || Date.now() - pendingAt > 45000)) pendingLay = null;
+    if (pendingLay && (cf.rev === pendingRev || (cf.rev !== pendingFrom && !sentRevs[cf.rev]) || Date.now() - pendingAt > 45000)) pendingLay = null;
     if (pageNote) page.insertAdjacentHTML("beforeend", note(esc(pageNote)));
     /* under 900 px (the page without its padding) one column; the saved widths stay */
     var cs = window.getComputedStyle(page), one = page.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0) < 900;
@@ -991,32 +995,41 @@
     all.forEach(function (c) { cards[c[3]] = c; });
     instOf(d).forEach(function (i) { inst[i.id] = 1; });
     function span(w, max) { return ' style="grid-column:span ' + (one ? 1 : Math.min(w, max)) + '"'; }
-    function fold(it) { return btn("kd-fold", it.c ? "Развернуть" : "Свернуть", it.c ? "&#9656;" : "&#9662;"); }
+    function fold(it, name) { return btn("kd-fold", (it.c ? "Развернуть: " : "Свернуть: ") + esc(name), it.c ? "&#9656;" : "&#9662;", ' aria-expanded="' + !it.c + '"'); }
+    function more(name) { return btn("kd-more", "Ещё: " + esc(name), "&#8943;", ' aria-haspopup="true" aria-expanded="false"'); }
+    function drag(name) { return btn("kd-drag", "Перетащить: " + esc(name), "&#8942;&#8942;"); }
     function card(it, max) {
       var c = cards[it.id];
       if (!c) return "";
-      return '<div class="kd-item kd-card' + (it.c ? " kd-c1" : "") + '" data-id="' + esc(it.id) + '"' + span(it.w, max) + '><div class="kd-ch">' + fold(it) +
-        '<span class="kd-ct">' + esc(c[0]) + "</span>" + openHtml(c[2]) + (inst[it.id] ? btn("kd-gear", "Настройки сервиса", "&#9881;") : "") +
-        btn("kd-more", "Ещё", "&#8943;") + btn("kd-drag", "Перетащить", "&#8942;&#8942;") + "</div>" + (it.c ? "" : '<div class="us-body">' + c[1] + "</div>") + "</div>";
+      return '<div class="kd-item kd-card' + (it.c ? " kd-c1" : "") + '" data-id="' + esc(it.id) + '"' + span(it.w, max) + '><div class="kd-ch">' + fold(it, c[0]) +
+        '<span class="kd-ct">' + esc(c[0]) + "</span>" + openHtml(c[2]) + (inst[it.id] ? btn("kd-gear", "Настроить: " + esc(c[0]), "&#9881;") : "") +
+        more(c[0]) + drag(c[0]) + "</div>" + (it.c ? "" : '<div class="us-body">' + c[1] + "</div>") + "</div>";
     }
     var h = '<div class="kd-lay" style="grid-template-columns:' + (one ? "1fr" : "repeat(3,1fr)") + '">';
     items.forEach(function (it) {
       if (!it.g) { h += card(it, 3); return; }
       var inner = it.cards.map(function (c) { return card(c, it.w); }).join("");
-      h += '<div class="kd-item kd-grp" data-g="' + esc(it.g) + '"' + span(it.w, 3) + '><div class="kd-gh">' + fold(it) + (renaming === it.g ? '<input class="kd-name" maxlength="32" aria-label="Имя группы" value="' + esc(it.name) + '">' : '<span class="kd-gn">' + esc(it.name) + "</span>") +
-        '<span class="kd-gc">' + it.cards.filter(function (c) { return cards[c.id]; }).length + "</span>" + btn("kd-more", "Ещё", "&#8943;") + btn("kd-drag", "Перетащить", "&#8942;&#8942;") + "</div>" +
+      h += '<div class="kd-item kd-grp" data-g="' + esc(it.g) + '"' + span(it.w, 3) + '><div class="kd-gh">' + fold(it, it.name) + (renaming === it.g ? '<input class="kd-name" aria-label="Имя группы" value="' + esc(it.name) + '">' : '<span class="kd-gn">' + esc(it.name) + "</span>") +
+        '<span class="kd-gc">' + it.cards.filter(function (c) { return cards[c.id]; }).length + "</span>" + more(it.name) + drag(it.name) + "</div>" +
         (it.c ? "" : '<div class="kd-lay" style="grid-template-columns:' + (one ? "1fr" : "repeat(" + it.w + ",1fr)") + '">' + (inner || '<div class="kd-empty">Перетащите сюда карточки</div>') + "</div>") + "</div>";
     });
     page.insertAdjacentHTML("beforeend", h + "</div>");
     Array.prototype.forEach.call(page.querySelectorAll(".kd-ch > .kd-drag,.kd-gh > .kd-drag"), function (b) { attachPageDrag(b.parentNode.parentNode, b); });
+    if (refocus) {
+      Array.prototype.forEach.call(page.querySelectorAll(".kd-item"), function (e) {
+        var b = e.getAttribute(refocus[0]) === refocus[1] && e.firstChild.querySelector(".kd-more");
+        if (b) b.focus();
+      });
+      refocus = null;
+    }
     var inp = page.querySelector("input.kd-name");
     if (inp) nameInput(inp);
     renaming = "";
     main.scrollTop = top;
   }
   /* a group's name as typed -> what bin/settings accepts: no control characters or |, up to 32 characters, no outer spaces */
-  function grpName(v) { return Array.from(v.replace(/[\x00-\x1f\x7f|]/g, "")).slice(0, 32).join("").trim(); }
-  /* Enter saves, Esc, an empty name or leaving the field cancels; the field goes first, as it holds back the redraw */
+  function grpName(v) { return (v.replace(/[\x00-\x1f\x7f|]/g, "").match(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\s\S]/g) || []).slice(0, 32).join("").trim(); }
+  /* Enter or leaving the field saves, Esc or an empty name cancels; the field goes first, as it holds back the redraw */
   function nameInput(inp) {
     var done = false;
     function end(v) {
@@ -1030,12 +1043,13 @@
       if (e.isComposing) return;
       if (e.key === "Enter") { e.preventDefault(); end(grpName(inp.value)); } else if (e.key === "Escape") end("");
     });
-    inp.addEventListener("blur", function () { end(""); });
+    inp.addEventListener("blur", function () { end(grpName(inp.value)); });
     inp.focus(); inp.select();
   }
   /* the «⋯» menu, one on the page, inside the header it belongs to; closes by Esc or a click elsewhere */
   function closeMenu(quiet) {
-    var m = page && page.querySelector(".kd-menu");
+    var m = page && page.querySelector(".kd-menu"), it = m && m.closest(".kd-item");
+    if (it) refocus = it.hasAttribute("data-g") ? ["data-g", it.getAttribute("data-g")] : ["data-id", it.getAttribute("data-id")];
     document.removeEventListener("keydown", menuKey); document.removeEventListener("click", menuOut);
     if (m) m.parentNode.removeChild(m);
     if (!quiet) renderPage();
@@ -1043,9 +1057,10 @@
   function menuKey(e) { if (e.key === "Escape") closeMenu(); }
   function menuOut(e) { if (!(e.target.closest && e.target.closest(".kd-menu,.kd-more"))) closeMenu(); }
   function openMenu(head, it) {
-    head.insertAdjacentHTML("beforeend", '<div class="kd-menu" role="menu"><span class="kd-mt">Ширина:</span>' + [1, 2, 3].map(function (n) {
+    head.insertAdjacentHTML("beforeend", '<div class="kd-menu"><span class="kd-mt">Ширина:</span>' + [1, 2, 3].map(function (n) {
       return '<button type="button" class="kd-mw' + (it.w === n ? " kd-on" : "") + '" data-w="' + n + '" aria-pressed="' + (it.w === n) + '" aria-label="Ширина ' + n + '/3" title="Ширина ' + n + '/3">' + n + "/3</button>";
     }).join("") + (it.g ? '<button type="button" class="kd-ren" aria-label="Переименовать" title="Переименовать">Переименовать</button><button type="button" class="kd-ung" aria-label="Разгруппировать" title="Разгруппировать">Разгруппировать</button>' : "") + "</div>");
+    refocus = null; head.querySelector(".kd-more").setAttribute("aria-expanded", "true");
     document.addEventListener("keydown", menuKey); document.addEventListener("click", menuOut);
   }
   function onPageClick(e) {
@@ -1073,6 +1088,7 @@
     handle.style.touchAction = "none"; handle.style.cursor = "grab";
     handle.addEventListener("pointerdown", function (ev) {
       if (ev.pointerType === "mouse" && ev.button !== 0) return;
+      if (busy()) return; /* a name field or a menu is open: no preventDefault, so the field blurs and saves */
       ev.preventDefault();
       var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, ph, lay = r.parentNode, grids = r.hasAttribute("data-g") ? [lay] : Array.prototype.slice.call(page.querySelectorAll(".kd-lay"));
       try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
@@ -1104,7 +1120,7 @@
         handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end);
         try { handle.releasePointerCapture(ev.pointerId); } catch (x) {}
         if (!started) return;
-        var prev = ph.previousElementSibling, next = ph.nextElementSibling, items, mine, rest, at, p, n, gid = ph.parentNode.parentNode.getAttribute("data-g"), dest;
+        var prev = ph.previousElementSibling, next = ph.nextElementSibling, items, mine, rest, at, p, n, gid = ph.parentNode.parentNode.getAttribute("data-g");
         function key(k) { return k && (k.hasAttribute("data-g") ? "g:" + k.getAttribute("data-g") : "c:" + k.getAttribute("data-id")); }
         function ikey(it) { return it.g ? "g:" + it.g : "c:" + it.id; }
         while (prev && (prev === r || !prev.classList.contains("kd-item"))) prev = prev.previousElementSibling;
@@ -1204,7 +1220,7 @@
     });
     return L.length ? "keendash 1 " + rev + "\n" + L.join("\n") + "\nend\n" : "";
   }
-  window.__servicesWidget = { newId: newId, buildMsg: buildMsg, update: update, awaitRev: awaitRev, layModel: layModel, layMsg: layMsg }; // for the tests
+  window.__servicesWidget = { newId: newId, buildMsg: buildMsg, update: update, awaitRev: awaitRev, layModel: layModel, layMsg: layMsg, grpName: grpName }; // for the tests
 
   /* the file lands in the inbox as <rev>.txt; a rejected promise carries the text to show */
   function newRev() { return (Math.random().toString(36) + "000000000000").slice(2, 14); }
