@@ -1,0 +1,4 @@
+/accounts/login/
+  HTTP/1.1 200 OK
+
+<title>Paperless-ngx sign in</title>

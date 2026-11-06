@@ -2,6 +2,7 @@
 # name: Syncthing
 # group: Файлы
 # fields: url key
+# probe: 8384,https:8384 / Syncthing
 # hint: API-ключ: Действия → Настройки → Общие. Адрес GUI должен слушать сеть (0.0.0.0:8384), не 127.0.0.1. Сертификат не проверяется
 # Syncthing REST: global completion is the reference field; certificate not checked (https is usually self-signed). The three answers are prefixed c. n. f.; a failed n. or f. request leaves its tile empty (n.err / f.err)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

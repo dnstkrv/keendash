@@ -2,6 +2,7 @@
 # name: Immich
 # group: Медиа
 # fields: url key
+# probe: 2283 /api/server/ping "res":"pong"
 # Immich: library statistics
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 J --header "x-api-key: ${KEY:-}" "${URL%/}/api/server/statistics" | awk "$LOAD"'END {

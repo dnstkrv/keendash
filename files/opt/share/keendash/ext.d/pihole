@@ -2,6 +2,7 @@
 # name: Pi-hole
 # group: Сеть
 # fields: url pass
+# probe: 80,8080 /admin/login Pi-hole
 # hint: Pi-hole v6. Пароль веб-интерфейса или пароль приложения (Settings → Web interface / API → App password); без пароля, если он в Pi-hole не задан
 # Pi-hole v6 stats from its REST API. With PASS a session: the sid from a JSON login body goes in X-FTL-SID on every request and is deleted at the end (seats are limited: 16 sessions, then 429 for everyone)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

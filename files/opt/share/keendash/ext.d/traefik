@@ -2,6 +2,7 @@
 # name: Traefik
 # group: Сеть
 # fields: url user pass
+# probe: 8080 /api/version "Codename"
 # hint: Адрес API (api.insecure, порт 8080, или роутер на api@internal); логин — если стоит basicAuth
 # Traefik /api/overview: totals over http, tcp, udp (warnings and errors cover routers, services and middlewares); Basic auth only when a login is set
 BIN=${0%/*}/../bin; . "$BIN/extlib"

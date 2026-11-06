@@ -1,0 +1,4 @@
+/status.php
+  HTTP/1.1 200 OK
+
+{"installed":true,"maintenance":false,"version":"30.0.0.1","productname":"Nextcloud"}

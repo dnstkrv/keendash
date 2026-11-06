@@ -1,0 +1,4 @@
+/identity
+  HTTP/1.1 200 OK
+
+<MediaContainer size="0" machineIdentifier="0123abcd" version="1.41.0"/>

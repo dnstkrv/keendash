@@ -2,6 +2,7 @@
 # name: Jellyseerr
 # group: Медиа
 # fields: url key
+# probe: 5055 /api/v1/settings/public "applicationTitle":"Jellyseerr"
 # hint: Ключ: Settings → General → API Key
 # Jellyseerr: same API as Overseerr
 . "${0%/*}/overseerr"

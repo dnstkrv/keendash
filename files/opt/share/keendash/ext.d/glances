@@ -2,6 +2,7 @@
 # name: Glances
 # group: Серверы
 # fields: url user pass
+# probe: 61208 / Glances
 # hint: Логин не нужен, если Glances запущен без пароля
 # Glances: CPU, memory, swap, load (API v4, v3 when v4 does not answer; Basic auth only when a login is set)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

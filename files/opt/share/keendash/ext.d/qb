@@ -2,6 +2,7 @@
 # name: qBittorrent
 # group: Медиа
 # fields: url user pass
+# probe: 8080 / qBittorrent
 # qBittorrent Web API v2: session cookie from the login, then transfer and torrents
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 B=${URL%/}; set -- --header "Referer: $B"

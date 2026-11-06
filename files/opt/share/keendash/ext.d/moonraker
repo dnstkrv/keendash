@@ -2,6 +2,7 @@
 # name: Moonraker
 # group: Дом
 # fields: url
+# probe: 7125 /server/info "moonraker_version"
 # hint: Адрес Moonraker (порт 7125); роутер должен быть в trusted_clients
 # Klipper printer: state, progress, estimate, nozzle and bed temperatures
 BIN=${0%/*}/../bin; . "$BIN/extlib"

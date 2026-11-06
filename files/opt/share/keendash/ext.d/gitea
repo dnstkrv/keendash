@@ -2,6 +2,7 @@
 # name: Gitea / Forgejo
 # group: Другое
 # fields: url key
+# probe: 3000 /api/healthz Gitea: Git with a cup of tea
 # hint: Токен: Настройки → Приложения, права read на repository, issue, notification
 # Gitea/Forgejo: every count is the X-Total-Count response header of a limit=1 list (read from dl -S, digits only, else empty); repos/search is the reference
 BIN=${0%/*}/../bin; . "$BIN/extlib"

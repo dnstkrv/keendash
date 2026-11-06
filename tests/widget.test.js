@@ -751,6 +751,26 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const lines = out.split("\n"), miss = want.filter(l => lines.indexOf(l) < 0);
     ok("ext.d/agh: parses stats, clients, filters, query log", !miss.length && lines.filter(l => l.startsWith("top|")).length === 5 && /^sq 2200,(\d+,){22}2491$/m.test(out), miss.join(" / ") || out);
   }
+  // LAN scan fingerprints: `# probe: <ports> <path> <match>` in every ext.d type but nextdns, custom and check; the type's fake answer
+  // (fake-wget, tests/fixtures/probe/<type>) has its own match and no other type's match on a shared port
+  if (haveCc) {
+    const dir = path.join(__dirname, "..", "files", "opt", "share", "keendash", "ext.d"), pr = {};
+    fs.readdirSync(dir).forEach(t => {
+      const l = fs.readFileSync(path.join(dir, t), "utf8").split("\n").filter(x => x.startsWith("# probe:")), m = /^# probe: ([a-z0-9:,]+) (\/\S*) (.+)$/.exec(l[0] || "");
+      if (["nextdns", "custom", "check"].includes(t)) return ok("probe: " + t + " has none", !l.length, l[0]);
+      ok("probe: " + t + " has one well-formed line", l.length === 1 && m && m[1].split(",").every(p => /^(https:)?[1-9]\d{0,4}$/.test(p)), l.join("|"));
+      if (m) pr[t] = { ports: m[1].split(",").map(p => p.replace("https:", "")), path: m[2], match: m[3].replace(/\r$/, "") };
+    });
+    const ans = {};
+    Object.keys(pr).forEach(t => {
+      const r = cp.spawnSync("sh", [path.join(__dirname, "fake-wget"), "-S", "-O-", "http://" + t + ".probe.test:" + pr[t].ports[0] + pr[t].path], { encoding: "utf8" });
+      ans[t] = r.stderr + r.stdout;
+      ok("probe: " + t + " answer has its match", r.status === 0 && ans[t].includes(pr[t].match), r.status + " " + ans[t].slice(0, 80));
+    });
+    const bad = [];
+    Object.keys(pr).forEach(a => Object.keys(pr).forEach(b => { if (a !== b && pr[a].ports.some(p => pr[b].ports.includes(p)) && ans[b].includes(pr[a].match)) bad.push(a + " in " + b); }));
+    ok("probe: no cross-matches on a shared port", !bad.length, bad.join(", "));
+  }
   if (haveCc) {
     const env = {
       qb: "URL=http://qb.test:8080 USER=admin PASS='p&s=s' ", plex: "URL=http://plex.test:32400/ TOKEN=testkey ", sonarr: "URL=http://sonarr.test KEY=testkey ",

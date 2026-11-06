@@ -2,6 +2,7 @@
 # name: Home Assistant
 # group: Дом
 # fields: url token map
+# probe: 8123 / <title>Home Assistant</title>
 # hint: Токен: Профиль → Безопасность → Долгосрочные токены. «Что показывать»: Подпись=sensor.id; …; entity_id в нижнем регистре
 # Home Assistant: MAP "Label=entity_id; ..." (up to 8) -> e|label|state|unit; MAP comes from the browser, so awk reads it from ENVIRON and only ids matching ^[a-z0-9_]+\.[a-z0-9_]+$ reach the URL
 BIN=${0%/*}/../bin; . "$BIN/extlib"

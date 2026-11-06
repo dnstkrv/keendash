@@ -2,6 +2,7 @@
 # name: Prowlarr
 # group: Медиа
 # fields: url key
+# probe: 9696 / Prowlarr
 # Prowlarr v1: indexers, their failures and 24 h query stats
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 B=${URL%/}; set -- --header "X-Api-Key: ${KEY:-}"

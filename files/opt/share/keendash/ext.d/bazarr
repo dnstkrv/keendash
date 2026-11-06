@@ -2,6 +2,7 @@
 # name: Bazarr
 # group: Медиа
 # fields: url key
+# probe: 6767 / Bazarr
 # hint: Ключ: Settings → General → Security → API Key
 # Bazarr: episodes and movies without subtitles as tiles
 BIN=${0%/*}/../bin; . "$BIN/extlib"

@@ -2,6 +2,7 @@
 # name: MeTube
 # group: Медиа
 # fields: url user pass
+# probe: 8081 / MeTube
 # hint: Логин и пароль — только если MeTube закрыт прокси с Basic-входом
 # MeTube /history: {"done":[],"queue":[],"pending":[]}; empty lists flatten to nothing, so a real answer is any body whose keys are only those lists
 BIN=${0%/*}/../bin; . "$BIN/extlib"

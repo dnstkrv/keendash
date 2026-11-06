@@ -2,6 +2,7 @@
 # name: Plex
 # group: Медиа
 # fields: url token
+# probe: 32400 /identity machineIdentifier=
 # Plex Media Server: sessions and library sizes
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 B=${URL%/}; set -- --header "Accept: application/json" --header "X-Plex-Token: ${TOKEN:-}"

@@ -2,6 +2,7 @@
 # name: OpenMediaVault
 # group: Серверы
 # fields: url user pass
+# probe: 80,https:443 / openmediavault
 # hint: Администратор веб-интерфейса OMV (роль administrator)
 # OpenMediaVault: uptime, load, memory over JSON-RPC; the login goes in a JSON body, its session cookie into the next request
 BIN=${0%/*}/../bin; . "$BIN/extlib"

@@ -2,6 +2,7 @@
 # name: AdGuard Home
 # group: AdGuard
 # fields: url user pass
+# probe: 3000,80 /login.html AdGuard Home
 # AdGuard Home stats from its HTTP API (basic auth)
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 G=${URL%/}

@@ -2,6 +2,7 @@
 # name: Transmission
 # group: Медиа
 # fields: url user pass
+# probe: 9091 /transmission/rpc Transmission
 # hint: Логин не нужен, если в Transmission выключен вход (rpc-authentication-required)
 # Transmission RPC: the first POST is answered 409 with X-Transmission-Session-Id, repeat it with that header (Basic only when a login is set)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

@@ -2,6 +2,7 @@
 # name: NZBGet
 # group: Медиа
 # fields: url user pass
+# probe: 6789 / NZBGet
 # hint: Логин можно не задавать, если адрес роутера в списке AuthorizedIP
 # NZBGet: download speed and remaining size as tiles (Basic auth only when a login is set)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

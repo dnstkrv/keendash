@@ -1,0 +1,4 @@
+/api/system/status
+  HTTP/1.1 200 OK
+
+{"Version":"2.21.0","InstanceID":"0123abcd"}

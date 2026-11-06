@@ -2,6 +2,7 @@
 # name: Nextcloud
 # group: Файлы
 # fields: url user pass key
+# probe: 80,8080,https:443 /status.php "productname":"Nextcloud"
 # hint: Токен serverinfo (Настройки → Система, внизу) — тогда логин не нужен; иначе логин администратора и пароль приложения
 # Nextcloud serverinfo (OCS): KEY goes as NC-Token and wins; otherwise Basic when USER is set. Free space is the reference field; skipApps/skipUpdate keep the answer under the 4 s deadline
 BIN=${0%/*}/../bin; . "$BIN/extlib"

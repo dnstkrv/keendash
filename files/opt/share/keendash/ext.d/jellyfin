@@ -2,6 +2,7 @@
 # name: Jellyfin
 # group: Медиа
 # fields: url key
+# probe: 8096 /System/Info/Public "ProductName":"Jellyfin Server"
 # hint: Ключ: Панель управления → API-ключи → +
 # Jellyfin: sessions and library sizes (Plex's output shape)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

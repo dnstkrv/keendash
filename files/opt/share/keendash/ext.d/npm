@@ -2,6 +2,7 @@
 # name: Nginx Proxy Manager
 # group: Сеть
 # fields: url user pass
+# probe: 81 /api/ "status":"OK","setup":
 # hint: Логин — e-mail пользователя NPM; лучше отдельный пользователь с правом только просмотра
 # Nginx Proxy Manager: the e-mail and password go in a JSON body, the token it returns stays in a shell variable and goes only in the Bearer header
 BIN=${0%/*}/../bin; . "$BIN/extlib"

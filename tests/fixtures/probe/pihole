@@ -1,0 +1,4 @@
+/admin/login
+  HTTP/1.1 200 OK
+
+<title>Pi-hole</title>

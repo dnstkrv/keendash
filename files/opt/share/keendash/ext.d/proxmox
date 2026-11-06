@@ -2,6 +2,7 @@
 # name: Proxmox
 # group: Серверы
 # fields: url user key
+# probe: https:8006 / Proxmox Virtual Environment
 # hint: Логин: ID токена (root@pam!keendash), API-ключ: секрет токена; роль PVEAuditor. Сертификат не проверяется
 # Proxmox VE: nodes online, running VMs and containers, mean node CPU; API token, certificate not checked (usually self-signed)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

@@ -2,6 +2,7 @@
 # name: Portainer
 # group: Серверы
 # fields: url key
+# probe: 9000,https:9443 /api/system/status "InstanceID"
 # hint: Ключ: My account → Access tokens
 # Portainer: containers of the first environment
 BIN=${0%/*}/../bin; . "$BIN/extlib"

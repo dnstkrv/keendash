@@ -2,6 +2,7 @@
 # name: Overseerr
 # group: Медиа
 # fields: url key
+# probe: 5055 /api/v1/settings/public "applicationTitle":"Overseerr"
 # Overseerr: request counts
 BIN=${0%/*}/../bin; . "$BIN/extlib"
 J --header "X-Api-Key: ${KEY:-}" "${URL%/}/api/v1/request/count" | awk "$LOAD"'END {

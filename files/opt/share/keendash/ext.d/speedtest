@@ -2,6 +2,7 @@
 # name: Speedtest Tracker
 # group: Сеть
 # fields: url token
+# probe: 80,8080 /api/healthcheck Speedtest Tracker is running
 # hint: Токен: Settings → API Tokens, право results:read
 # Speedtest Tracker: the latest result. *_bits is bit/s; without it download/upload are bytes/s. created_at is ISO 8601: Z or no offset = UTC
 BIN=${0%/*}/../bin; . "$BIN/extlib"

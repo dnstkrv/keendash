@@ -2,6 +2,7 @@
 # name: Frigate
 # group: Дом
 # fields: url user pass snap
+# probe: 5000,https:8971 / Frigate
 # hint: Адрес https://хост:8971 и логин Frigate либо http://хост:5000 без логина. Сертификат не проверяется. Кадры видны только при входе в роутер по https
 # Frigate NVR (certificate not checked, 8971 is usually self-signed): version, detector speed, cameras (fps 0 = no stream), storage; the login (only with USER) goes in a JSON body, its cookie into the stats request.
 # SNAP=1: a frame of every camera (up to 8) into $PUB/cam/<ID>-<n>.jpg, n = place in the sorted list; $PUB is tmpfs, the web UI serves it only to a logged-in user

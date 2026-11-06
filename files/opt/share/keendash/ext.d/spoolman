@@ -2,6 +2,7 @@
 # name: Spoolman
 # group: Дом
 # fields: url
+# probe: 7912 /api/v1/info "automatic_backups"
 # hint: Адрес Spoolman (порт 7912)
 # Spoolman: spool count, remaining filament weight, nearly empty spools
 BIN=${0%/*}/../bin; . "$BIN/extlib"

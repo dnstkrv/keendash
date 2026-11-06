@@ -1,0 +1,4 @@
+/System/Info/Public
+  HTTP/1.1 200 OK
+
+{"ServerName":"jf","Version":"10.10.0","ProductName":"Jellyfin Server"}

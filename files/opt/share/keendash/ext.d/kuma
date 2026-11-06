@@ -2,6 +2,7 @@
 # name: Uptime Kuma
 # group: Серверы
 # fields: url key
+# probe: 3001 / Uptime Kuma
 # hint: Ключ: Settings → API Keys
 # Uptime Kuma: monitors from /metrics (Prometheus text, parsed here; names are user text), failed first, 20 rows.
 # History per monitor like ext.d/check: <tmp>/chk.<ID>.<key> (key = the name with all but [A-Za-z0-9.-] turned into _, cut to 100, then _ and

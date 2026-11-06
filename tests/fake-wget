@@ -6,6 +6,10 @@ for u; do :; done
 a=" $* "
 need() { case "$a" in *"$1"*) ;; *) exit 8 ;; esac; }
 case "$u" in
+  # LAN scan probes: <type>.probe.test:<port><path> answers tests/fixtures/probe/<type> (line 1 is its path, then headers (indented), a blank line, the body)
+  *//*.probe.test[:/]*) t=${u#*//}; t=${t%%.probe.test*}; x=${u#*.probe.test}; x=${x#:}; x=/${x#*/}
+    [ "$x" = "$(sed 1q "$F/probe/$t")" ] || exit 8
+    sed -n '2,/^$/ s/^  /  /p' "$F/probe/$t" >&2; sed '1,/^$/d' "$F/probe/$t"; exit 0 ;;
   # RCI: the token tests/fake-ndmc issues or none (before 5.2); any other is refused like ndm does. Requests go to $LOG
   http://127.0.0.1:79/rci/*)
     t=; case "$a" in *" X-NDMA-TKN: "*) t=${a#* X-NDMA-TKN: }; t=${t%% *} ;; esac

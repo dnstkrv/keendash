@@ -2,6 +2,7 @@
 # name: Grafana
 # group: Серверы
 # fields: url token
+# probe: 3000 /login Grafana
 # hint: Токен: Administration → Service accounts, роль Viewer
 # Grafana: version, dashboards, firing alerts ("—" when the token is refused)
 BIN=${0%/*}/../bin; . "$BIN/extlib"

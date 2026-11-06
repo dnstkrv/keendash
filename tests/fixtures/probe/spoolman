@@ -1,0 +1,4 @@
+/api/v1/info
+  HTTP/1.1 200 OK
+
+{"version":"0.22.0","debug_mode":false,"automatic_backups":true}

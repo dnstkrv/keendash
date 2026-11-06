@@ -2,6 +2,7 @@
 # name: Paperless-ngx
 # group: Файлы
 # fields: url key
+# probe: 8000 /accounts/login/ Paperless-ngx
 # hint: Токен: профиль → API Auth Token
 # Paperless-ngx /api/statistics/: documents_total is the reference field; a tile whose field is absent is not printed
 BIN=${0%/*}/../bin; . "$BIN/extlib"
