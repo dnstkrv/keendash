@@ -81,6 +81,13 @@ case "$u" in
   *//nextdns.test/*) echo "nextdns$a" >> "${LOG:-/dev/null}"; need "X-Api-Key: testkey" ;;
   # Speedtest Tracker: Bearer testkey; created_at comes from $AT; /nobits has no *_bits, /none no data
   *//speedtest.test/*) echo "speedtest$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
+  # Nginx Proxy Manager: login only for me@example.test / p"a\ss (JSON-escaped in the body), it answers T0K-test; data routes need it as Bearer
+  # (/expired/ has only expired certificates, /empty/ empty lists). Requests go to $LOG
+  *//npm.test/*) printf 'npm%s\n' "$a" >> "${LOG:-/dev/null}"
+    case "$u" in
+      */api/tokens) need '--post-data {"identity":"me@example.test","secret":"p\"a\\ss"}' ;;
+      *) need "Authorization: Bearer T0K-test" ;;
+    esac ;;
   # Home Assistant: Bearer token only; every request goes to $LOG, an entity without a fixture is a 404
   *//ha.test/*) echo "ha$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
   *//plex.test/*) need "X-Plex-Token: testkey" ;;
@@ -165,6 +172,13 @@ case "$u" in
   *//speedtest.test/none/*) f=net/speedtest_none ;;
   *//speedtest.test/nobits/*) f=net/speedtest_latest_nobits ;;
   *//speedtest.test/*) f=net/speedtest_latest ;;
+  *//npm.test/*api/tokens) f=net/npm_tokens ;;
+  *//npm.test/empty/*) f=net/npm_empty ;;
+  *//npm.test/*proxy-hosts) f=net/npm_proxy_hosts ;;
+  *//npm.test/*redirection-hosts) f=net/npm_redirection_hosts ;;
+  *//npm.test/*streams) f=net/npm_streams ;;
+  *//npm.test/expired/*certificates) f=net/npm_certificates_expired ;;
+  *//npm.test/*certificates) f=net/npm_certificates ;;
   */rci/show/interface) f=rci/interface ;;
   */rci/show/ip/http/proxy) f=rci/proxy ;;
   */rci/) f=rci/system_name ;;

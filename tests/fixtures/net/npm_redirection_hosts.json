@@ -1,0 +1,1 @@
+[{"id":1,"domain_names":["old.example.test"],"forward_domain_name":"new.example.test","enabled":1},{"id":2,"domain_names":["x.example.test"],"forward_domain_name":"y.example.test","enabled":0}]

@@ -1,0 +1,1 @@
+[{"id":1,"domain_names":["a.example.test"],"enabled":1,"owner":{"id":1,"is_disabled":false},"meta":{"nginx_online":true}},{"id":2,"domain_names":["b.example.test"],"enabled":true,"owner":{"id":1,"is_disabled":false},"meta":{}},{"id":3,"domain_names":["c.example.test"],"enabled":0,"owner":{"id":1,"is_disabled":false},"meta":{}}]

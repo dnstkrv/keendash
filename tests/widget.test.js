@@ -817,7 +817,23 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/speedtest: token in the Bearer header, path /api/v1/results/latest", / --header Authorization: Bearer testkey http:\/\/speedtest\.test\/api\/v1\/results\/latest \n/.test(lg()), lg());
       fs.rmSync(sd, { recursive: true, force: true });
     }
-    // nextdns: the profile ID is a path segment, so anything but [A-Za-z0-9]{1,32} is refused before the request
+    // npm: JSON-escaped e-mail/password login, the token as Bearer on the four lists; certificate = soonest future expires_on - KEENDASH_NOW
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-p-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "", ll = () => lg().split("\n").filter(Boolean);
+      const run = (u, pw) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/npm", "", "", { state: sd, env: "KEENDASH_NOW=1793873100 URL=http://npm.test" + u + " USER=me@example.test PASS=" + (pw === undefined ? "'p\"a\\ss'" : pw) + " " }).trim().split("\n"); };
+      const want = c => ["ok 1", "t|Прокси-хостов|2 из 3|t", "t|Перенаправлений|2|n", "t|Потоков|1|n", c];
+      const o = run(""), l = ll();
+      ok("ext.d/npm: 2 of 3 hosts enabled (1 and true), counts, soonest future certificate", JSON.stringify(o) === JSON.stringify(want("t|Сертификат истекает через|2210100|s")), o.join(" / "));
+      ok("ext.d/npm: login with the JSON-escaped body, then 4 requests with the Bearer token", l.length === 5 && l[0].endsWith(' --post-data {"identity":"me@example.test","secret":"p\\"a\\\\ss"} http://npm.test/api/tokens ') && !/Bearer/.test(l[0]) &&
+        l.slice(1).every(x => / --header Authorization: Bearer T0K-test http:\/\/npm\.test\/api\/nginx\/(proxy-hosts|redirection-hosts|streams|certificates) $/.test(x)), lg());
+      ok("ext.d/npm: token and password not printed", !/T0K-test|a\\+ss/.test(o.join("\n")));
+      ok("ext.d/npm: only expired certificates -> «истёк», not a negative number", JSON.stringify(run("/expired")) === JSON.stringify(want("t|Сертификат истекает через|истёк|t")), run("/expired").join(" / "));
+      ok("ext.d/npm: empty lists -> 0 of 0, zero counts, empty certificate value", JSON.stringify(run("/empty")) === JSON.stringify(["ok 1", "t|Прокси-хостов|0 из 0|t", "t|Перенаправлений|0|n", "t|Потоков|0|n", "t|Сертификат истекает через||s"]), run("/empty").join(" / "));
+      ok("ext.d/npm: wrong password -> ok 0, no data requests", run("", "x").join() === "ok 0" && ll().length === 1, lg());
+      ok("ext.d/npm: no answer -> ok 0", collect("ext.d/npm", "", "", { env: "URL=http://nohost.test USER=a PASS=b " }).trim() === "ok 0");
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
+    // nextdns: the profile ID is a path segment,so anything but [A-Za-z0-9]{1,32} is refused before the request
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-n-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";
       const run = (e) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/nextdns", "", "", { state: sd, env: e }).trim(); };

@@ -1,0 +1,22 @@
+#!/bin/sh
+# name: Nginx Proxy Manager
+# group: Сеть
+# fields: url user pass
+# hint: Логин — e-mail пользователя NPM; лучше отдельный пользователь с правом только просмотра
+# Nginx Proxy Manager: the e-mail and password go in a JSON body, the token it returns stays in a shell variable and goes only in the Bearer header
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+B=${URL%/}
+esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+tok=$(J --header 'Content-Type: application/json' --post-data "{\"identity\":\"$(esc "${USER:-}")\",\"secret\":\"$(esc "${PASS:-}")\"}" "$B/api/tokens" | awk -F'\t' '$1 == "token" { print $2 }')
+[ -n "$tok" ] || { echo "ok 0"; exit; }
+set -- --header "Authorization: Bearer $tok"
+cnt() { o=$(JN "$@") || return 0; printf '%s\n' "$o" | awk -F'\t' '$1 ~ /^[0-9]+\.id$/ { n++ } END { print n + 0 }'; }
+h=$(JN "$@" "$B/api/nginx/proxy-hosts") || { echo "ok 0"; exit; }
+echo "ok 1"
+printf '%s\n' "$h" | awk -F'\t' '$1 ~ /^[0-9]+\.id$/ { n++ } $1 ~ /^[0-9]+\.enabled$/ && ($2 == 1 || $2 == "true") { e++ } END { print "t|Прокси-хостов|" e + 0 " из " n + 0 "|t" }'
+echo "t|Перенаправлений|$(cnt "$@" "$B/api/nginx/redirection-hosts")|n"
+echo "t|Потоков|$(cnt "$@" "$B/api/nginx/streams")|n"
+# soonest expires_on (UTC) still ahead; all behind -> text "истёк"; none -> empty
+c=$(JN "$@" "$B/api/nginx/certificates") || c=
+printf '%s\n' "$c" | awk -v now="${KEENDASH_NOW:-$(date +%s)}" "$LOAD"'$1 ~ /^[0-9]+\.expires_on$/ && $2 ~ /^[0-9][0-9][0-9][0-9]-/ { n++; e = ep($2); if (e > now && (m == "" || e < m)) m = e }
+  END { print "t|Сертификат истекает через|" (m != "" ? m - now : n ? "истёк" : "") "|" (m == "" && n ? "t" : "s") }'
