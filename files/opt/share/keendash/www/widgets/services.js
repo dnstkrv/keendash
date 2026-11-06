@@ -414,14 +414,14 @@
     });
     return x.n > list.length ? h + note("и ещё " + (x.n - list.length)) : h;
   };
-  /* x.ver, x.det + x.inf (detector, ms), x.used/x.total (bytes); x.cam = [[name, fps, detections/s, 1 when fps is 0]]; x.snap: frames in the router's
-   * $PUB/cam (ext.d/frigate), shown over https only: the src is made of the instance id and the row number, never of the API's text */
+  /* x.ver, x.det + x.inf (detector, ms), x.used/x.total (bytes); x.cam = [[name, fps, detections/s, 1 when fps is 0]]; x.snap: the time (epoch) of the newest frame in the router's
+   * $PUB/cam (ext.d/frigate), shown over https only: the src is made of the instance id, the row number and x.snap (the cache key), never of the API's text */
   VIEW.frigate = function (x, ser, d, inst) {
     var h = '<div class="us-grid">' + blk("Версия", x.ver ? esc(x.ver) : "—", null) + blk("Детектор", x.det ? esc(x.det) + " · " + (+x.inf || 0) + " мс" : "—", null) +
       blk("Занято", x.total > 0 ? fmtBytes(x.used) + " из " + fmtBytes(x.total) : "—", null) + "</div>";
     (x.cam || []).forEach(function (c, n) {
       h += c[3] ? line(BAD, esc(c[0]), "нет потока") : line(OK, esc(c[0]), "FPS " + (+c[1] || 0) + " · детекций " + (+c[2] || 0) + "/с");
-      if (x.snap && ST && n < 8) h += '<img class="us-snap" loading="lazy" alt="" src="' + BASE + "cam/" + esc(inst.id) + "-" + (n + 1) + ".jpg?" + ((d && +d.now) || 0) + '">';
+      if (x.snap && ST && n < 8) h += '<img class="us-snap" loading="lazy" alt="" src="' + BASE + "cam/" + esc(inst.id) + "-" + (n + 1) + ".jpg?" + (+x.snap || 0) + '">';
     });
     return x.snap && !ST ? h + note("Кадры с камер видны при входе в роутер по https") : h;
   };
@@ -464,6 +464,8 @@
     });
     return h && '<div class="us-grid">' + h + "</div>";
   }
+  /* an image error doesn't bubble (hence the capturing listeners): a frame that isn't there (yet) hides itself */
+  function snapErr(e) { if (e.target.className === "us-snap") e.target.style.display = "none"; }
   function instBody(i, d) {
     if (!i.x) return note(WAIT);
     if (!i.x.ok) return note('<span style="color:' + BAD + '">API ' + esc(i.name) + " недоступен</span> · проверьте настройки");
@@ -668,7 +670,7 @@
       ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +
-      ".us-snap{display:block;width:100%;max-height:240px;object-fit:cover;border-radius:6px}" +
+      ".us-snap{display:block;width:100%;aspect-ratio:16/9;max-height:240px;object-fit:cover;border-radius:6px}" +
       ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}" +
       ".us-upd{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:8px;background:rgba(0,151,220,.1);font-size:13px}" +
       ".us-upd-t b{font-weight:600}.us-upd-b{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}" +
@@ -744,8 +746,7 @@
     if (a) { a.removeAttribute("href"); a.textContent = TITLE; a.style.pointerEvents = "none"; a.style.cursor = "default"; }
     bodyEl = document.createElement("div");
     bodyEl.className = "us-body";
-    /* an image error doesn't bubble: a frame that isn't there (yet) hides itself */
-    bodyEl.addEventListener("error", function (e) { if (e.target.className === "us-snap") e.target.style.display = "none"; }, true);
+    bodyEl.addEventListener("error", snapErr, true);
     bodyEl.addEventListener("click", function (e) {
       var u = e.target.closest ? e.target.closest(".us-upd-go,.us-upd-skip") : null;
       if (u) {
@@ -1298,6 +1299,7 @@
       addStyle();
       page = main.appendChild(document.createElement("div")); page.className = "kd-page";
       page.addEventListener("click", function (e) { if (e.target.closest && e.target.closest(".kd-set")) openSettings(); });
+      page.addEventListener("error", snapErr, true);
     }
     if (location.pathname !== PAGE) history[replace ? "replaceState" : "pushState"]({ keendash: 1 }, "", PAGE);
     fold(); ensureMenu();

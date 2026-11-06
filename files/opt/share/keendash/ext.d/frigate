@@ -34,17 +34,19 @@ out=$(J "$@" "$B/api/stats" | awk "$LOAD"'END {
   if (su) printf "used %.0f\ntotal %.0f\n", u * 1048576, t * 1048576 }')
 printf '%s\n' "$out" | sed '/^frame /d'
 # frames: only into $PUB/cam (never under /opt or the http www, they have no login); a camera's name is data and never part of a file name
-PUB=${KEENDASH_PUB:-/tmp/mnt/.keendash}; C=$PUB/cam
+PUB=${KEENDASH_PUB:-/tmp/mnt/.keendash}; C=$PUB/cam; T=${KEENDASH_TMP:-/tmp/keendash}
 case "${ID:-}" in ""|*[!a-z0-9-]*) ;; *) if [ -d "$PUB" ]; then
   have=" "; rm -f "$C/.$ID"-[0-9].jpg.t
-  if [ "${SNAP:-}" = 1 ] && mkdir -p "$C"; then
+  if [ "${SNAP:-}" = 1 ] && mkdir -p "$C" "$T"; then
     for kv in $(printf '%s\n' "$out" | sed -n 's/^frame //p'); do
       i=${kv%%:*}; name=${kv#*:}
       case "$i" in [1-8]) ;; *) continue ;; esac
       case "$name" in ""|*[!A-Za-z0-9_-]*) continue ;; esac
-      have="$have$i "; t=$C/.$ID-$i.jpg.t
-      # a failed or empty download keeps the previous frame
-      if dl -q "$@" -O "$t" "$B/api/$name/latest.jpg?h=240" 2>/dev/null && [ -s "$t" ]; then mv -f "$t" "$C/$ID-$i.jpg"; else rm -f "$t"; fi
+      have="$have$i "; t=$T/.snap.$ID-$i
+      # the server is not trusted (no certificate check): at most 1 MB (one byte more shows it was cut), a JPEG signature, in RAM outside $PUB until then.
+      # An empty, failed, cut or not JPEG answer keeps the previous frame; mv is a rename that replaces whatever stands at the target
+      dl -qO- "$@" "$B/api/$name/latest.jpg?h=240" 2>/dev/null | head -c 1048577 > "$t"
+      if [ -s "$t" ] && [ "$(wc -c < "$t")" -le 1048576 ] && [ "$(head -c 2 "$t" | od -b | sed -n '1s/^[0-9]* *//p')" = "377 330" ]; then mv -f "$t" "$C/$ID-$i.jpg"; else rm -f "$t"; fi
     done
   fi
   # frames of cameras that are gone, skipped (a name the loop refused) or not asked for
@@ -53,5 +55,8 @@ case "${ID:-}" in ""|*[!a-z0-9-]*) ;; *) if [ -d "$PUB" ]; then
     k=${f%.jpg}; k=${k##*-}
     case "$have" in *" $k "*) ;; *) rm -f "$f" ;; esac
   done
-  for k in $have; do [ -f "$C/$ID-$k.jpg" ] && { echo "snap 1"; break; }; done
+  # snap <time of the newest frame>: the card's cache key, it moves only when a frame does
+  new=
+  for k in $have; do [ -f "$C/$ID-$k.jpg" ] && { m=$(date -r "$C/$ID-$k.jpg" +%s) && [ "${m:-0}" -gt "${new:-0}" ] && new=$m; }; done
+  [ -z "$new" ] || echo "snap $new"
 fi ;; esac

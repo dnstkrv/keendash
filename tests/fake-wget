@@ -59,12 +59,16 @@ case "$u" in
     *auth.login*) need '--post-data {"method":"auth.login","params":["p\"a\\ss"],"id":1}'; echo "  Set-Cookie: _session_id=abc; Path=/; HttpOnly" >&2 ;;
     *) need "Cookie: _session_id=abc" ;; esac ;;
   # Frigate is asked without a certificate check (8971 is https, self-signed). Port 5000 needs no login; 8971 only after the login for admin / p"a\ss (JSON-escaped in the body), then the cookie. Requests go to $LOG
-  # Frigate frames: <name>/latest.jpg is written to the -O file (the camera "broken" fails, "empty" gives an empty file); 8971 also wants the cookie
+  # Frigate frames: <name>/latest.jpg answers a JPEG on stdout ("broken" fails, "empty" gives nothing, "nojpg" html, "huge" 2 MB); 8971 also wants the cookie
   *//frigate.test:*/api/*/latest.jpg*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "--no-check-certificate"
     case "$u" in *:8971/*) need "Cookie: frigate_token=abc" ;; esac
-    o=; p=; for x; do [ "$p" = -O ] && o=$x; p=$x; done
-    case "$u" in */api/broken/*) exit 8 ;; */api/empty/*) : > "$o"; exit 0 ;; esac
-    printf '\377\330\377\340fake-jpeg\n' > "$o"; exit 0 ;;
+    case "$u" in
+      */api/broken/*) exit 8 ;;
+      */api/empty/*) exit 0 ;;
+      */api/nojpg/*) echo "<html>login</html>"; exit 0 ;;
+      */api/huge/*) printf '\377\330\377\340'; head -c 2097152 /dev/zero; exit 0 ;;
+    esac
+    printf '\377\330\377\340fake-jpeg\n'; exit 0 ;;
   *//frigate.test:5000/*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "--no-check-certificate" ;;
   *//frigate.test:8971/api/login) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"
     need "--no-check-certificate"; need '--post-data {"user":"admin","password":"p\"a\\ss"}'; echo "  Set-Cookie: frigate_token=abc; Path=/; HttpOnly" >&2 ;;
@@ -167,6 +171,7 @@ case "$u" in
   *//frigate.test:*/snap/api/stats) f=home/frigate_stats_snap ;;
   *//frigate.test:*/odd/api/stats) f=home/frigate_stats_odd ;;
   *//frigate.test:*/fail/api/stats) f=home/frigate_stats_fail ;;
+  *//frigate.test:*/dead/api/stats) f=home/frigate_stats_dead ;;
   *//frigate.test:*/api/stats) f=home/frigate_stats ;;
   *//ha.test/api/) f=home/ha_api ;;
   *//ha.test/api/states/sensor.temp) f=home/ha_sensor_temp ;;

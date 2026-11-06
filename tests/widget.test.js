@@ -210,31 +210,32 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
   });
   // frigate frames (x.snap): over https an <img> under each camera row, its src made of the instance id and the row number only; over http one note
   {
-    const fnow = Math.floor(Date.now() / 1000), cams = [["front|door", 5, 0.4, 0], ["<b>x</b>", 0, 0, 1]];
+    const fnow = Math.floor(Date.now() / 1000), SN = fnow - 77, cams = [["front|door", 5, 0.4, 0], ["<b>x</b>", 0, 0, 1]];
     const fgs = x => Object.assign(fg(x), { now: fnow }), SNOTE = "Кадры с камер видны при входе в роутер по https";
     const https = d => w => { w.__keendash = { base: "/storage/.keendash/", st: true }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(d) }); };
-    await run(fgs({ ok: 1, ver: "1", snap: 1, cam: cams }), (w, m) => {
+    await run(fgs({ ok: 1, ver: "1", snap: SN, cam: cams }), (w, m) => {
       gclick(w, m, "Дом");
       const im = Array.from(m.querySelectorAll("img")), rows = Array.from(m.querySelectorAll(".us-row"));
       ok("frigate snap, https: one img per camera row, src from the instance id and the row number", im.length === 2 && im.every(i => i.className === "us-snap" && i.getAttribute("loading") === "lazy" && i.getAttribute("alt") === "") &&
-        im[0].getAttribute("src") === "/storage/.keendash/cam/frigate-1.jpg?" + fnow && im[1].getAttribute("src") === "/storage/.keendash/cam/frigate-2.jpg?" + fnow, im.map(i => i.outerHTML).join(" "));
+        im[0].getAttribute("src") === "/storage/.keendash/cam/frigate-1.jpg?" + SN && im[1].getAttribute("src") === "/storage/.keendash/cam/frigate-2.jpg?" + SN, im.map(i => i.outerHTML).join(" "));
       ok("frigate snap, https: the img sits right under its row, no http note", rows[0].nextElementSibling === im[0] && rows[1].nextElementSibling === im[1] && !m.textContent.includes(SNOTE), m.innerHTML);
       im[0].dispatchEvent(new w.Event("error"));
       ok("frigate snap: a failed image hides itself, the other stays", im[0].style.display === "none" && im[1].style.display !== "none");
+      ok("frigate snap: the image reserves its space (aspect-ratio) so the card doesn't jump", /\.us-snap\{[^}]*aspect-ratio:16\/9/.test(w.document.getElementById("us-style").textContent));
       ok("frigate snap: nothing from the API in the src", !/%3C|<b>|front|door/.test(im.map(i => i.getAttribute("src")).join()));
-    }, https(fgs({ ok: 1, ver: "1", snap: 1, cam: cams })), "https://r.example.net/");
+    }, https(fgs({ ok: 1, ver: "1", snap: SN, cam: cams })), "https://r.example.net/");
     await run(fgs({ ok: 1, ver: "1", cam: cams }), (w, m) => {
       gclick(w, m, "Дом");
       ok("frigate no snap, https: no img, no note", !m.querySelector("img") && !m.textContent.includes(SNOTE), m.innerHTML);
     }, https(fgs({ ok: 1, ver: "1", cam: cams })), "https://r.example.net/");
-    await run(fgs({ ok: 1, ver: "1", snap: 1, cam: cams }), (w, m) => {
+    await run(fgs({ ok: 1, ver: "1", snap: SN, cam: cams }), (w, m) => {
       gclick(w, m, "Дом");
       ok("frigate snap, http: no img, one note", !m.querySelector("img") && m.textContent.split(SNOTE).length === 2 && !!m.querySelector(".us-note"), m.innerHTML);
     });
-    await run(fgs({ ok: 1, ver: "1", snap: 1, cam: Array.from({ length: 10 }, (_, i) => ["c" + i, 5, 0, 0]) }), (w, m) => {
+    await run(fgs({ ok: 1, ver: "1", snap: SN, cam: Array.from({ length: 10 }, (_, i) => ["c" + i, 5, 0, 0]) }), (w, m) => {
       gclick(w, m, "Дом");
-      ok("frigate snap, https: at most 8 images", m.querySelectorAll("img").length === 8 && m.querySelectorAll("img")[7].getAttribute("src") === "/storage/.keendash/cam/frigate-8.jpg?" + fnow, m.querySelectorAll("img").length);
-    }, https(fgs({ ok: 1, ver: "1", snap: 1, cam: Array.from({ length: 10 }, (_, i) => ["c" + i, 5, 0, 0]) })), "https://r.example.net/");
+      ok("frigate snap, https: at most 8 images", m.querySelectorAll("img").length === 8 && m.querySelectorAll("img")[7].getAttribute("src") === "/storage/.keendash/cam/frigate-8.jpg?" + SN, m.querySelectorAll("img").length);
+    }, https(fgs({ ok: 1, ver: "1", snap: SN, cam: Array.from({ length: 10 }, (_, i) => ["c" + i, 5, 0, 0]) })), "https://r.example.net/");
   }
   // pihole: AdGuard's card without the filter/latency note and the recent blocks: two graphs, top domains, clients, its own note
   const ph = (x) => Object.assign(one("pihole", "Pi-hole", "Сеть", "http://10.0.0.5", x), { now: 1793438837 });
@@ -869,27 +870,34 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const fs1 = (u, e, p) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/frigate", "", "", { state: sd, env: "KEENDASH_PUB=" + unix(p || pub) + " USER= PASS= URL=" + u + " " + (e === undefined ? "ID=fg-1 SNAP=1 " : e) }).trim(); };
       const put = (n, c) => { fs.mkdirSync(cam, { recursive: true }); fs.writeFileSync(path.join(cam, n), c || "old"); };
       const JPG = "\xff\xd8\xff\xe0fake-jpeg\n";
+      // the newest frame's mtime in seconds, the number after "snap " (the card's cache key)
+      const snapLine = () => "snap " + Math.max(...fs.readdirSync(cam).filter(n => /^fg-1-[0-9]\.jpg$/.test(n)).map(n => Math.floor(fs.statSync(path.join(cam, n)).mtimeMs / 1000)));
       put("fg-1-5.jpg"); put(".fg-1-6.jpg.t"); put("fg-1-2-1.jpg"); put("fg-2-1.jpg"); put("other.txt");
       let o = fs1("http://frigate.test:5000/snap");
       ok("ext.d/frigate snap: frames written, the extra ones and temps of this id removed, other ids and files stay", ls() === "fg-1-1.jpg,fg-1-2-1.jpg,fg-1-2.jpg,fg-2-1.jpg,other.txt" &&
         fs.readFileSync(path.join(cam, "fg-1-1.jpg"), "latin1") === JPG && fs.readFileSync(path.join(cam, "fg-1-2.jpg"), "latin1") === JPG, ls() + " " + JSON.stringify(fs.readFileSync(path.join(cam, "fg-1-1.jpg"), "latin1")));
-      ok("ext.d/frigate snap: snap 1 last, no internal lines in the cache", o.split("\n").pop() === "snap 1" && o.startsWith("ok 1\n") && o.includes("\ncam|front|5|0.4|0\ncam|garage|5|0|0\n") && !/^frames? /m.test(o), o);
-      ok("ext.d/frigate snap: one request per camera, same options, h=240", JSON.stringify(lgs().map(l => l.replace(/^frigate -q /, "").replace(/ -O \S+ /, " -O F ")).sort()) === JSON.stringify([
-        "--no-check-certificate -O F http://frigate.test:5000/snap/api/front/latest.jpg?h=240 ", "--no-check-certificate -O F http://frigate.test:5000/snap/api/garage/latest.jpg?h=240 "]), lg());
-      ok("ext.d/frigate snap: the download goes to a hidden temp of the id", lgs().every(l => / -O \S*\/cam\/\.fg-1-[12]\.jpg\.t /.test(l)), lg());
+      ok("ext.d/frigate snap: snap <epoch> last, no internal lines in the cache", o.split("\n").pop() === snapLine() && o.startsWith("ok 1\n") && o.includes("\ncam|front|5|0.4|0\ncam|garage|5|0|0\n") && !/^frames? /m.test(o), o);
+      ok("ext.d/frigate snap: one request per camera, same options, h=240", JSON.stringify(lgs().map(l => l.replace(/^frigate -qO- /, "")).sort()) === JSON.stringify([
+        "--no-check-certificate http://frigate.test:5000/snap/api/front/latest.jpg?h=240 ", "--no-check-certificate http://frigate.test:5000/snap/api/garage/latest.jpg?h=240 "]), lg());
+      ok("ext.d/frigate snap: the body is piped through a cap into a temp outside $PUB, none left behind", fs.readdirSync(sd).every(n => !/^\.snap\./.test(n)) && ls().split(",").every(n => !/\.t$/.test(n)), fs.readdirSync(sd).join());
       // names that are not [A-Za-z0-9_-]{1,64} are never requested and keep their place in the numbering; the old frames of their numbers go
       put("fg-1-5.jpg");
       o = fs1("http://frigate.test:5000/odd");
-      ok("ext.d/frigate snap: ../x and 'a b' skipped, never requested, ok1 is number 3", ls() === "fg-1-2-1.jpg,fg-1-3.jpg,fg-2-1.jpg,other.txt" && lgs().length === 1 && lgs()[0].endsWith(" http://frigate.test:5000/odd/api/ok1/latest.jpg?h=240 ") && !/\.\.\/|a b/.test(lg()) && o.split("\n").pop() === "snap 1", ls() + " / " + lg());
-      // a failed or empty download keeps the previous frame and leaves no temp
-      put("fg-1-1.jpg"); put("fg-1-2.jpg");
+      ok("ext.d/frigate snap: ../x and 'a b' skipped, never requested, ok1 is number 3", ls() === "fg-1-2-1.jpg,fg-1-3.jpg,fg-2-1.jpg,other.txt" && lgs().length === 1 && lgs()[0].endsWith(" http://frigate.test:5000/odd/api/ok1/latest.jpg?h=240 ") && !/\.\.\/|a b/.test(lg()) && o.split("\n").pop() === snapLine(), ls() + " / " + lg());
+      // a failed, empty, over 1 MB or not-JPEG download keeps the previous frame and leaves no temp (broken 1, empty 2, fine 3, huge 4: 2 MB, nojpg 5: html)
+      put("fg-1-1.jpg"); put("fg-1-2.jpg"); put("fg-1-4.jpg"); put("fg-1-5.jpg");
       o = fs1("http://frigate.test:5000/fail");
-      ok("ext.d/frigate snap: failed and empty downloads keep the old frame, the good one is written, no temps", ls() === "fg-1-1.jpg,fg-1-2-1.jpg,fg-1-2.jpg,fg-1-3.jpg,fg-2-1.jpg,other.txt" && fs.readFileSync(path.join(cam, "fg-1-1.jpg"), "utf8") === "old" &&
-        fs.readFileSync(path.join(cam, "fg-1-2.jpg"), "utf8") === "old" && fs.readFileSync(path.join(cam, "fg-1-3.jpg"), "latin1") === JPG && lgs().length === 3 && o.split("\n").pop() === "snap 1", ls() + " / " + o);
+      ok("ext.d/frigate snap: failed, empty, oversized and non-JPEG downloads keep the old frame, the good one is written, no temps", ls() === "fg-1-1.jpg,fg-1-2-1.jpg,fg-1-2.jpg,fg-1-3.jpg,fg-1-4.jpg,fg-1-5.jpg,fg-2-1.jpg,other.txt" &&
+        ["fg-1-1.jpg", "fg-1-2.jpg", "fg-1-4.jpg", "fg-1-5.jpg"].every(n => fs.readFileSync(path.join(cam, n), "utf8") === "old") && fs.readFileSync(path.join(cam, "fg-1-3.jpg"), "latin1") === JPG && lgs().length === 5 &&
+        fs.readdirSync(sd).every(n => !/^\.snap\./.test(n)) && o.split("\n").pop() === snapLine(), ls() + " / " + fs.readdirSync(sd).join() + " / " + o);
+      // nothing refreshed: snap keeps the mtime of the newest old frame (the card's cache key stays put)
+      fs.rmSync(cam, { recursive: true }); put("fg-1-1.jpg"); fs.utimesSync(path.join(cam, "fg-1-1.jpg"), 1700000000, 1700000000);
+      o = fs1("http://frigate.test:5000/dead");
+      ok("ext.d/frigate snap: no frame refreshed -> snap is the old mtime", o.split("\n").pop() === "snap 1700000000" && fs.readFileSync(path.join(cam, "fg-1-1.jpg"), "utf8") === "old", o.split("\n").pop());
       // the cookie of the 8971 login goes with the frame request, 'front|door' (number 1) is skipped
       fs.rmSync(cam, { recursive: true });
       o = fs1("http://frigate.test:8971", "ID=fg-1 SNAP=1 USER=admin PASS='p\"a\\ss' ");
-      ok("ext.d/frigate snap: login cookie on the frame request, a name with | skipped", ls() === "fg-1-2.jpg" && lgs().length === 1 && / Cookie: frigate_token=abc /.test(lgs()[0]) && lgs()[0].endsWith(" http://frigate.test:8971/api/garage/latest.jpg?h=240 ") && o.split("\n").pop() === "snap 1", ls() + " / " + lg());
+      ok("ext.d/frigate snap: login cookie on the frame request, a name with | skipped", ls() === "fg-1-2.jpg" && lgs().length === 1 && / Cookie: frigate_token=abc /.test(lgs()[0]) && lgs()[0].endsWith(" http://frigate.test:8971/api/garage/latest.jpg?h=240 ") && o.split("\n").pop() === snapLine(), ls() + " / " + lg());
       // SNAP not 1: this id's frames and temps go, nothing printed, no frame requests, other ids stay
       for (const e of ["ID=fg-1 SNAP=0 ", "ID=fg-1 SNAP= ", "ID=fg-1 SNAP=yes ", "ID=fg-1 "]) {
         put("fg-1-1.jpg"); put(".fg-1-2.jpg.t"); put("fg-2-1.jpg"); put("fg-1-2-1.jpg"); fs.rmSync(path.join(cam, "fg-1-2.jpg"), { force: true });
@@ -1808,6 +1816,16 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("fitCols: fold 3 into 1 and 2", j(W.fitCols(src, 1)) === '[["a","b","c","d"]]' && j(W.fitCols(src, 2)) === '[["a","b"],["c","d"]]' && W.fitCols(src, 5).length === 3);
     ok("moveCard: into another column, folded view keeps columns", j(W.moveCard(src, "a", "c", null, 0)) === '[["b"],["c","a"],["d"]]' && j(W.moveCard(src, "d", null, "a", 0)) === '[["d","a","b"],["c"],[]]', j(W.moveCard(src, "d", null, "a", 0)));
   }, null, URL0);
+  // frigate frames on the page: the same error listener hides a failed one
+  {
+    const fp = Object.assign(one("frigate", "Frigate", "Дом", "http://10.0.0.5:5000", { ok: 1, ver: "1", snap: 1793438000, cam: [["a", 5, 0, 0], ["b", 5, 0, 0]] }), { now: Math.floor(Date.now() / 1000) });
+    await run(fp, async w => {
+      const p = await openPage(w), im = p.querySelectorAll('[data-id="frigate"] img.us-snap');
+      ok("page: frigate frames are there over https", im.length === 2 && im[1].getAttribute("src") === "/storage/.keendash/cam/frigate-2.jpg?1793438000", p.innerHTML.slice(0, 300));
+      im[1].dispatchEvent(new w.Event("error"));
+      ok("page: a failed frame hides itself", im[1].style.display === "none" && im[0].style.display !== "none");
+    }, w => { w.__keendash = { base: "/storage/.keendash/", st: true, p: "/keendash" }; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(fp) }); }, "https://r.example.net/dashboard");
+  }
   await run(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { cols: [["sys", "gone"], ["telemt"]] }) }), async w => {
     const p = await openPage(w), cs = Array.from(p.querySelectorAll(".kd-col")).map(c => Array.from(c.querySelectorAll(".kd-card")).map(x => x.getAttribute("data-id")));
     ok("page: saved layout, unknown and new ids", cs.length === 2 && cs[0][0] === "sys" && cs[1][0] === "telemt" && cs[0].length + cs[1].length === 15 && !p.querySelector('[data-id="gone"]'), j2(cs));
