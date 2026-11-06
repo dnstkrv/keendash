@@ -1,0 +1,16 @@
+#!/bin/sh
+# name: MeTube
+# group: Медиа
+# fields: url user pass
+# hint: Логин и пароль — только если MeTube закрыт прокси с Basic-входом
+# MeTube /history: {"done":[],"queue":[],"pending":[]}; empty lists flatten to nothing, so a real answer is any body whose keys are only those lists
+BIN=${0%/*}/../bin; . "$BIN/extlib"
+[ -z "${USER:-}" ] || set -- --header "Authorization: Basic $(printf '%s:%s' "$USER" "${PASS:-}" | base64 | tr -d '\n')"
+r=$(JN "$@" "${URL%/}/history") || { echo "ok 0"; exit; }
+printf '%s' "$r" | awk "$LOAD"'END {
+  for (k in V) if (k !~ /^(done|queue|pending)\./) { print "ok 0"; exit }
+  for (i = 0; ("done." i ".status") in V; i++) { s = V["done." i ".status"]; if (s == "finished") f++; else if (s == "error") e++ }
+  for (i = 0; ("queue." i ".status") in V; i++) sp += V["queue." i ".speed"]
+  for (i = 0; ("queue." i ".id") in V; i++) q++
+  for (i = 0; ("pending." i ".id") in V; i++) q++
+  print "ok 1"; print "t|Загружается|" q + 0 "|n"; printf "t|Скорость|%.0f|bs\n", sp; print "t|Готово|" f + 0 "|n"; print "t|Ошибок|" e + 0 "|n" }'

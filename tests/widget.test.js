@@ -1018,6 +1018,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/gitea: key not printed", !/testkey/.test(run("gitea", gt) + run("gitea", "URL=http://gitea.test/odd KEY=testkey ")));
       fs.rmSync(sd, { recursive: true, force: true });
     }
+    // metube: lists from /history, Basic only with a login
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-m-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";
+      const run = (u, e) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/metube", "", "", { state: sd, env: "URL=http://metube.test" + u + " " + e + " " }).trim(); };
+      ok("ext.d/metube: mixed history -> exact numbers (null speed counts as 0)", run("", "USER=") === ["ok 1", "t|Загружается|3|n", "t|Скорость|1048576|bs", "t|Готово|2|n", "t|Ошибок|1|n"].join("\n"), run("", "USER="));
+      ok("ext.d/metube: empty user -> no Authorization, path /history", !/Authorization/.test(lg()) && / http:\/\/metube\.test\/history \n$/.test(lg()), lg());
+      run("", "USER=u PASS=p");
+      ok("ext.d/metube: user -> Basic", / Authorization: Basic dTpw /.test(lg()), lg());
+      ok("ext.d/metube: empty history -> ok 1 and zeros", run("/empty", "USER=") === ["ok 1", "t|Загружается|0|n", "t|Скорость|0|bs", "t|Готово|0|n", "t|Ошибок|0|n"].join("\n"));
+      ok("ext.d/metube: HTML page -> ok 0, no answer -> ok 0", run("/html", "USER=") === "ok 0" && run("", "USER=").length > 4 && collect("ext.d/metube", "", "", { env: "URL=http://nohost.test USER= " }).trim() === "ok 0");
+      ok("ext.d/metube: password not printed", !/\bp\b|dTpw/.test(run("", "USER=u PASS=p")));
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
     // nextdns: the profile ID is a path segment, so anything but [A-Za-z0-9]{1,32} is refused before the request
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-n-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";

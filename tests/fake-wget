@@ -105,6 +105,8 @@ case "$u" in
     case "$a" in *" NC-Token: testkey "* | *" Authorization: Basic YWRtaW46cCJhXHNz "*) ;; *) exit 8 ;; esac ;;
   # Paperless-ngx: Token testkey; requests go to $LOG; /two has no tag_count and correspondent_count
   *//paperless.test/*) echo "paperless$a" >> "${LOG:-/dev/null}"; need "Authorization: Token testkey" ;;
+  # MeTube: no auth of its own, requests go to $LOG; /empty has empty lists, /html is not JSON
+  *//metube.test/*) echo "metube$a" >> "${LOG:-/dev/null}" ;;
   # Syncthing: X-Api-Key testkey and no certificate check are required; requests go to $LOG; /zero has no devices and no folders
   *//syncthing.test/*) echo "syncthing$a" >> "${LOG:-/dev/null}"; need "X-Api-Key: testkey"; need "--no-check-certificate" ;;
   # Gitea: token testkey, answers only headers (the count in X-Total-Count); /odd has abc for notifications and none for issues, /norepo none for repos/search; pulls come lowercase with CRLF. Requests go to $LOG
@@ -131,6 +133,7 @@ case "$u" in
   *//sonarr.test/* | *//radarr.test/* | *//prowlarr.test/* | *//overseerr.test/*) need "X-Api-Key: testkey" ;;
 esac
 case "$u" in
+  *//metube.test/html/*) echo "<html>login</html>"; exit 0 ;;
   *//ha.test/html/*) echo "<html>login</html>"; exit 0 ;;
   *//nextdns.test/html/*) echo "<html>login</html>"; exit 0 ;;
   *//custom.test/html) echo "<html>not json</html>"; exit 0 ;;
@@ -215,6 +218,8 @@ case "$u" in
   *//traefik.test/*) f=net/traefik_overview ;;
   *//nextcloud.test/nofree/*) f=files/nextcloud_nofree ;;
   *//nextcloud.test/*) f=files/nextcloud_info ;;
+  *//metube.test/empty/*) f=files/metube_empty ;;
+  *//metube.test/*) f=files/metube_history ;;
   *//paperless.test/two/*) f=files/paperless_two ;;
   *//paperless.test/*) f=files/paperless_stats ;;
   *//syncthing.test/zero/rest/system/connections) f=files/syncthing_conn_zero ;;
