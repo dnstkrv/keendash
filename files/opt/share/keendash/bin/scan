@@ -11,7 +11,7 @@ EXTD=${KEENDASH_EXTD:-/opt/share/keendash/ext.d}
 LIMIT=${KEENDASH_SCAN_LIMIT:-180} DLT=2 LC_ALL=C
 export DLT LC_ALL
 T=$(printf '\t')
-L=$TMP/scan.lock W=$TMP/scan.d n=0 of=0
+L=$TMP/scan.lock W=$TMP/scan.d.$$ n=0 of=0
 mkdir -p "$TMP" || exit 1
 # shortcut: an empty lock (another run between create and write) counts as live; a pid reused by another process too, until the lock is older than LIMIT + 60 s
 if ! (set -C; echo $$ > "$L") 2>/dev/null; then
@@ -22,10 +22,12 @@ if ! (set -C; echo $$ > "$L") 2>/dev/null; then
   [ "$(cat "$L.$$")" = "$p" ] || { [ -e "$L" ] || mv "$L.$$" "$L"; rm -f "$L.$$"; exit 0; }
   rm -f "$L.$$"; (set -C; echo $$ > "$L") 2>/dev/null || exit 0
 fi
-res() { { echo "state|$1|$n|$of|$2"; cat "$W/found"; } > "$TMP/scan.new" && mv "$TMP/scan.new" "$TMP/scan"; }
-trap 'res done "$(date +%s)"; rm -rf "$W" "$L"' EXIT
+# one find per address and type (a two-port type answering on both: https wins), in the order first seen
+res() { { echo "state|$1|$n|$of|$2"; awk -F'|' '{ k = $2 FS $4; if (!(k in F)) o[++c] = k; if (!(k in F) || $5 ~ /^https/) F[k] = $0 } END { for (i = 1; i <= c; i++) print F[o[i]] }' "$W/found"; } > "$TMP/scan.new" && mv "$TMP/scan.new" "$TMP/scan"; }
+# the lock goes only if it is still ours (a run that took it over keeps it)
+trap 'res done "$(date +%s)"; [ "$(cat "$L" 2>/dev/null)" != $$ ] || rm -f "$L"; rm -rf "$W"' EXIT
 trap 'exit 1' HUP INT TERM
-rm -rf "$W"; mkdir "$W" && : > "$W/found" || exit 1
+rm -rf "$TMP"/scan.d*; mkdir "$W" && : > "$W/found" || exit 1
 t0=$(date +%s); res run "$t0"
 
 # "<ip><TAB><name>": the router, then its active clients; the name is cleaned (no control characters or |, 64 characters)
@@ -55,13 +57,12 @@ awk 'FNR <= 20 && /^# probe: / { t = FILENAME; sub(/.*\//, "", t); s = substr($0
 set -- $(awk -F'\t' '!s[$1]++ { print $1 }' "$W/tab")
 P=$# SPS="$*"
 
-# "<type> <host:port>" of the services already added (127.0.0.1 and localhost are the router)
+# "<type> <host>" of the services already added, any port (127.0.0.1 and localhost are the router)
 for f in "$ETC"/services/*.conf; do
   [ -f "$f" ] || continue
   ( . "$f"; [ -n "${TYPE:-}" ] && [ -n "${URL:-}" ] || exit
-    u=${URL#*://}; u=${u%%/*}; u=${u##*@}
-    case $u in *:*) ;; *) u=$u:80; [ "${URL%%:*}" = https ] && u=${u%:80}:443 ;; esac
-    case ${u%:*} in localhost|127.0.0.1) u=$RIP:${u##*:} ;; esac
+    u=${URL#*://}; u=${u%%/*}; u=${u##*@}; u=${u%:*}
+    case $u in localhost|127.0.0.1) u=$RIP ;; esac
     echo "$TYPE $u" )
 done > "$W/have"
 
@@ -81,7 +82,7 @@ probe() {
       rc=$(cat "$f.rc" 2>/dev/null); rc=${rc:-1}
     fi
     grep -qF -e "$m" "$f" || continue
-    grep -qxF "$t $1:$port" "$W/have" || printf 'found|%s|%s|%s|%s://%s:%s\n' "$1" "$2" "$t" "$sch" "$1" "$port" >> "$W/found"
+    grep -qxF "$t $1" "$W/have" || printf 'found|%s|%s|%s|%s://%s:%s\n' "$1" "$2" "$t" "$sch" "$1" "$port" >> "$W/found"
     return
   done < "$W/tab"
 }

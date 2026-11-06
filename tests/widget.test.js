@@ -783,6 +783,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       if (["nextdns", "custom", "check"].includes(t)) return ok("probe: " + t + " has none", !l.length, l[0]);
       ok("probe: " + t + " has one well-formed line", l.length === 1 && m && m[1].split(",").every(p => /^(https:)?[1-9]\d{0,4}$/.test(p)), l.join("|"));
       if (m) pr[t] = { ports: m[1].split(",").map(p => p.replace("https:", "")), path: m[2], match: m[3].replace(/\r$/, "") };
+      // TrueNAS revokes a key typed into an http entry: never offer it on port 80
+      if (t === "truenas") ok("probe: truenas only on https:443", !!m && m[1] === "https:443", l[0]);
     });
     const ans = {};
     Object.keys(pr).forEach(t => {
@@ -802,7 +804,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const bin = path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin");
     const src = n => fs.readFileSync(path.join(bin, n), "utf8").replace(/\r/g, "").replace(/^PATH=.*$/m, ":");
     const FWGET = '#!/bin/sh\nfor u; do :; done\necho "$*" >> "$FAKE/log"\nmkdir -p "$FAKE/run"; : > "$FAKE/run/$$"; ls "$FAKE/run" | wc -l >> "$FAKE/conc"\n' +
-      'f=$FAKE/ans/$(echo "$u" | tr "/:" "__")\ntrap \'rm -f "$FAKE/run/$$"; exit 143\' TERM\n' +
+      '[ -z "$STEAL" ] || echo "$STEAL" > "$KEENDASH_TMP/scan.lock"\nf=$FAKE/ans/$(echo "$u" | tr "/:" "__")\ntrap \'rm -f "$FAKE/run/$$"; exit 143\' TERM\n' +
       // an answer "REDIR <url>" is a 302: refused with --max-redirect=0, else "followed" (a line "follow <url>" in the log); cat's status is ours (141 when the reader cut it)
       'if [ -f "$f" ]; then l=$(sed 1q "$f"); [ "$l" = HANG ] && exec sleep 30\n' +
       '  case $l in "REDIR "*) printf "  HTTP/1.1 302 Found\\n  Location: %s\\n" "${l#REDIR }" >&2; rm -f "$FAKE/run/$$"; case " $* " in *" --max-redirect=0 "*) exit 8 ;; esac; echo "follow ${l#REDIR }" >> "$FAKE/log"; exit 0 ;; esac\n' +
@@ -824,7 +826,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
         (o.dup ? run + " & " + run + " & wait" : run)], { encoding: "utf8" });
       const rd = f => { try { return fs.readFileSync(path.join(tmp, f), "utf8"); } catch (e) { return null; } };
       const lines = (rd("fake/log") || "").split("\n").filter(Boolean);
-      return { rd, ex: f => fs.existsSync(path.join(tmp, f)), lines, ms: Date.now() - t0, maxc: Math.max(0, ...(rd("fake/conc") || "").split("\n").filter(Boolean).map(Number)), rm: () => fs.rmSync(tmp, { recursive: true, force: true }) };
+      return { rd, ls: d => fs.readdirSync(path.join(tmp, d)), ex: f => fs.existsSync(path.join(tmp, f)), lines, ms: Date.now() - t0, maxc: Math.max(0, ...(rd("fake/conc") || "").split("\n").filter(Boolean).map(Number)), rm: () => fs.rmSync(tmp, { recursive: true, force: true }) };
     };
     const st = r => (r.rd("tmp/scan") || "").split("\n");
     const sorted = a => a.slice().sort();
@@ -844,7 +846,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("bin/scan: inactive and public clients get no request", r.lines.length > 0 && !r.lines.some(x => /192\.168\.1\.12|8\.8\.8\.8/.test(x)), r.lines.join(" / "));
       ok("bin/scan: no certificate check except for https", r.lines.every(x => /https:/.test(x) === /--no-check-certificate/.test(x)) && r.lines.some(x => /https:/.test(x)), r.lines.join(" / "));
       ok("bin/scan: one response per port and path, the match ends the port, a refused port the other paths", r.lines.filter(x => /192\.168\.1\.11:8081\//.test(x)).length === 1 && !r.lines.some(x => /\/second/.test(x)), r.lines.join(" / "));
-      ok("bin/scan: lock and work dir gone", !r.ex("tmp/scan.lock") && !r.ex("tmp/scan.d") && !r.ex("tmp/scan.new"));
+      ok("bin/scan: lock and work dir gone", !r.ex("tmp/scan.lock") && !r.ls("tmp").some(x => /^scan\.(d|new)/.test(x)), r.ls("tmp").join());
       r.rm();
     }
     {
@@ -852,6 +854,20 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
         conf: { jf: "TYPE='jellyfin'\nNAME='J'\nURL='http://192.168.1.10:8096/'\nKEY='k'\n", px: "TYPE='proxmox'\nURL='https://127.0.0.1:8006'\n", other: "TYPE='metube'\nURL='http://192.168.1.99:8081'\n", tn: "TYPE='tn'\nURL='https://localhost'\n" } }), l = st(r);
       ok("bin/scan: an added service is not listed (same type and host:port, 127.0.0.1 and localhost are the router, https defaults to 443), another address is",
         !l.some(x => /\|jellyfin\||\|proxmox\||\|tn\|/.test(x)) && r.lines.some(x => /:443\/$/.test(x)) && l.some(x => /\|metube\|/.test(x)) && l.some(x => /\|aa\|/.test(x)), l.join("\n"));
+      r.rm();
+    }
+    {
+      // a two-port type is one find (https wins); the added service filter ignores the port
+      const PO = { po: '# probe: 9000,https:9443 /api/system/status "InstanceID"', fr: "# probe: 5000,https:8971 / Frigate" };
+      const r = scan({ types: PO, clients: [], ans: { "http___192.168.1.1_9000_api_system_status": '{"InstanceID":"x"}\n', "https___192.168.1.1_9443_api_system_status": '{"InstanceID":"x"}\n',
+        "http___192.168.1.1_5000_": "Frigate\n" }, conf: { fr: "TYPE='fr'\nURL='https://localhost:8971'\n" } }), l = st(r);
+      ok("bin/scan: both ports of a type answer -> one find, https:9443; configured on another port -> not listed", r.lines.length === 4 && l.length === 3 && l[1] === "found|192.168.1.1|Роутер|po|https://192.168.1.1:9443", r.lines.length + " " + l.join("\n"));
+      r.rm();
+    }
+    {
+      // the lock was taken over while we ran: it stays, our work dir goes
+      const r = scan({ types: { aa: T1.aa }, clients: [], env: "STEAL=4242 " });
+      ok("bin/scan: a lock taken over meanwhile is left alone", r.rd("tmp/scan.lock") === "4242\n" && !r.ls("tmp").some(x => /^scan\.d/.test(x)), r.rd("tmp/scan.lock") + " " + r.ls("tmp").join());
       r.rm();
     }
     {
@@ -2449,7 +2465,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("settings: upload takes the volume of the freshest status", put && /^v1:.var.lib.keendash.inbox./.test(JSON.parse(put[1].body).filename), put && put[1].body);
   }, w => { const f = fm(fcalls, {})(w); return (u, i) => novol && !/rci|fui/.test(u) ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { vol: "" }) })) }) : f(u, i); }, URL0);
   // LAN scan in the settings dialog: the button sends "scan", cfg.scan drives the label and the «Найдено в сети» block
-  const scanT = [["jellyfin", "Jellyfin", "Медиа", ["url", "key"], "Ключ: Панель управления → API-ключи"], ["metube", "MeTube", "Загрузки", ["url"], ""]].concat(full.types);
+  const scanT = [["jellyfin", "Jellyfin", "Медиа", ["url", "key"], "Ключ: Панель управления → API-ключи"], ["metube", "MeTube", "Загрузки", ["url"], ""], ["nas", "NAS", "Серверы", ["url", "user", "pass"], ""]].concat(full.types);
   const NOW = full.now, FIND = [["192.168.1.5", "nas", "jellyfin", "http://192.168.1.5:8096"], ["192.168.1.6", "tv", "jellyfin", "http://192.168.1.6:8096"],
     ["192.168.1.7", "<b>x</b>", "metube", "http://192.168.1.7:8081"], ["192.168.1.8", "pc", "plex", "http://192.168.1.8:32400"]];
   const scanned = scan => Object.assign({}, full, { types: scanT, cfg: Object.assign({}, full.cfg, { scan }) });
@@ -2526,6 +2542,34 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const ms = [], st = w.setTimeout; w.setTimeout = (f, t, ...a) => (ms.push(t), st(f, t, ...a));
     const dlg = await openDlg(w); await w.__servicesWidget.update();
     ok("scan: while it runs and the dialog is open the status is polled every 5 s", ms.includes(5000) && sbtn(dlg).textContent === "Сканирование… 3 из 9", ms.join());
+  }, scanFetch(S), URL0);
+  S = { scan: null, msgs: [] };
+  await run(scanned(null), async w => {
+    // a save on its way: the scan button waits too
+    const dlg = await openDlg(w);
+    dlg.querySelector('input[data-w="main"][data-n="cron"]').click();
+    dlg.querySelector(".kd-dlg-save").click(); await wait(50);
+    ok("scan: the button is disabled while a save is in flight", sbtn(dlg).disabled && /Сохранение…/.test(dlg.textContent), sbtn(dlg).outerHTML);
+  }, w => u => /\/rci\/put$/.test(u) ? new Promise(() => {}) : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(scanned(null)) }), URL0);
+  S = { scan: { state: "done", n: 5, of: 9, at: NOW - 1, found: FIND }, msgs: [] };
+  await run(scanned(S.scan), async w => {
+    const dlg = await openDlg(w), sr = dlg.querySelector(".kd-dlg-sr");
+    ok("scan: cut by the time limit -> «проверено 5 из 9» in the heading", /Найдено в сети · только что · проверено 5 из 9/.test(sr.textContent), sr.textContent);
+    S.scan = { state: "done", n: 9, of: 9, at: NOW - 1, found: FIND }; await w.__servicesWidget.update();
+    ok("scan: complete -> no «проверено»", /Найдено в сети/.test(sr.textContent) && !/проверено/.test(sr.textContent), sr.textContent);
+    S.scan = { state: "done", n: 5, of: 9, at: NOW - 1, found: [] }; await w.__servicesWidget.update();
+    ok("scan: cut and nothing found -> «проверено 5 из 9» in the note", /Ничего нового не найдено · только что · проверено 5 из 9/.test(sr.textContent), sr.textContent);
+  }, scanFetch(S), URL0);
+  S = { scan: { state: "done", n: 9, of: 9, at: NOW - 1, found: FIND.concat([["192.168.1.9", "box", "nas", "http://192.168.1.9:80"]]) }, msgs: [] };
+  await run(scanned(S.scan), async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s);
+    // the same type on the same host at any port is not offered again
+    q('.kd-dlg-add[data-type="jellyfin"]').click();
+    typeIn(w, q('[data-id="jellyfin"] input[data-f="url"]'), "http://192.168.1.5:9999/");
+    ok("scan: a draft entry of the type on the same host (another port) hides the find", srows(dlg).join("|") === "Jellyfin · tv · http://192.168.1.6:8096|MeTube · <b>x</b> · http://192.168.1.7:8081|Plex · pc · http://192.168.1.8:32400|NAS · box · http://192.168.1.9:80", srows(dlg).join("|"));
+    srows(dlg).forEach((x, i) => { if (!/NAS/.test(x)) q('.kd-dlg-sr').querySelector('input[data-s="' + i + '"]').click(); });
+    q('.kd-dlg-sr').querySelector(".kd-dlg-sadd").click();
+    ok("scan: a type whose only secret is a password opens its form without the red «Заполните»", !!q('[data-id="nas"] .kd-dlg-form') && !q('[data-id="nas"] .kd-dlg-miss') && !/Заполните/.test(q('[data-id="nas"]').textContent), dlg.textContent.slice(0, 300));
   }, scanFetch(S), URL0);
   console.log(res.join("\n")); process.exit(res.some(r => r.startsWith("FAIL")) ? 1 : 0);
 })();

@@ -1223,7 +1223,7 @@
   var dlg = null, dd = null, lost = false, down = null, draft = null, dq = "", dopen = {}, dst = null, dtried = false;
   /* LAN scan: scw: {at, tm} between the click and the router's first answer (at: the result's at before the click); scerr: {t, at} the last
    * start error, shown while that result is still the newest; scoff: finds unchecked in the block; scrows: the finds the block shows */
-  var SCANHIDE = "ui.services.scanhide", SCANERR = "Не удалось просканировать", NEED = "Заполните поле", scw = null, scerr = null, scoff = {}, scrows = [];
+  var SCANHIDE = "ui.services.scanhide", SCANERR = "Не удалось просканировать", NEED = "Заполните поле", NEEDF = /^(key|token)$/, scw = null, scerr = null, scoff = {}, scrows = [];
 
   /* the id for a new instance of a type: the type, then type-2, type-3…; taken: {id: 1} of the router's and the draft's */
   function newId(type, taken) {
@@ -1353,7 +1353,7 @@
     var f = inp.getAttribute("data-f"), s = sets(dd, entry(inp.getAttribute("data-id"))).filter(function (x) { return x[0] === f; })[0];
     var en = entry(inp.getAttribute("data-id")), m = s ? bad(f, s[1], dtried && (f === "name" || f === "url" || f === "hosts")) : "";
     /* a service found by the scan: its key, token or password is still to be filled in */
-    if (!m && en.need && SECRET.test(f) && !fv(en, f)) m = NEED;
+    if (!m && en.need && NEEDF.test(f) && !fv(en, f)) m = NEED;
     inp.nextSibling.textContent = m; inp.parentNode.classList.toggle("kd-dlg-miss", m === NEED);
   }
   function renderList() {
@@ -1391,7 +1391,7 @@
     if (scw && s && s.at > scw.at) { clearTimeout(scw.tm); scw = null; }
     /* a run older than 240 s was killed */
     run = !!scw || !!(s && s.state === "run" && now - s.at < 240);
-    b.disabled = run || !c.vol;
+    b.disabled = run || !c.vol || !!(dst && dst.busy);
     b.textContent = run ? "Сканирование…" + (!scw && s ? " " + (+s.n || 0) + " из " + (+s.of || 0) : "") : "Сканировать сеть";
     scrows = [];
     if (!run) {
@@ -1399,8 +1399,10 @@
       if (s && s.state === "done") {
         var m = Math.max(0, Math.floor((now - s.at) / 60)), fnd = s.found || [], gone = false;
         ago = m < 1 ? "только что" : m < 60 ? m + " мин назад" : m < 1440 ? Math.floor(m / 60) + " ч назад" : Math.floor(m / 1440) + " дн назад";
-        scrows = fnd.filter(function (f) { return !draft.inst.some(function (e) { return e.type === f[2] && e.url.trim() === f[3] && draft.del.indexOf(e.id) < 0; }); });
+        scrows = fnd.filter(function (f) { return !draft.inst.some(function (e) { return e.type === f[2] && hostOf(e.url) === hostOf(f[3]) && draft.del.indexOf(e.id) < 0; }); });
         try { gone = +localStorage.getItem(SCANHIDE) >= s.at; } catch (e) {}
+        /* cut by the time limit */
+        if (+s.n < +s.of) ago += " · проверено " + (+s.n || 0) + " из " + (+s.of);
         if (!fnd.length) h += '<div class="kd-dlg-tip">Ничего нового не найдено · ' + ago + "</div>";
         else if (scrows.length && !gone) {
           h += '<h2 class="kd-dlg-h">Найдено в сети · ' + ago + "</h2>";
@@ -1415,6 +1417,10 @@
     dlg.querySelector(".kd-dlg-sr").innerHTML = h;
     return run;
   }
+  /* the host of a url, without scheme, user, port and path */
+  function hostOf(u) { return u.trim().replace(/^[a-z]+:\/\//i, "").replace(/[\/?#].*$/, "").replace(/^.*@/, "").replace(/:\d*$/, "").toLowerCase(); }
+  /* a string as an array of characters (surrogate pairs whole) */
+  function chars(s) { return s.match(/[\ud800-\udbff][\udc00-\udfff]|[\s\S]/g) || []; }
   function fkey(f) { return f[0] + "|" + f[2] + "|" + f[3]; }
   function doScan() {
     var s = ((lastData || dd).cfg || {}).scan, my = scw = { at: s ? s.at : 0 }, rev = newRev();
@@ -1433,10 +1439,11 @@
     sel.forEach(function (f) { n[f[2]] = (n[f[2]] || 0) + 1; });
     dopen = {};
     sel.forEach(function (f) {
-      var t = typeOf(dd, f[2]), dev = Array.from(f[1] || f[0]).slice(0, Math.max(0, 61 - Array.from(t.name).length)).join(""),
+      var t = typeOf(dd, f[2]), dev = chars(f[1] || f[0]).slice(0, Math.max(0, 61 - chars(t.name).length)).join(""),
         e = pushInst(f[2], { name: n[f[2]] > 1 ? t.name + " (" + dev + ")" : t.name, url: f[3] });
       first = first || e.id;
-      if (t.fields.some(function (x) { return SECRET.test(x); })) { dopen[e.id] = 1; e.need = true; }
+      if (t.fields.some(function (x) { return SECRET.test(x); })) dopen[e.id] = 1;
+      e.need = t.fields.some(function (x) { return NEEDF.test(x); });
     });
     if (!first) return;
     dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; renderList(); renderStrip(); reveal(first);
@@ -1445,6 +1452,7 @@
     if (!dlg) return;
     /* nothing is edited while a save is on its way: the result would drop it */
     Array.prototype.forEach.call(dlg.querySelectorAll(".kd-dlg-q,.kd-dlg-body input,.kd-dlg-body select,.kd-dlg-body button"), function (x) { x.disabled = !!(dst && dst.busy); });
+    renderScan();
     dlg.querySelector(".kd-dlg-bar").innerHTML = dst && dst.busy ? "<span>Сохранение…</span>" : !dirty() ? "" :
       (dst && dst.err ? '<div class="kd-dlg-err">' + esc(dst.err) + "</div>" : "") +
       '<button type="button" class="kd-btn kd-btn-p kd-dlg-save"' + (((lastData || dd).cfg || {}).vol ? "" : " disabled") + '>Сохранить</button><button type="button" class="kd-btn kd-dlg-cancel">Отменить</button>';
