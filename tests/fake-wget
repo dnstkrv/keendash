@@ -135,6 +135,7 @@ case "$u" in
   *//metube.test/html/*) echo "<html>login</html>"; exit 0 ;;
   *//ha.test/html/*) echo "<html>login</html>"; exit 0 ;;
   *//nextdns.test/html/*) echo "<html>login</html>"; exit 0 ;;
+  *//nextdns.test/err/*) echo '{"errors":[{"code":"notFound"}]}'; exit 0 ;;
   *//custom.test/html) echo "<html>not json</html>"; exit 0 ;;
   *//custom.test/page) echo "<style>a{b:1}</style>"; exit 0 ;;
   *//custom.test/*) f=media/custom ;;

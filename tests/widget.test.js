@@ -481,6 +481,9 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       r.rm();
     });
     ok("settings apply: rejects, nothing changes", !fails.length, fails.join("; "));
+    r = settingsRun(Object.assign({ "var/inbox/r2.txt": msg("r2", ["col 0 a"]) }, base), "apply");
+    ok("settings apply: col is no longer a command", /^rev r2\nerr строка 2: неизвестная команда col/.test(r.rd("tmp/settings.state") || ""), r.rd("tmp/settings.state"));
+    r.rm();
 
     r = settingsRun(Object.assign({ "var/inbox/r3.txt": msg("r3", ["set qb-2 name Торренты дома", "set pl name " + "Т".repeat(64)]) }, base), "apply");
     ok("settings apply: Cyrillic name", /^NAME='Торренты дома'$/m.test(r.rd("etc/services/qb-2.conf")) && r.rd("etc/services/pl.conf").indexOf("NAME='" + "Т".repeat(64) + "'") > 0 &&
@@ -1054,6 +1057,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/nextdns: odd profile IDs -> ok 0, no request, nothing executed", odd.every(u => run("URL=http://nextdns.test KEY=testkey USER='" + u + "' ") === "ok 0" && lg() === "") && !fs.existsSync(path.join(sd, "pwn")), lg());
       ok("ext.d/nextdns: 32 chars is fine; the profile is in the path with from=-1d, the key in the header", run("URL=http://nextdns.test KEY=testkey USER=" + "a".repeat(32) + " ").startsWith("ok 1") && lg().split("\n").filter(Boolean).length === 1 && / --header X-Api-Key: testkey http:\/\/nextdns\.test\/profiles\/a{32}\/analytics\/status\?from=-1d \n$/.test(lg()), lg());
       ok("ext.d/nextdns: wrong key -> ok 0", run("URL=http://nextdns.test KEY=bad USER=abc123 ") === "ok 0");
+      ok("ext.d/nextdns: an error object with HTTP 200 -> ok 0", run("URL=http://nextdns.test/err KEY=testkey USER=abc123 ") === "ok 0");
       ok("ext.d/nextdns: spaces around the profile ID are trimmed", run("URL=http://nextdns.test KEY=testkey USER='  abc123 ' ").startsWith("ok 1") && / http:\/\/nextdns\.test\/profiles\/abc123\/analytics\/status\?from=-1d \n$/.test(lg()), lg());
       ok("ext.d/nextdns: no blocked row -> 0 blocked, 0.0 percent", run("URL=http://nextdns.test/noblock KEY=testkey USER=abc123 ") === ["ok 1", "t|Запросов за сутки|8000|n", "t|Заблокировано|0|n", "t|Блокировок|0.0|p"].join("\n"));
       ok("ext.d/nextdns: an empty data list is an answer -> ok 1 with zeros", run("URL=http://nextdns.test/empty KEY=testkey USER=abc123 ") === ["ok 1", "t|Запросов за сутки|0|n", "t|Заблокировано|0|n", "t|Блокировок|0.0|p"].join("\n"));
@@ -1172,9 +1176,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       rd(d, "s.qb-2.dl") === null && rd(d, "x/bad") === null && rd(d, "x/Up") === null && rd(d, "x.agh") === null && ls(d).split(" ").every(n => !/\.new$/.test(n)), ls(d));
     fs.writeFileSync(path.join(d, "x", "old"), "ok 1\n"); fs.writeFileSync(path.join(d, "s.old.dl"), "1\n");
     fs.writeFileSync(path.join(d, "chk.old.Host_01_0123abcd"), "1 1\n"); fs.writeFileSync(path.join(d, "chk.qb.Host_01_0123abcd"), "1 1\n");
+    fs.writeFileSync(path.join(d, ".chk.old.a.test.now"), "200 1 1\n"); fs.writeFileSync(path.join(d, ".chk.qb.a.test.now"), "200 1 1\n");
     collect("ext", "", "", { state: d, files: { "etc/services/qb.conf": QB } });
     ok("bin/ext: removed instance -> cache gone", rd(d, "x/old") === null && rd(d, "s.old.dl") === null && rd(d, "x/qb-2") === null && rd(d, "s.qb.dl") === "5242880\n5242880\n" && /^ok 1\n/.test(rd(d, "x/qb")), ls(d));
-    ok("bin/ext: removed instance -> its chk.<id>.* history files go too, another instance's stay", rd(d, "chk.old.Host_01_0123abcd") === null && rd(d, "chk.qb.Host_01_0123abcd") !== null, ls(d));
+    ok("bin/ext: removed instance -> its chk.<id>.* history files go too, another instance's stay", rd(d, "chk.old.Host_01_0123abcd") === null && rd(d, "chk.qb.Host_01_0123abcd") !== null &&
+      rd(d, ".chk.old.a.test.now") === null && rd(d, ".chk.qb.a.test.now") !== null, fs.readdirSync(d).join());
     // SNAP is unset per instance like HOSTS and EVERY; the frames $PUB/cam/<id>-<n>.jpg (and their .t temps) of a removed instance go, other ids and files stay
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-x-")), pub = fs.mkdtempSync(path.join(os.tmpdir(), "kd-p-")), cam = path.join(pub, "cam");
@@ -1424,13 +1430,15 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
 
     // status.json for the web UI over https: written at start, then rebuilt only after it was read (atime > mtime)
     const pub = fs.mkdtempSync(path.join(os.tmpdir(), "kdp-")), pf = path.join(pub, "status.json"), penv = Object.assign({}, env, { KEENDASH_PUB: pub });
-    const pubServe = async (n, wait) => {
-      const p = parseInt(cp.execFileSync(kd, ["serve", "127.0.0.1", String(port + n), www], { env: penv, encoding: "utf8" }), 10);
-      await new Promise(r => setTimeout(r, wait)); try { process.kill(p); } catch (e) {}
-    };
     const until = async f => { for (let i = 0; i < 50 && !f(); i++) await new Promise(r => setTimeout(r, 100)); };
+    // the daemon writes after it forks: kill it only once `done` holds (or after `wait` ms), not before it had the chance
+    const pubServe = async (n, wait, done) => {
+      const p = parseInt(cp.execFileSync(kd, ["serve", "127.0.0.1", String(port + n), www], { env: penv, encoding: "utf8" }), 10);
+      if (done) await until(done); else await new Promise(r => setTimeout(r, wait));
+      try { process.kill(p); } catch (e) {}
+    };
     let pj = null;
-    await pubServe(1, 0); await until(() => fs.existsSync(pf));
+    await pubServe(1, 0, () => fs.existsSync(pf));
     try { pj = JSON.parse(fs.readFileSync(pf, "utf8")); } catch (e) {}
     ok("keendashd publish: status.json at start", pj && pj.tabs.length === 2 && !fs.existsSync(pf + ".tmp"), pj);
     const old = new Date(Date.now() - 100000), now = new Date();
@@ -1438,7 +1446,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     await pubServe(2, 1000);
     ok("keendashd publish: not read since -> kept", fs.readFileSync(pf, "utf8") === "x");
     fs.utimesSync(pf, now, old);
-    await pubServe(3, 0); await until(() => fs.readFileSync(pf, "utf8") !== "x");
+    await pubServe(3, 0, () => fs.readFileSync(pf, "utf8") !== "x");
     ok("keendashd publish: read -> rebuilt", fs.readFileSync(pf, "utf8").startsWith("{"));
     // the "update" file: a read runs the upgrade once, an unread one nothing
     const uf = path.join(pub, "update"), ran = path.join(pub, "ran");
