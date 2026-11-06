@@ -681,13 +681,14 @@
       ".us-upd-skip{background:none;border:0;padding:0;color:inherit;opacity:.6;font:inherit;font-size:12px;cursor:pointer}.us-upd-skip:hover{opacity:1;text-decoration:underline}" +
       /* the page, as the firmware's own pages (ndw-page-wrapper) and dashboard cards: their styles leave with them */
       "[data-kd-hidden]{display:none!important}.kd-page{padding:0 32px 64px;box-sizing:border-box}.kd-ph{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:32px 32px 0 0;margin:0 0 24px}" +
-      ".kd-ph h1{font-size:28px;font-weight:700;line-height:36px;margin:0}" +
+      ".kd-ph h1{font-size:28px;font-weight:700;line-height:36px;margin:0}.kd-pb{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}" +
+      ".kd-name{flex:1;min-width:0;padding:4px 8px;border:1px solid #0097dc;border-radius:4px;background:transparent;color:inherit;font:inherit;outline:none}" +
       ".kd-lay{display:grid;gap:24px;align-items:start}.kd-item{min-width:0}.kd-gh{position:relative;display:flex;align-items:center;gap:8px;min-height:32px;margin-bottom:12px;font-size:16px;font-weight:700}" +
       ".kd-gn{min-width:0;cursor:pointer}.kd-gc{flex:1;opacity:.55;font-weight:400}.kd-empty{grid-column:1/-1;padding:24px;border:2px dashed rgba(128,128,128,.55);border-radius:8px;text-align:center;opacity:.7}" +
       ".kd-ch{position:relative}.kd-c1 .kd-ch{margin-bottom:24px}.kd-ct{cursor:pointer}" +
       ".kd-fold,.kd-gear,.kd-more{flex:none;width:32px;height:32px;margin:-4px 0;padding:0;border:0;border-radius:6px;background:none;color:inherit;font:inherit;font-size:16px;cursor:pointer;opacity:.6}.kd-fold{margin-left:-8px}.kd-fold:hover,.kd-gear:hover,.kd-more:hover{opacity:1;background:rgba(128,128,128,.18)}" +
-      ".kd-menu{position:absolute;right:0;top:100%;z-index:50;display:flex;align-items:center;gap:4px;padding:6px 8px;border:1px solid var(--dashboard-card-border);border-radius:8px;background:var(--dashboard-background);box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:14px;font-weight:400;text-transform:none;letter-spacing:0}" +
-      ".kd-mt{opacity:.6;margin-right:4px}.kd-mw{padding:4px 8px;border:1px solid transparent;border-radius:4px;background:none;color:inherit;font:inherit;cursor:pointer}.kd-mw:hover{background:rgba(128,128,128,.18)}.kd-mw.kd-on{border-color:#0097dc;color:#0097dc}" +
+      ".kd-menu{position:absolute;right:0;top:100%;z-index:50;display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 8px;border:1px solid var(--dashboard-card-border);border-radius:8px;background:var(--dashboard-background);box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:14px;font-weight:400;text-transform:none;letter-spacing:0}" +
+      ".kd-mt{opacity:.6;margin-right:4px}.kd-mw,.kd-ren,.kd-ung{white-space:nowrap}.kd-ren,.kd-ung{margin-left:8px}.kd-mw,.kd-ren,.kd-ung{padding:4px 8px;border:1px solid transparent;border-radius:4px;background:none;color:inherit;font:inherit;cursor:pointer}.kd-mw:hover,.kd-ren:hover,.kd-ung:hover{background:rgba(128,128,128,.18)}.kd-mw.kd-on{border-color:#0097dc;color:#0097dc}" +
       ".kd-card{background:var(--dashboard-background);border:1px solid var(--dashboard-card-border);border-radius:8px;min-width:0}" +
       ".kd-ch{display:flex;align-items:center;margin-top:24px;padding:0 24px;min-height:24px}" +
       ".kd-drag{flex:none;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;margin:-4px -8px -4px 4px;padding:0 4px 0 0;border:0;background:none;color:inherit;font:inherit;box-sizing:border-box;border-radius:6px;cursor:grab;opacity:.5;user-select:none;letter-spacing:-4px}.kd-drag:hover{opacity:.9;background:rgba(128,128,128,.18)}.kd-ct{flex:1;min-width:0;font-size:16px;font-weight:700;line-height:24px;letter-spacing:1px;text-transform:uppercase}" +
@@ -950,6 +951,8 @@
   /* pendingLay: the layout just saved, shown until status.json carries its rev (or another one, or 45 s pass: pendingFrom
    * is the rev it was saved over, pendingAt the time); pageNote: why saving it failed */
   var pendingLay = null, pendingRev = "", pendingFrom, pendingAt = 0, pageNote = "";
+  /* renaming: the gid whose name becomes an input on the next draw */
+  var renaming = "";
   function saveLay(items) {
     var cf = (lastData || {}).cfg || {}, rev = newRev(), old = pendingLay;
     if (!cf.vol) { pageNote = "Не найден диск Entware"; renderPage(); return; }
@@ -976,7 +979,7 @@
     var main = page && page.parentNode, d = lastData;
     if (!main || busy()) return;
     var top = main.scrollTop;
-    page.innerHTML = '<div class="kd-ph"><h1>' + TITLE + '</h1><button type="button" class="kd-btn kd-set"' + (d ? "" : " disabled") + '>Настройки</button></div>';
+    page.innerHTML = '<div class="kd-ph"><h1>' + TITLE + '</h1><div class="kd-pb"><button type="button" class="kd-btn kd-ng"' + (d ? "" : " disabled") + '>Новая группа</button><button type="button" class="kd-btn kd-set"' + (d ? "" : " disabled") + ">Настройки</button></div></div>";
     if (!d) { page.insertAdjacentHTML("beforeend", note(d === false ? NODATA : "загрузка…")); return; }
     var cf = d.cfg || {};
     if (pendingLay && cf.rev === pendingRev && cf.err) pageNote = "Не удалось сохранить раскладку: " + cf.err;
@@ -1000,14 +1003,35 @@
     items.forEach(function (it) {
       if (!it.g) { h += card(it, 3); return; }
       var inner = it.cards.map(function (c) { return card(c, it.w); }).join("");
-      h += '<div class="kd-item kd-grp" data-g="' + esc(it.g) + '"' + span(it.w, 3) + '><div class="kd-gh">' + fold(it) + '<span class="kd-gn">' + esc(it.name) +
-        '</span><span class="kd-gc">' + it.cards.filter(function (c) { return cards[c.id]; }).length + "</span>" + btn("kd-more", "Ещё", "&#8943;") + btn("kd-drag", "Перетащить", "&#8942;&#8942;") + "</div>" +
+      h += '<div class="kd-item kd-grp" data-g="' + esc(it.g) + '"' + span(it.w, 3) + '><div class="kd-gh">' + fold(it) + (renaming === it.g ? '<input class="kd-name" maxlength="32" aria-label="Имя группы" value="' + esc(it.name) + '">' : '<span class="kd-gn">' + esc(it.name) + "</span>") +
+        '<span class="kd-gc">' + it.cards.filter(function (c) { return cards[c.id]; }).length + "</span>" + btn("kd-more", "Ещё", "&#8943;") + btn("kd-drag", "Перетащить", "&#8942;&#8942;") + "</div>" +
         (it.c ? "" : '<div class="kd-lay" style="grid-template-columns:' + (one ? "1fr" : "repeat(" + it.w + ",1fr)") + '">' + (inner || '<div class="kd-empty">Перетащите сюда карточки</div>') + "</div>") + "</div>";
     });
     page.insertAdjacentHTML("beforeend", h + "</div>");
-    /* Task 3 hook: cards inside groups get no drag yet */
-    Array.prototype.forEach.call(page.querySelectorAll(".kd-page > .kd-lay > .kd-item > div > .kd-drag"), function (b) { attachPageDrag(b.parentNode.parentNode, b); });
+    Array.prototype.forEach.call(page.querySelectorAll(".kd-ch > .kd-drag,.kd-gh > .kd-drag"), function (b) { attachPageDrag(b.parentNode.parentNode, b); });
+    var inp = page.querySelector("input.kd-name");
+    if (inp) nameInput(inp);
+    renaming = "";
     main.scrollTop = top;
+  }
+  /* a group's name as typed -> what bin/settings accepts: no control characters or |, up to 32 characters, no outer spaces */
+  function grpName(v) { return Array.from(v.replace(/[\x00-\x1f\x7f|]/g, "")).slice(0, 32).join("").trim(); }
+  /* Enter saves, Esc, an empty name or leaving the field cancels; the field goes first, as it holds back the redraw */
+  function nameInput(inp) {
+    var done = false;
+    function end(v) {
+      if (done) return;
+      done = true;
+      var items = layModel(lastData || {}), it = lookup(items, inp.closest(".kd-item"));
+      if (inp.parentNode) inp.parentNode.removeChild(inp);
+      if (v && it && v !== it.name) { it.name = v; saveLay(items); } else renderPage();
+    }
+    inp.addEventListener("keydown", function (e) {
+      if (e.isComposing) return;
+      if (e.key === "Enter") { e.preventDefault(); end(grpName(inp.value)); } else if (e.key === "Escape") end("");
+    });
+    inp.addEventListener("blur", function () { end(""); });
+    inp.focus(); inp.select();
   }
   /* the «⋯» menu, one on the page, inside the header it belongs to; closes by Esc or a click elsewhere */
   function closeMenu(quiet) {
@@ -1019,32 +1043,40 @@
   function menuKey(e) { if (e.key === "Escape") closeMenu(); }
   function menuOut(e) { if (!(e.target.closest && e.target.closest(".kd-menu,.kd-more"))) closeMenu(); }
   function openMenu(head, it) {
-    /* Task 3 hook: the group items (rename, ungroup) go after the widths */
     head.insertAdjacentHTML("beforeend", '<div class="kd-menu" role="menu"><span class="kd-mt">Ширина:</span>' + [1, 2, 3].map(function (n) {
       return '<button type="button" class="kd-mw' + (it.w === n ? " kd-on" : "") + '" data-w="' + n + '" aria-pressed="' + (it.w === n) + '" aria-label="Ширина ' + n + '/3" title="Ширина ' + n + '/3">' + n + "/3</button>";
-    }).join("") + "</div>");
+    }).join("") + (it.g ? '<button type="button" class="kd-ren" aria-label="Переименовать" title="Переименовать">Переименовать</button><button type="button" class="kd-ung" aria-label="Разгруппировать" title="Разгруппировать">Разгруппировать</button>' : "") + "</div>");
     document.addEventListener("keydown", menuKey); document.addEventListener("click", menuOut);
   }
   function onPageClick(e) {
     var t = e.target, c = function (s) { return t.closest ? t.closest(s) : null; }, el = c(".kd-item"), items, it, head, same;
     if (c(".kd-set")) { openSettings(); return; }
+    if (c(".kd-ng") && lastData) {
+      /* the lowest free gN */
+      var n = 1; items = layModel(lastData);
+      while (items.some(function (x) { return x.g === "g" + n; })) n++;
+      closeMenu(true); renaming = "g" + n; items.unshift({ g: "g" + n, w: 3, c: 0, name: "Новая группа", cards: [] }); saveLay(items); return;
+    }
     if (!el || !lastData) return;
     items = layModel(lastData); it = lookup(items, el);
     if (!it) return;
     if (c(".kd-gear")) openSettings(it.id);
     else if (c(".kd-mw")) { closeMenu(true); it.w = +c(".kd-mw").getAttribute("data-w"); saveLay(items); }
+    else if (c(".kd-ren")) { closeMenu(true); renaming = it.g; renderPage(); }
+    else if (c(".kd-ung")) { closeMenu(true); items.splice.apply(items, [items.indexOf(it), 1].concat(it.cards)); saveLay(items); }
     else if (c(".kd-more")) { head = c(".kd-more").parentNode; same = head.querySelector(".kd-menu"); closeMenu(true); if (same) renderPage(); else openMenu(head, it); }
     else if (c(".kd-fold,.kd-ct,.kd-gn")) { it.c = it.c ? 0 : 1; saveLay(items); }
   }
-  /* the item's drag handle: a dashed placeholder follows the pointer over the page grid; the drop saves the layout */
+  /* the item's drag handle: a dashed placeholder follows the pointer over the page grid, a card also over the grid of a group
+ * (the innermost grid under the pointer, else the last one); a group only over the page grid; the drop saves the layout */
   function attachPageDrag(r, handle) {
     handle.style.touchAction = "none"; handle.style.cursor = "grab";
     handle.addEventListener("pointerdown", function (ev) {
       if (ev.pointerType === "mouse" && ev.button !== 0) return;
       ev.preventDefault();
-      var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, ph, lay = r.parentNode;
+      var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, ph, lay = r.parentNode, grids = r.hasAttribute("data-g") ? [lay] : Array.prototype.slice.call(page.querySelectorAll(".kd-lay"));
       try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
-      function kids() { return Array.prototype.filter.call(lay.children, function (k) { return k !== r && k !== ph; }); }
+      function kids() { return Array.prototype.filter.call(lay.children, function (k) { return k !== r && k.classList.contains("kd-item"); }); }
       function move(e) {
         if (!started) {
           if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 5) return;
@@ -1058,11 +1090,13 @@
         r.style.left = (e.clientX - offX) + "px"; r.style.top = (e.clientY - offY) + "px";
         /* before or after the nearest item: before when the pointer is above it, or beside it and left of its middle */
         var best = null, bd = 1e18, before = false, ref;
+        grids.forEach(function (g) { var b = g.getBoundingClientRect(); if (e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom) lay = g; });
         kids().forEach(function (k) {
           var b = k.getBoundingClientRect(), dx = e.clientX - (b.left + b.width / 2), dy = e.clientY - (b.top + b.height / 2), d2 = dx * dx + dy * dy;
           if (d2 < bd) { bd = d2; best = k; before = e.clientY < b.top || (e.clientY <= b.bottom && dx < 0); }
         });
-        if (!best) return;
+        Array.prototype.forEach.call(page.querySelectorAll(".kd-empty"), function (m) { m.style.display = m.parentNode === lay ? "none" : ""; });
+        if (!best) { if (ph.parentNode !== lay) lay.appendChild(ph); return; }
         ref = before ? best : best.nextSibling;
         if (ref !== ph && !(ref && ref.previousSibling === ph)) lay.insertBefore(ph, ref);
       }
@@ -1070,18 +1104,23 @@
         handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end);
         try { handle.releasePointerCapture(ev.pointerId); } catch (x) {}
         if (!started) return;
-        var prev = ph.previousElementSibling, next = ph.nextElementSibling, items, mine, rest, at, p, n;
+        var prev = ph.previousElementSibling, next = ph.nextElementSibling, items, mine, rest, at, p, n, gid = ph.parentNode.parentNode.getAttribute("data-g"), dest;
         function key(k) { return k && (k.hasAttribute("data-g") ? "g:" + k.getAttribute("data-g") : "c:" + k.getAttribute("data-id")); }
         function ikey(it) { return it.g ? "g:" + it.g : "c:" + it.id; }
-        while (prev === r) prev = prev.previousElementSibling;
-        while (next === r) next = next.nextElementSibling;
+        while (prev && (prev === r || !prev.classList.contains("kd-item"))) prev = prev.previousElementSibling;
+        while (next && (next === r || !next.classList.contains("kd-item"))) next = next.nextElementSibling;
         dragging = false;
         if (e.type === "pointercancel" || !lastData) { renderPage(); return; }
         items = layModel(lastData);
-        mine = items.filter(function (it) { return ikey(it) === key(r); })[0]; rest = items.filter(function (it) { return it !== mine; });
+        /* mine: the dragged item, taken out of the page list or of its group */
+        items.forEach(function (it) { (it.cards || []).forEach(function (c) { if (!r.hasAttribute("data-g") && ikey(c) === key(r)) mine = c; }); if (ikey(it) === key(r)) mine = it; });
+        items.forEach(function (it) { if (it.cards) it.cards = it.cards.filter(function (c) { return c !== mine; }); });
+        items = items.filter(function (it) { return it !== mine; });
+        rest = gid !== null && !r.hasAttribute("data-g") ? (items.filter(function (it) { return it.g === gid; })[0] || {}).cards : items;
+        if (!mine || !rest) { renderPage(); return; }
         p = rest.map(ikey).indexOf(key(prev)); n = rest.map(ikey).indexOf(key(next)); at = n >= 0 ? n : p >= 0 ? p + 1 : rest.length;
         rest.splice(at, 0, mine);
-        saveLay(rest);
+        saveLay(items);
       }
       handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
     });

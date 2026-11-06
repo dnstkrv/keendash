@@ -1966,6 +1966,100 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("page: a drop after awg saves the new order", /^keendash 1 [a-z0-9]{12}\ncard sys 1 0\ncard awg 1 0\ncard telemt 1 0\n/.test(txt), txt);
     ok("page: the dropped card shows in its new place", top(p).slice(0, 3).map(idOf).join() === "sys,awg,telemt", top(p).slice(0, 3).map(idOf).join());
   }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 1, 0, ""], ["c", "telemt", 1, 0, ""], ["c", "awg", 1, 0, ""]] }) }), URL0);
+  // groups: «Новая группа», rename, «Разгруппировать»
+  const key = (w, el, k) => el.dispatchEvent(new w.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+  const L1 = [["c", "sys", 1, 0, ""], ["g", "g1", 3, 0, "Дом"], ["c", "awg", 1, 0, "g1"]];
+  fcalls = [];
+  await run(withCfg({ lay: [["c", "sys", 1, 0, ""]] }), async w => {
+    const p = await openPage(w); p.querySelector(".kd-ng").click();
+    const inp = p.querySelector("input.kd-name"), g = top(p)[0];
+    ok("group: «Новая группа» is first, 3/3, named, in rename mode with focus", g.getAttribute("data-g") === "g1" && span(g) === 3 && inp && inp.value === "Новая группа" && inp.getAttribute("maxlength") === "32" && w.document.activeElement === inp && !!g.querySelector(".kd-empty"));
+    typeIn(w, inp, "Мой дом"); await w.__servicesWidget.update();
+    ok("group: the name input keeps its text and focus across a data refresh", p.querySelector("input.kd-name") === inp && inp.value === "Мой дом" && w.document.activeElement === inp);
+    await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("group: creation sends the group first", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 Новая группа\ncard sys 1 0\n/.test(txt) && !/col /.test(txt), txt);
+  }, fm(fcalls, { base: withCfg({ lay: [["c", "sys", 1, 0, ""]] }) }), URL0);
+  fcalls = [];
+  await run(withCfg({ lay: [["g", "g1", 3, 0, "A"], ["g", "g3", 3, 0, "C"]] }), async w => {
+    const p = await openPage(w); p.querySelector(".kd-ng").click();
+    ok("group: the lowest free number is taken", top(p).slice(0, 3).map(idOf).join() === "g2,g1,g3");
+  }, fm(fcalls, { base: withCfg({ lay: [["g", "g1", 3, 0, "A"], ["g", "g3", 3, 0, "C"]] }) }), URL0);
+  const renLay = withCfg({ lay: L1 });
+  const rename = async (w, name, k) => {
+    const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click(); p.querySelector(".kd-ren").click();
+    const inp = p.querySelector("input.kd-name"); if (name !== null) typeIn(w, inp, name); key(w, inp, k || "Enter"); await wait(200);
+    return p;
+  };
+  fcalls = [];
+  await run(renLay, async w => {
+    const p = await rename(w, "  Мой <b>x</b>  "), [rev, txt] = await sent(w, fcalls);
+    ok("rename: Enter sends the trimmed name, shown as text", /\ngroup g1 3 0 Мой <b>x<\/b>\ncard awg 1 0 g1\n/.test(txt) && p.querySelector('[data-g="g1"] .kd-gn').textContent === "Мой <b>x</b>" && !p.querySelector(".kd-gh b") && !p.querySelector("input.kd-name"), txt);
+  }, fm(fcalls, { base: renLay }), URL0);
+  fcalls = [];
+  await run(renLay, async w => {
+    await rename(w, "a\nhide page sys"); const [r2, t2] = await sent(w, fcalls);
+    ok("rename: control characters are removed, no extra line", t2.split("\n").filter(l => /^group /.test(l)).length === 1 && /\ngroup g1 3 0 ahide page sys\n/.test(t2) && !/\nhide /.test(t2), t2);
+  }, fm(fcalls, { base: renLay }), URL0);
+  fcalls = [];
+  await run(renLay, async w => {
+    await rename(w, "x\ty|z\x7f" + "я".repeat(40)); const [rev, txt] = await sent(w, fcalls);
+    ok("rename: tab, | and DEL dropped, cut to 32 characters", txt.indexOf("\ngroup g1 3 0 xyz" + "я".repeat(29) + "\n") > 0, txt);
+  }, fm(fcalls, { base: renLay }), URL0);
+  for (const [nm, name, k] of [["Esc", "Другое", "Escape"], ["empty", "   ", "Enter"], ["unchanged", "Дом", "Enter"]]) {
+    fcalls = [];
+    await run(renLay, async w => {
+      const p = await rename(w, name, k);
+      ok("rename: " + nm + " sends nothing, the name stays", !post(fcalls, /rci.put$/).length && !p.querySelector("input.kd-name") && p.querySelector('[data-g="g1"] .kd-gn').textContent === "Дом");
+    }, fm(fcalls, { base: renLay }), URL0);
+  }
+  fcalls = [];
+  await run(renLay, async w => {
+    const p = await openPage(w); p.querySelector('[data-g="g1"] .kd-more').click();
+    ok("group menu: widths, rename, ungroup", p.querySelectorAll(".kd-mw").length === 3 && !!p.querySelector(".kd-ren") && !!p.querySelector(".kd-ung"));
+    p.querySelector(".kd-ung").click(); await wait(200);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("ungroup: the cards take the group's place in order, the group is gone", /^keendash 1 [a-z0-9]{12}\ncard sys 1 0\ncard awg 1 0\ncard /.test(txt) && !/group /.test(txt) && !p.querySelector("[data-g]") && top(p).slice(0, 2).map(idOf).join() === "sys,awg", txt);
+  }, fm(fcalls, { base: renLay }), URL0);
+  // drag into / out of groups; rects are made up, everything else sits far away
+  const rc = (el, l, t, wd, h) => { el.getBoundingClientRect = () => ({ left: l, top: t, width: wd, height: h, right: l + wd, bottom: t + h }); };
+  const gdrag = async (w, p, rects, sel, x, y) => {
+    Array.from(p.querySelectorAll(".kd-item,.kd-lay")).forEach(e => rc(e, 5000, 5000, 10, 10));
+    rects.forEach(([s, l, t, wd, h]) => rc(p.querySelector(s), l, t, wd, h));
+    const h = p.querySelector(sel), f = (t, px, py) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = px; e.clientY = py; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    f("pointerdown", 10, 10); f("pointermove", x, y); f("pointerup", x, y); await wait(200);
+    return sent(w, fcalls);
+  };
+  const TOP = [".kd-lay", 0, 0, 1000, 400], G1 = '[data-g="g1"]';
+  const L2 = withCfg({ lay: [["c", "sys", 1, 0, ""], ["g", "g1", 3, 0, "G"], ["c", "awg", 1, 0, "g1"], ["c", "telemt", 1, 0, "g1"]] });
+  fcalls = [];
+  await run(L2, async w => {
+    const p = await openPage(w);
+    const [rev, txt] = await gdrag(w, p, [TOP, ['[data-id="sys"]', 0, 0, 90, 50], [G1, 0, 100, 300, 200], [G1 + " .kd-lay", 0, 140, 300, 160], ['[data-id="awg"]', 0, 140, 90, 50], ['[data-id="telemt"]', 100, 140, 90, 50]], '[data-id="sys"] .kd-drag', 80, 165);
+    ok("drag: a card goes into a group between its cards", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 G\ncard awg 1 0 g1\ncard sys 1 0 g1\ncard telemt 1 0 g1\n/.test(txt), txt);
+    ok("drag: the card shows inside the group", p.querySelector(G1 + ' [data-id="sys"]') && top(p)[0].getAttribute("data-g") === "g1");
+  }, fm(fcalls, { base: L2 }), URL0);
+  const L3 = withCfg({ lay: [["c", "sys", 1, 0, ""], ["g", "g1", 3, 0, "G"]] });
+  fcalls = [];
+  await run(L3, async w => {
+    const p = await openPage(w);
+    const [rev, txt] = await gdrag(w, p, [TOP, ['[data-id="sys"]', 0, 0, 90, 50], [G1, 0, 100, 300, 100], [G1 + " .kd-lay", 0, 140, 300, 60]], '[data-id="sys"] .kd-drag', 150, 160);
+    ok("drag: a card goes into an empty group", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 G\ncard sys 1 0 g1\ncard /.test(txt), txt);
+  }, fm(fcalls, { base: L3 }), URL0);
+  const L4 = withCfg({ lay: [["g", "g1", 3, 0, "G"], ["c", "awg", 1, 0, "g1"], ["c", "telemt", 1, 0, "g1"], ["c", "sys", 1, 0, ""]] });
+  fcalls = [];
+  await run(L4, async w => {
+    const p = await openPage(w);
+    const [rev, txt] = await gdrag(w, p, [TOP, [G1, 0, 0, 300, 200], [G1 + " .kd-lay", 0, 40, 300, 160], ['[data-id="awg"]', 0, 40, 90, 50], ['[data-id="telemt"]', 100, 40, 90, 50], ['.kd-lay > [data-id="sys"]', 0, 250, 90, 50]], '[data-id="telemt"] .kd-drag', 50, 270);
+    ok("drag: a card goes out of a group to the page", /^keendash 1 [a-z0-9]{12}\ngroup g1 3 0 G\ncard awg 1 0 g1\ncard sys 1 0\ncard telemt 1 0\n/.test(txt), txt);
+  }, fm(fcalls, { base: L4 }), URL0);
+  const L5 = withCfg({ lay: [["g", "g1", 3, 0, "A"], ["c", "awg", 1, 0, "g1"], ["g", "g2", 3, 0, "B"], ["c", "telemt", 1, 0, "g2"], ["c", "sys", 1, 0, ""]] });
+  fcalls = [];
+  await run(L5, async w => {
+    const p = await openPage(w);
+    const [rev, txt] = await gdrag(w, p, [TOP, [G1, 0, 0, 300, 100], [G1 + " .kd-lay", 0, 40, 300, 60], ['[data-g="g2"]', 0, 150, 300, 100], ['[data-g="g2"] .kd-lay', 0, 190, 300, 60], ['.kd-lay > [data-id="sys"]', 0, 300, 90, 50]], G1 + " .kd-drag", 250, 215);
+    ok("drag: a group dropped over another group's grid stays on the page", /^keendash 1 [a-z0-9]{12}\ngroup g2 3 0 B\ncard telemt 1 0 g2\ngroup g1 3 0 A\ncard awg 1 0 g1\ncard sys 1 0\n/.test(txt) && Array.from(p.querySelector(".kd-lay").children).map(idOf).slice(0, 2).join() === "g2,g1", txt);
+  }, fm(fcalls, { base: L5 }), URL0);
   const foldTelemt = async w => { const p = await openPage(w); p.querySelector('[data-id="telemt"] .kd-fold').click(); return p; };
   const folded = p => !p.querySelector('[data-id="telemt"] .us-body');
   fcalls = [];
