@@ -871,7 +871,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/traefik: no http.routers -> ok 0, no answer -> ok 0", run("/none", "USER=") === "ok 0" && run("", "USER=").length > 4 && collect("ext.d/traefik", "", "", { env: "URL=http://nohost.test USER= " }).trim() === "ok 0");
       fs.rmSync(sd, { recursive: true, force: true });
     }
-    // nextdns: the profile ID is a path segment,so anything but [A-Za-z0-9]{1,32} is refused before the request
+    // nextdns: the profile ID is a path segment, so anything but [A-Za-z0-9]{1,32} is refused before the request
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-n-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";
       const run = (e) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/nextdns", "", "", { state: sd, env: e }).trim(); };
