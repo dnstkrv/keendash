@@ -64,6 +64,8 @@ case "$u" in
     *) need "Cookie: _session_id=abc" ;; esac ;;
   # Frigate is asked without a certificate check (8971 is https, self-signed). Port 5000 needs no login; 8971 only after the login for admin / p"a\ss (JSON-escaped in the body), then the cookie. Requests go to $LOG
   # Frigate frames: <name>/latest.jpg answers a JPEG on stdout ("broken" fails, "empty" gives nothing, "nojpg" html, "huge" 2 MB); 8971 also wants the cookie
+  # a Frigate under /hang/ never answers (bin/snap's deadline)
+  *//frigate.test:*/hang/api/*) exec sleep 30 ;;
   *//frigate.test:*/api/*/latest.jpg*) printf 'frigate%s\n' "$a" >> "${LOG:-/dev/null}"; need "--no-check-certificate"
     case "$u" in *:8971/*) need "Cookie: frigate_token=abc" ;; esac
     case "$u" in

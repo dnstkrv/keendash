@@ -414,15 +414,29 @@
     });
     return x.n > list.length ? h + note("и ещё " + (x.n - list.length)) : h;
   };
+  /* frames of an instance with SNAP 5/15/30 (data-sn): the src ends with the time bucket floor(now / SNAP), this timer moves it without rendering the card
+   * again (bin/snap fetches a new frame every SNAP seconds). It runs only while such an img is on screen */
+  var snapTm = 0;
+  function snapTick() {
+    var im = document.querySelectorAll("img.us-snap[data-sn]"), t = Date.now() / 1000;
+    if (!im.length) { clearInterval(snapTm); snapTm = 0; return; }
+    if (document.hidden) return;
+    Array.prototype.forEach.call(im, function (i) {
+      var s = i.getAttribute("src"), n = s.split("?")[0] + "?" + Math.floor(t / +i.getAttribute("data-sn"));
+      if (s !== n) i.setAttribute("src", n);
+    });
+  }
   /* x.ver, x.det + x.inf (detector, ms), x.used/x.total (bytes); x.cam = [[name, fps, detections/s, 1 when fps is 0]]; x.snap: the time (epoch) of the newest frame in the router's
-   * $PUB/cam (ext.d/frigate), shown over https only: the src is made of the instance id, the row number and x.snap (the cache key), never of the API's text */
+   * $PUB/cam (ext.d/frigate), shown over https only: the src is made of the instance id, the row number and x.snap (the cache key; the time bucket with SNAP 5/15/30), never of the API's text */
   VIEW.frigate = function (x, ser, d, inst) {
+    var sn = /^(5|15|30)$/.test(inst.snap) ? +inst.snap : 0;
     var h = '<div class="us-grid">' + blk("Версия", x.ver ? esc(x.ver) : "—", null) + blk("Детектор", x.det ? esc(x.det) + " · " + (+x.inf || 0) + " мс" : "—", null) +
       blk("Занято", x.total > 0 ? fmtBytes(x.used) + " из " + fmtBytes(x.total) : "—", null) + "</div>";
     (x.cam || []).forEach(function (c, n) {
       h += c[3] ? line(BAD, esc(c[0]), "нет потока") : line(OK, esc(c[0]), "FPS " + (+c[1] || 0) + " · детекций " + (+c[2] || 0) + "/с");
-      if (x.snap && ST && n < 8) h += '<img class="us-snap" loading="lazy" alt="" src="' + BASE + "cam/" + esc(inst.id) + "-" + (n + 1) + ".jpg?" + (+x.snap || 0) + '">';
+      if (x.snap && ST && n < 8) h += '<img class="us-snap" loading="lazy" alt="" src="' + BASE + "cam/" + esc(inst.id) + "-" + (n + 1) + ".jpg?" + (sn ? Math.floor(Date.now() / 1000 / sn) : +x.snap || 0) + '"' + (sn ? ' data-sn="' + sn + '"' : "") + ">";
     });
+    if (sn && x.snap && ST && !snapTm) snapTm = setInterval(snapTick, 1000);
     return x.snap && !ST ? h + note("Кадры с камер видны при входе в роутер по https") : h;
   };
   /* x.e = [[label, state, unit]] */
@@ -1215,7 +1229,7 @@
    * the firmware file manager: /rci/put names the file in keendash's inbox, /fui takes its content; status.json confirms ---------- */
   var FLD = { name: "Имя", url: "Адрес", user: "Логин", pass: "Пароль", token: "Токен", key: "API-ключ", map: "Что показывать", hosts: "Адреса", every: "Интервал", snap: "Кадры с камер" };
   var SECRET = /^(pass|token|key)$/, PLAIN = /^(name|url|user|map|hosts|every|snap)$/, NOSAVE = "Не удалось сохранить";
-  var CHOICE = { every: [["1", "1 мин"], ["5", "5 мин"], ["15", "15 мин"], ["30", "30 мин"], ["60", "1 ч"]], snap: [["0", "Нет"], ["1", "Да"]] };
+  var CHOICE = { every: [["1", "1 мин"], ["5", "5 мин"], ["15", "15 мин"], ["30", "30 мин"], ["60", "1 ч"]], snap: [["0", "Нет"], ["5", "5 с"], ["15", "15 с"], ["30", "30 с"], ["60", "1 мин"]] };
   var TRASH = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 9h12l-1 12H7L6 9z"/></svg>';
   /* dd: the status the dialog works from (taken when it opens, again after a save), so a failed poll changes nothing;
    * lost: the last poll got 401; down: where the mouse button went down. dlg: the backdrop; draft: {inst: [{id, type, name, url, user, vals}], del: [id], hide: {page, main}}; dopen: {id: 1} of the instances
@@ -1380,7 +1394,9 @@
     var list = dlg.querySelector(".kd-dlg-body");
     list.innerHTML = h;
     Array.prototype.forEach.call(list.querySelectorAll("[data-f]"), function (inp) {
-      inp.value = fv(entry(inp.getAttribute("data-id")), inp.getAttribute("data-f")); hint(inp);
+      var v = fv(entry(inp.getAttribute("data-id")), inp.getAttribute("data-f"));
+      /* a stored 1 is the old «Да»: it means a minute and stays 1 in the draft until the user picks something else */
+      inp.value = inp.getAttribute("data-f") === "snap" && v === "1" ? "60" : v; hint(inp);
     });
     renderScan();
   }

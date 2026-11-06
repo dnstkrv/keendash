@@ -236,6 +236,35 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       gclick(w, m, "Дом");
       ok("frigate snap, https: at most 8 images", m.querySelectorAll("img").length === 8 && m.querySelectorAll("img")[7].getAttribute("src") === "/storage/.keendash/cam/frigate-8.jpg?" + SN, m.querySelectorAll("img").length);
     }, https(fgs({ ok: 1, ver: "1", snap: SN, cam: Array.from({ length: 10 }, (_, i) => ["c" + i, 5, 0, 0]) })), "https://r.example.net/");
+    // SNAP 5, 15 or 30: over https the src is the time bucket floor(now / SNAP), a timer moves it without a new status (the card is not rendered again);
+    // 1 and 60 (a minute): the src moves only with x.snap
+    const wt = ms => new Promise(r => setTimeout(r, ms));
+    const clk = { t: 1800000000000 };
+    const live = (sn, x) => { const d = fgs(x); d.now = clk.t / 1000; d.inst[0].push("", "", "", sn); return d; };
+    const httpsAt = d => w => { w.__keendash = { base: "/storage/.keendash/", st: true }; w.Date.now = () => clk.t; return () => Promise.resolve({ ok: true, json: () => Promise.resolve(d) }); };
+    for (const sn of ["5", "15", "30"]) {
+      clk.t = 1800000000000;
+      const d = live(sn, { ok: 1, ver: "1", snap: SN, cam: cams });
+      await run(d, async (w, m) => {
+        gclick(w, m, "Дом");
+        const im = Array.from(m.querySelectorAll("img")), b0 = Math.floor(clk.t / 1000 / +sn), src = i => i.getAttribute("src"), row = m.querySelector(".us-row");
+        ok("frigate live " + sn + ": the first src carries the time bucket, not x.snap", im.length === 2 && src(im[0]) === "/storage/.keendash/cam/frigate-1.jpg?" + b0 && src(im[1]) === "/storage/.keendash/cam/frigate-2.jpg?" + b0, im.map(src).join());
+        clk.t += 1000 * +sn - 1000; await wt(1300);
+        ok("frigate live " + sn + ": the src does not change before the interval is over", im.every(i => src(i).endsWith("?" + b0)), im.map(src).join());
+        clk.t += 1000; await wt(1300);
+        ok("frigate live " + sn + ": after the interval every src moves to the next bucket, same nodes (no re-render)", im.every(i => i.isConnected && src(i).endsWith("?" + (b0 + 1))) && m.querySelector(".us-row") === row, im.map(src).join());
+      }, httpsAt(d), "https://r.example.net/");
+    }
+    for (const sn of ["60", "1"]) {
+      clk.t = 1800000000000;
+      const d = live(sn, { ok: 1, ver: "1", snap: SN, cam: cams });
+      await run(d, async (w, m) => {
+        gclick(w, m, "Дом");
+        const im = Array.from(m.querySelectorAll("img"));
+        clk.t += 70000; await wt(1300);
+        ok("frigate SNAP=" + sn + ": the src keeps x.snap whatever the clock does", im.length === 2 && im.every(i => i.getAttribute("src").endsWith("?" + SN)), im.map(i => i.getAttribute("src")).join());
+      }, httpsAt(d), "https://r.example.net/");
+    }
   }
   // pihole: AdGuard's card without the filter/latency note and the recent blocks: two graphs, top domains, clients, its own note
   const ph = (x) => Object.assign(one("pihole", "Pi-hole", "Сеть", "http://10.0.0.5", x), { now: 1793438837 });
@@ -652,23 +681,23 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("bin/settings apply: hosts and every only for types that list them", r.rd("tmp/settings.state") === "rev e3\nerr строка 2: неизвестное поле hosts\n" && r.rd("etc/services/qb-2.conf") === QB, r.rd("tmp/settings.state"));
     r.rm();
 
-    // snap (the Frigate type): the last field of an inst line, only 0 or 1
+    // snap (the Frigate type): the last field of an inst line, the frame interval 0 1 5 15 30 60 (1 is the old "yes" = 60)
     const FG = "#!/bin/sh\n# name: FG\n# group: Дом\n# fields: url snap\n", FC = "TYPE='fg'\nNAME='F'\nURL='http://h'\n", fbase = { "ext.d/fg": FG, "etc/services/f.conf": FC };
     r = settingsRun({ "ext.d/fg": FG, "etc/services/f.conf": FC + "SNAP='1'\n" }, "list");
     ok("bin/settings types and list: snap after every", r.out.startsWith("type|fg|FG|Дом|url,snap|\n") && r.out.includes("\ninst|f|fg|F|http://h||||||1\n"), JSON.stringify(r.out));
     r.rm();
     const sfail = [];
-    ["0", "1"].forEach(v => {
+    ["0", "1", "5", "15", "30", "60"].forEach(v => {
       r = settingsRun(Object.assign({ "var/inbox/s1.txt": msg("s1", ["set f snap " + v]) }, fbase), "apply");
       if (r.rd("tmp/settings.state") !== "rev s1\nerr \n" || r.rd("etc/services/f.conf") !== FC + "SNAP='" + v + "'\n") sfail.push(v + " -> " + r.rd("tmp/settings.state"));
       r.rm();
     });
-    ["2", "01", "10", "1 ", "on", "yes", "-1", "1;id", "$(id)"].forEach(v => {
+    ["2", "01", "10", "5 ", "1 ", "a", "on", "yes", "-1", "1;id", "$(id)", "6", "300"].forEach(v => {
       r = settingsRun(Object.assign({ "var/inbox/s2.txt": msg("s2", ["set f snap " + v]) }, fbase), "apply");
-      if (r.rd("tmp/settings.state") !== "rev s2\nerr строка 2: snap: нужно 0 или 1\n" || r.rd("etc/services/f.conf") !== FC) sfail.push(JSON.stringify(v) + " -> " + r.rd("tmp/settings.state"));
+      if (r.rd("tmp/settings.state") !== "rev s2\nerr строка 2: неверный интервал кадров\n" || r.rd("etc/services/f.conf") !== FC) sfail.push(JSON.stringify(v) + " -> " + r.rd("tmp/settings.state"));
       r.rm();
     });
-    ok("bin/settings apply: snap is 0 or 1", !sfail.length, sfail.join("; "));
+    ok("bin/settings apply: snap is 0, 1, 5, 15, 30 or 60", !sfail.length, sfail.join("; "));
     r = settingsRun({ "var/inbox/s3.txt": msg("s3", ["set qb-2 snap 1"]), "etc/services/qb-2.conf": QB }, "apply");
     ok("bin/settings apply: snap only for types that list it", r.rd("tmp/settings.state") === "rev s3\nerr строка 2: неизвестное поле snap\n" && r.rd("etc/services/qb-2.conf") === QB, r.rd("tmp/settings.state"));
     r.rm();
@@ -1065,7 +1094,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       const lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "", lgs = () => lg().split("\n").filter(l => /latest\.jpg/.test(l)), ls = () => fs.existsSync(cam) ? fs.readdirSync(cam).sort().join() : "-";
       const fs1 = (u, e, p) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/frigate", "", "", { state: sd, env: "KEENDASH_PUB=" + unix(p || pub) + " USER= PASS= URL=" + u + " " + (e === undefined ? "ID=fg-1 SNAP=1 " : e) }).trim(); };
       const put = (n, c) => { fs.mkdirSync(cam, { recursive: true }); fs.writeFileSync(path.join(cam, n), c || "old"); };
-      const JPG = "\xff\xd8\xff\xe0fake-jpeg\n";
+      const JPG = "\xff\xd8\xff\xe0fake-jpeg\n", sf = n => fs.existsSync(path.join(sd, n)) ? fs.readFileSync(path.join(sd, n), "utf8") : null;
       // the newest frame's mtime in seconds, the number after "snap " (the card's cache key)
       const snapLine = () => "snap " + Math.max(...fs.readdirSync(cam).filter(n => /^fg-1-[0-9]\.jpg$/.test(n)).map(n => Math.floor(fs.statSync(path.join(cam, n)).mtimeMs / 1000)));
       put("fg-1-5.jpg"); put(".fg-1-6.jpg.t"); put("fg-1-2-1.jpg"); put("fg-2-1.jpg"); put("other.txt");
@@ -1076,10 +1105,15 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/frigate snap: one request per camera, same options, h=240", JSON.stringify(lgs().map(l => l.replace(/^frigate -qO- /, "")).sort()) === JSON.stringify([
         "--no-check-certificate http://frigate.test:5000/snap/api/front/latest.jpg?h=240 ", "--no-check-certificate http://frigate.test:5000/snap/api/garage/latest.jpg?h=240 "]), lg());
       ok("ext.d/frigate snap: the body is piped through a cap into a temp outside $PUB, none left behind", fs.readdirSync(sd).every(n => !/^\.snap\./.test(n)) && ls().split(",").every(n => !/\.t$/.test(n)), fs.readdirSync(sd).join());
+      ok("ext.d/frigate snap: .cams.<ID> lists the cameras (number name) for bin/snap, no cookie file without a login", sf(".cams.fg-1") === "1 front\n2 garage\n" && sf(".ck.fg-1") === null && !fs.readdirSync(sd).some(n => /^\.cams\..*\.t$/.test(n)), fs.readdirSync(sd).join());
+      for (const v of ["5", "15", "30", "60"]) {
+        o = fs1("http://frigate.test:5000/snap", "ID=fg-1 SNAP=" + v + " ");
+        ok("ext.d/frigate snap: SNAP=" + v + " fetches the frames in the minute run as SNAP=1 does", ls() === "fg-1-1.jpg,fg-1-2-1.jpg,fg-1-2.jpg,fg-2-1.jpg,other.txt" && lgs().length === 2 && o.split("\n").pop() === snapLine() && sf(".cams.fg-1") === "1 front\n2 garage\n", ls() + " / " + o);
+      }
       // names that are not [A-Za-z0-9_-]{1,64} are never requested and keep their place in the numbering; the old frames of their numbers go
       put("fg-1-5.jpg");
       o = fs1("http://frigate.test:5000/odd");
-      ok("ext.d/frigate snap: ../x and 'a b' skipped, never requested, ok1 is number 3", ls() === "fg-1-2-1.jpg,fg-1-3.jpg,fg-2-1.jpg,other.txt" && lgs().length === 1 && lgs()[0].endsWith(" http://frigate.test:5000/odd/api/ok1/latest.jpg?h=240 ") && !/\.\.\/|a b/.test(lg()) && o.split("\n").pop() === snapLine(), ls() + " / " + lg());
+      ok("ext.d/frigate snap: ../x and 'a b' skipped, never requested, ok1 is number 3", ls() === "fg-1-2-1.jpg,fg-1-3.jpg,fg-2-1.jpg,other.txt" && lgs().length === 1 && lgs()[0].endsWith(" http://frigate.test:5000/odd/api/ok1/latest.jpg?h=240 ") && !/\.\.\/|a b/.test(lg()) && o.split("\n").pop() === snapLine() && sf(".cams.fg-1") === "3 ok1\n", ls() + " / " + lg());
       // a failed, empty, over 1 MB or not-JPEG download keeps the previous frame and leaves no temp (broken 1, empty 2, fine 3, huge 4: 2 MB, nojpg 5: html)
       put("fg-1-1.jpg"); put("fg-1-2.jpg"); put("fg-1-4.jpg"); put("fg-1-5.jpg");
       o = fs1("http://frigate.test:5000/fail");
@@ -1094,11 +1128,19 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       fs.rmSync(cam, { recursive: true });
       o = fs1("http://frigate.test:8971", "ID=fg-1 SNAP=1 USER=admin PASS='p\"a\\ss' ");
       ok("ext.d/frigate snap: login cookie on the frame request, a name with | skipped", ls() === "fg-1-2.jpg" && lgs().length === 1 && / Cookie: frigate_token=abc /.test(lgs()[0]) && lgs()[0].endsWith(" http://frigate.test:8971/api/garage/latest.jpg?h=240 ") && o.split("\n").pop() === snapLine(), ls() + " / " + lg());
-      // SNAP not 1: this id's frames and temps go, nothing printed, no frame requests, other ids stay
-      for (const e of ["ID=fg-1 SNAP=0 ", "ID=fg-1 SNAP= ", "ID=fg-1 SNAP=yes ", "ID=fg-1 "]) {
-        put("fg-1-1.jpg"); put(".fg-1-2.jpg.t"); put("fg-2-1.jpg"); put("fg-1-2-1.jpg"); fs.rmSync(path.join(cam, "fg-1-2.jpg"), { force: true });
+      // SNAP=5 with a login: the cookie is kept in $KEENDASH_TMP (never under $PUB) for bin/snap, mode 600; SNAP=1 keeps none
+      fs.rmSync(cam, { recursive: true });
+      o = fs1("http://frigate.test:8971", "ID=fg-1 SNAP=5 USER=admin PASS='p\"a\\ss' ");
+      ok("ext.d/frigate snap: SNAP=5 and a login -> the cookie file in the tmp dir, not under $PUB", sf(".ck.fg-1") === "frigate_token=abc\n" && !fs.readdirSync(pub).concat(fs.readdirSync(cam)).some(n => /ck|cams/.test(n)), sf(".ck.fg-1"));
+      ok("ext.d/frigate snap: the cookie file is mode 600", sf(".ck.fg-1") !== null && (fs.statSync(path.join(sd, ".ck.fg-1")).mode & 0o777) === 0o600);
+      fs.rmSync(path.join(sd, ".ck.fg-1")); fs.rmSync(cam, { recursive: true });
+      fs1("http://frigate.test:8971", "ID=fg-1 SNAP=1 USER=admin PASS='p\"a\\ss' ");
+      ok("ext.d/frigate snap: SNAP=1 and a login -> no cookie file", sf(".ck.fg-1") === null, sf(".ck.fg-1"));
+      // SNAP not 1, 5, 15, 30 or 60: this id's frames, temps, camera list and cookie go, nothing printed, no frame requests, other ids stay
+      for (const e of ["ID=fg-1 SNAP=0 ", "ID=fg-1 SNAP= ", "ID=fg-1 SNAP=yes ", "ID=fg-1 SNAP=2 ", "ID=fg-1 "]) {
+        fs.writeFileSync(path.join(sd, ".cams.fg-1"), "1 front\n"); fs.writeFileSync(path.join(sd, ".ck.fg-1"), "frigate_token=abc\n"); put("fg-1-1.jpg"); put(".fg-1-2.jpg.t"); put("fg-2-1.jpg"); put("fg-1-2-1.jpg"); fs.rmSync(path.join(cam, "fg-1-2.jpg"), { force: true });
         o = fs1("http://frigate.test:5000/snap", e);
-        ok("ext.d/frigate snap: '" + e.trim() + "' removes the frames, prints no snap line, makes no frame request", ls() === "fg-1-2-1.jpg,fg-2-1.jpg" && !/snap/.test(o) && lgs().length === 0 && /^ok 1\n/.test(o), ls() + " / " + o);
+        ok("ext.d/frigate snap: '" + e.trim() + "' removes the frames, prints no snap line, makes no frame request", ls() === "fg-1-2-1.jpg,fg-2-1.jpg" && !/snap/.test(o) && lgs().length === 0 && /^ok 1\n/.test(o) && sf(".cams.fg-1") === null && sf(".ck.fg-1") === null, ls() + " / " + o);
       }
       // $PUB is not a directory: silently no frames; a bad ID: nothing written anywhere
       o = fs1("http://frigate.test:5000/snap", undefined, path.join(pub, "nope"));
@@ -1110,6 +1152,93 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       }
       ok("ext.d/frigate snap: a bad ID writes and requests nothing", !badid.length, badid.join("; "));
       fs.rmSync(sd, { recursive: true, force: true }); fs.rmSync(pub, { recursive: true, force: true });
+    }
+    // bin/snap in a scratch install: bin/ has snap, extlib and the fake wget, ext.d/ the real frigate. o.conf {id: etc/services/<id>.conf}, o.cams {id: .cams.<id>},
+    // o.lock the pid in snap.lock, o.env "NAME=value ", o.dup two runs together. The fake wget logs its arguments to log (/hang/ never answers)
+    {
+      const sh = path.join(__dirname, "..", "files", "opt", "share", "keendash"), rs = n => fs.readFileSync(path.join(sh, n), "utf8").replace(/\r/g, "").replace(/^PATH=.*$/m, ":");
+      const snap = o => {
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kdsnap-")), t = unix(tmp), put = (f, c, m) => fs.writeFileSync(path.join(tmp, f), c, { mode: m || 0o644 });
+        ["bin", "ext.d", "etc/services", "tmp", "pub/cam"].forEach(d => fs.mkdirSync(path.join(tmp, d), { recursive: true }));
+        put("bin/snap", rs("bin/snap"), 0o755); put("bin/extlib", rs("bin/extlib")); put("ext.d/frigate", rs("ext.d/frigate")); put("bin/wget", fs.readFileSync(path.join(__dirname, "fake-wget"), "utf8"), 0o755);
+        Object.keys(o.conf).forEach(n => put("etc/services/" + n + ".conf", o.conf[n]));
+        Object.keys(o.cams || {}).forEach(n => put("tmp/.cams." + n, o.cams[n]));
+        Object.keys(o.files || {}).forEach(n => put(n, o.files[n]));
+        if (o.lock) put("tmp/snap.lock", o.lock + "\n");
+        Object.keys(o.age || {}).forEach(n => { const at = Date.now() / 1000 - o.age[n]; fs.utimesSync(path.join(tmp, n), at, at); });
+        const t0 = Date.now(), run = 'sh "' + t + '/bin/snap"';
+        cp.spawnSync("sh", ["-c", 'export PATH="' + t + '/bin:$PATH" FIX="' + unix(path.join(__dirname, "fixtures")) + '" LOG="' + t + '/log" KEENDASH_ETC="' + t + '/etc" KEENDASH_TMP="' + t + '/tmp" KEENDASH_EXTD="' + t + '/ext.d" KEENDASH_PUB="' + t + '/pub" ' + (o.env || "") + "; " +
+          (o.dup ? run + " & " + run + " & wait" : run)], { encoding: "utf8" });
+        const rd = f => { try { return fs.readFileSync(path.join(tmp, f), "utf8"); } catch (e) { return null; } };
+        const lines = (rd("log") || "").split("\n").filter(Boolean);
+        return { rd, ls: d => fs.readdirSync(path.join(tmp, d)).sort().join(), ex: f => fs.existsSync(path.join(tmp, f)), lines, ms: Date.now() - t0, mtime: f => Math.floor(fs.statSync(path.join(tmp, f)).mtimeMs / 1000), tmp,
+          put, rm: () => fs.rmSync(tmp, { recursive: true, force: true }) };
+      };
+      const cnt = (r, name) => r.lines.filter(l => l.endsWith("/api/" + name + "/latest.jpg?h=240 ")).length, U = "TYPE='frigate'\nURL='http://frigate.test:5000/snap'\n";
+      {
+        const r = snap({ conf: { fg: U + "SNAP='5'\n" }, cams: { fg: "1 front\n2 garage\n" }, env: "KEENDASH_SNAP_LIMIT=7 " });
+        ok("bin/snap: SNAP=5 fetches each camera's frame more than once and exits within the limit", cnt(r, "front") >= 2 && cnt(r, "garage") >= 2 && cnt(r, "front") <= 3 && r.ms >= 4000 && r.ms < 9500, cnt(r, "front") + " " + cnt(r, "garage") + " " + r.ms);
+        ok("bin/snap: the frames are in $PUB/cam, no temps, lock gone", r.ls("pub/cam") === "fg-1.jpg,fg-2.jpg" && r.ls("tmp") === ".cams.fg" && !r.ex("tmp/snap.lock"), r.ls("pub/cam") + " / " + r.ls("tmp"));
+        ok("bin/snap: the frame requests are the minute run's (same options, h=240), no stats request", r.lines.every(l => /^frigate -qO- --no-check-certificate http:\/\/frigate\.test:5000\/snap\/api\/(front|garage)\/latest\.jpg\?h=240 $/.test(l)), r.lines.join(" / "));
+        r.rm();
+      }
+      // no SNAP of 5, 15 or 30 anywhere: out at once, no request, no lock; a camera list is not needed to get that far
+      for (const sn of ["60", "1", "0", "7", ""]) {
+        const r = snap({ conf: { fg: U + (sn ? "SNAP='" + sn + "'\n" : "") }, cams: { fg: "1 front\n" }, env: "KEENDASH_SNAP_LIMIT=7 " });
+        ok("bin/snap: SNAP='" + sn + "' exits at once, no request, no lock", r.ms < 2500 && !r.lines.length && !r.ex("tmp/snap.lock") && r.ls("pub/cam") === "", r.ms + " " + r.lines.length);
+        r.rm();
+      }
+      {
+        const cf = { fg: U + "SNAP='5'\n" }, cams = { fg: "1 front\n" }, env = "KEENDASH_SNAP_LIMIT=3 ";
+        const sl = cp.spawn("sleep", ["30"]);
+        let r = snap({ conf: cf, cams, env, lock: String(sl.pid) });
+        ok("bin/snap: a second run while the lock's pid lives does nothing", r.ms < 2500 && !r.lines.length && r.rd("tmp/snap.lock") === sl.pid + "\n", r.ms + " " + r.lines.length);
+        r.rm(); sl.kill();
+        const dead = cp.spawnSync("sh", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim();
+        r = snap({ conf: cf, cams, env, lock: dead });
+        ok("bin/snap: a lock with a dead pid is taken over, gone at the end", r.lines.length >= 1 && !r.ex("tmp/snap.lock"), r.lines.length + " " + r.ex("tmp/snap.lock"));
+        r.rm();
+        r = snap({ conf: cf, cams, env, lock: dead, dup: true });
+        ok("bin/snap: two runs on a dead lock make one run", r.lines.length >= 1 && r.lines.length <= 2 && !r.ex("tmp/snap.lock"), r.lines.length + "");
+        r.rm();
+        // a live pid does not keep a lock older than the limit plus a minute
+        const sl2 = cp.spawn("sleep", ["30"]);
+        r = snap({ conf: cf, cams, env, lock: String(sl2.pid), age: { "tmp/snap.lock": 1000 } });
+        ok("bin/snap: a lock older than the limit plus a minute is stale even with a live pid", r.lines.length >= 1 && !r.ex("tmp/snap.lock"), r.lines.length + "");
+        r.rm(); sl2.kill();
+      }
+      {
+        // a hanging Frigate: the deadline passes between the fetches, so the run ends within the limit + 3 s
+        const r = snap({ conf: { fg: "TYPE='frigate'\nURL='http://frigate.test:5000/hang'\nSNAP='5'\n" }, cams: { fg: "1 a\n2 b\n3 c\n" }, env: "KEENDASH_SNAP_LIMIT=4 " });
+        ok("bin/snap: a hanging Frigate ends the run within the limit + 3 s, no frames, no temps, lock gone", r.ms >= 3000 && r.ms < 4000 + 3000 && r.ls("pub/cam") === "" && r.ls("tmp") === ".cams.fg" && !r.ex("tmp/snap.lock"), r.ms + " " + r.ls("tmp"));
+        r.rm();
+      }
+      {
+        // a login (8971): one login for several frames and for the seconds after, the cookie file in the tmp dir (never under $PUB), mode 600
+        const r = snap({ conf: { fg: "TYPE='frigate'\nURL='http://frigate.test:8971'\nUSER='admin'\nPASS='p\"a\\ss'\nSNAP='5'\n" }, cams: { fg: "1 front\n2 garage\n" }, env: "KEENDASH_SNAP_LIMIT=6 " });
+        const logins = r.lines.filter(l => /\/api\/login $/.test(l));
+        ok("bin/snap: with USER one login for all the frames of all the seconds, the cookie sent", logins.length === 1 && cnt(r, "front") >= 2 && r.lines.filter(l => /latest\.jpg/.test(l)).every(l => / Cookie: frigate_token=abc /.test(l)), r.lines.join(" / "));
+        ok("bin/snap: the cookie file is in the tmp dir and not under $PUB", r.rd("tmp/.ck.fg") === "frigate_token=abc\n" && r.ls("pub/cam") === "fg-1.jpg,fg-2.jpg" && r.ls("pub") === "cam", r.ls("pub") + " / " + r.ls("pub/cam"));
+        r.rm();
+        // a stored cookie is used as it is (no login); a refused one (the fake wants abc) is replaced once and the frame fetched again
+        const r2 = snap({ conf: { fg: "TYPE='frigate'\nURL='http://frigate.test:8971'\nUSER='admin'\nPASS='p\"a\\ss'\nSNAP='5'\n" }, cams: { fg: "1 front\n" }, files: { "tmp/.ck.fg": "frigate_token=abc\n" }, env: "KEENDASH_SNAP_LIMIT=2 " });
+        ok("bin/snap: a stored cookie is reused, no login", !r2.lines.some(l => /api\/login/.test(l)) && cnt(r2, "front") >= 1 && r2.ls("pub/cam") === "fg-1.jpg", r2.lines.join(" / "));
+        r2.rm();
+        let fr3;
+        const r3 = snap({ conf: { fg: "TYPE='frigate'\nURL='http://frigate.test:8971'\nUSER='admin'\nPASS='p\"a\\ss'\nSNAP='5'\n" }, cams: { fg: "1 front\n" }, files: { "tmp/.ck.fg": "frigate_token=stale\n" }, age: { "tmp/.ck.fg": 1000 }, env: "KEENDASH_SNAP_LIMIT=5 " });
+        ok("bin/snap: a refused cookie -> one login and the frame fetched again", r3.lines.filter(l => /api\/login/.test(l)).length === 1 && (fr3 = r3.lines.filter(l => /latest.jpg/.test(l))).length >= 2 && fr3[0].includes("=stale ") && fr3[1].includes("=abc ") && r3.rd("tmp/.ck.fg") === "frigate_token=abc\n" && r3.ls("pub/cam") === "fg-1.jpg", r3.lines.join(" / "));
+        r3.rm();
+        // a cookie written a moment ago is not replaced again (Frigate limits logins): the frame is just missed this second
+        const r4 = snap({ conf: { fg: "TYPE='frigate'\nURL='http://frigate.test:8971'\nUSER='admin'\nPASS='p\"a\\ss'\nSNAP='5'\n" }, cams: { fg: "1 front\n" }, files: { "tmp/.ck.fg": "frigate_token=stale\n" }, env: "KEENDASH_SNAP_LIMIT=5 " });
+        ok("bin/snap: a refused cookie only seconds old gets no new login", !r4.lines.some(l => /api\/login/.test(l)) && cnt(r4, "front") >= 1 && r4.ls("pub/cam") === "", r4.lines.join(" / "));
+        r4.rm();
+      }
+      {
+        // an instance of another type, a bad id and a bad camera line are never fetched
+        const r = snap({ conf: { fg: U + "SNAP='5'\n", other: "TYPE='kuma'\nURL='http://frigate.test:5000/snap'\nSNAP='5'\n", "Bad.id": U + "SNAP='5'\n" }, cams: { fg: "1 front\n9 over\n2 a b\n3 ../x\nx y\n", other: "1 front\n", "Bad.id": "1 front\n" }, env: "KEENDASH_SNAP_LIMIT=2 " });
+        ok("bin/snap: only frigate instances with a valid id, cameras 1-8 with a valid name", r.lines.length >= 1 && r.lines.every(l => l.endsWith("/snap/api/front/latest.jpg?h=240 ")) && r.ls("pub/cam") === "fg-1.jpg", r.lines.join(" / ") + " " + r.ls("pub/cam"));
+        r.rm();
+      }
     }
     // pihole: JSON-escaped login, the sid in X-FTL-SID, the session is deleted at the end of every run that logged in
     {
@@ -1359,10 +1488,12 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(d, "x", "old"), "ok 1\n"); fs.writeFileSync(path.join(d, "s.old.dl"), "1\n");
     fs.writeFileSync(path.join(d, "chk.old.Host_01_0123abcd"), "1 1\n"); fs.writeFileSync(path.join(d, "chk.qb.Host_01_0123abcd"), "1 1\n");
     fs.writeFileSync(path.join(d, ".chk.old.a.test.now"), "200 1 1\n"); fs.writeFileSync(path.join(d, ".chk.qb.a.test.now"), "200 1 1\n");
+    [".cams.old", ".ck.old", ".cams.qb", ".ck.qb"].forEach(n => fs.writeFileSync(path.join(d, n), "1 a\n"));
     collect("ext", "", "", { state: d, files: { "etc/services/qb.conf": QB } });
     ok("bin/ext: removed instance -> cache gone", rd(d, "x/old") === null && rd(d, "s.old.dl") === null && rd(d, "x/qb-2") === null && rd(d, "s.qb.dl") === "5242880\n5242880\n" && /^ok 1\n/.test(rd(d, "x/qb")), ls(d));
     ok("bin/ext: removed instance -> its chk.<id>.* history files go too, another instance's stay", rd(d, "chk.old.Host_01_0123abcd") === null && rd(d, "chk.qb.Host_01_0123abcd") !== null &&
       rd(d, ".chk.old.a.test.now") === null && rd(d, ".chk.qb.a.test.now") !== null, fs.readdirSync(d).join());
+    ok("bin/ext: removed instance -> its .cams.<id> and .ck.<id> (camera list, login cookie) go, another instance's stay", rd(d, ".cams.old") === null && rd(d, ".ck.old") === null && rd(d, ".cams.qb") !== null && rd(d, ".ck.qb") !== null, fs.readdirSync(d).join());
     // SNAP is unset per instance like HOSTS and EVERY; the frames $PUB/cam/<id>-<n>.jpg (and their .t temps) of a removed instance go, other ids and files stay
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-x-")), pub = fs.mkdtempSync(path.join(os.tmpdir(), "kd-p-")), cam = path.join(pub, "cam");
@@ -2022,24 +2153,40 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     q(".kd-dlg-save").click(); await wait(100);
     ok("dialog: hosts is required, an empty one blocks the save", !post(fcalls, /\/rci\/put$/).length && q('input[data-f="hosts"][data-id="check"]').parentNode.querySelector(".kd-dlg-hint").textContent === "Заполните поле");
   }, cf(fcalls, chk), URL0);
-  // snap (Frigate): a select Нет/Да, 0 for a new instance and for one saved before the field; a change goes as set <id> snap 1
-  const frg = Object.assign({}, full, { types: [["frigate", "Frigate", "Дом", ["url", "snap"], ""]], inst: [["fg", "frigate", "Камеры", "http://h:5000", "", [], null, "", "", "", ""], ["fg-2", "frigate", "Двор", "http://h:5001", "", [], null, "", "", "", "1"]] });
+  // snap (Frigate): a select Нет/5 с/15 с/30 с/1 мин, 0 for a new instance and for one saved before the field; a change goes as set <id> snap 15; a stored 1 shows as 1 мин and stays 1 until changed
+  const frg = Object.assign({}, full, { types: [["frigate", "Frigate", "Дом", ["url", "snap"], ""]], inst: [["fg", "frigate", "Камеры", "http://h:5000", "", [], null, "", "", "", ""], ["fg-2", "frigate", "Двор", "http://h:5001", "", [], null, "", "", "", "1"], ["fg-3", "frigate", "Гараж", "http://h:5002", "", [], null, "", "", "", "30"]] });
   fcalls = [];
   await run(frg, async w => {
     const dlg = await openDlg(w), q = s => dlg.querySelector(s), sn = id => q('select[data-f="snap"][data-id="' + id + '"]');
     q('.kd-dlg-i[data-id="fg"] .kd-dlg-hd').click();
-    ok("dialog: snap is a select Нет/Да, 0 when unset", !!sn("fg") && Array.from(sn("fg").options).map(o => o.value + ":" + o.textContent).join() === "0:Нет,1:Да" && sn("fg").value === "0" &&
+    ok("dialog: snap is a select Нет/Да, 0 when unset", !!sn("fg") && Array.from(sn("fg").options).map(o => o.value + ":" + o.textContent).join() === "0:Нет,5:5 с,15:15 с,30:30 с,60:1 мин" && sn("fg").value === "0" &&
       sn("fg").parentNode.querySelector("span").textContent === "Кадры с камер" && !q(".kd-dlg-save"));
-    typeIn(w, sn("fg"), "1");
+    typeIn(w, sn("fg"), "15");
     q(".kd-dlg-save").click(); await wait(100);
     const [rev, txt] = await sent(w, fcalls);
-    ok("dialog: snap sent as set <id> snap 1", txt === "keendash 1 " + rev + "\nset fg snap 1\nend\n", JSON.stringify(txt));
+    ok("dialog: snap sent as set <id> snap 15", txt === "keendash 1 " + rev + "\nset fg snap 15\nend\n", JSON.stringify(txt));
   }, cf(fcalls, frg), URL0);
+  fcalls = [];
   await run(frg, async w => {
-    const dlg = await openDlg(w);
-    dlg.querySelector('.kd-dlg-i[data-id="fg-2"] .kd-dlg-hd').click();
-    ok("dialog: a saved snap 1 is shown", dlg.querySelector('select[data-f="snap"][data-id="fg-2"]').value === "1" && !dlg.querySelector(".kd-dlg-save"));
-  }, cf([], frg), URL0);
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s), sn = id => q('select[data-f="snap"][data-id="' + id + '"]');
+    q('.kd-dlg-i[data-id="fg-3"] .kd-dlg-hd').click();
+    ok("dialog: a saved snap 30 is shown as 30 с, nothing to save", !!sn("fg-3") && sn("fg-3").value === "30" && !q(".kd-dlg-save"));
+    q('.kd-dlg-i[data-id="fg-2"] .kd-dlg-hd').click();
+    ok("dialog: a saved snap 1 is shown as 1 мин, nothing to save", !!sn("fg-2") && sn("fg-2").value === "60" && sn("fg-2").options[sn("fg-2").selectedIndex].textContent === "1 мин" && !q(".kd-dlg-save"));
+    typeIn(w, q('input[data-f="url"][data-id="fg-2"]'), "http://h:5009");
+    q(".kd-dlg-save").click(); await wait(100);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("dialog: another field changed -> a stored snap 1 is not rewritten", txt === "keendash 1 " + rev + "\nset fg-2 url http://h:5009\nend\n", JSON.stringify(txt));
+  }, cf(fcalls, frg), URL0);
+  fcalls = [];
+  await run(frg, async w => {
+    const dlg = await openDlg(w), q = s => dlg.querySelector(s);
+    q('.kd-dlg-i[data-id="fg-2"] .kd-dlg-hd').click();
+    typeIn(w, q('select[data-f="snap"][data-id="fg-2"]'), "5");
+    q(".kd-dlg-save").click(); await wait(100);
+    const [rev, txt] = await sent(w, fcalls);
+    ok("dialog: a stored snap 1 changed by the user goes as the new value", txt === "keendash 1 " + rev + "\nset fg-2 snap 5\nend\n", JSON.stringify(txt));
+  }, cf(fcalls, frg), URL0);
   fcalls = [];
   await run(frg, async w => {
     const dlg = await openDlg(w), q = s => dlg.querySelector(s);
