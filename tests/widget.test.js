@@ -833,6 +833,17 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("ext.d/npm: no answer -> ok 0", collect("ext.d/npm", "", "", { env: "URL=http://nohost.test USER=a PASS=b " }).trim() === "ok 0");
       fs.rmSync(sd, { recursive: true, force: true });
     }
+    // traefik: sums over http, tcp and udp; Basic only with a login
+    {
+      const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-t-")), lg = () => fs.readFileSync(path.join(sd, "log"), "utf8");
+      const run = (u, e) => { fs.rmSync(path.join(sd, "log"), { force: true }); return collect("ext.d/traefik", "", "", { state: sd, env: "URL=http://traefik.test" + u + " " + e + " " }).trim(); };
+      ok("ext.d/traefik: sums over http, tcp, udp", run("", "USER= PASS=") === ["ok 1", "t|Роутеров|8|n", "t|Сервисов|7|n", "t|Предупреждений|5|n", "t|Ошибок|4|n"].join("\n"), run("", "USER= PASS="));
+      ok("ext.d/traefik: empty user -> no Authorization, path /api/overview", !/Authorization/.test(lg()) && / http:\/\/traefik\.test\/api\/overview \n$/.test(lg()), lg());
+      run("", "USER=u PASS=p");
+      ok("ext.d/traefik: user -> Basic", / Authorization: Basic dTpw /.test(lg()), lg());
+      ok("ext.d/traefik: no http.routers -> ok 0, no answer -> ok 0", run("/none", "USER=") === "ok 0" && run("", "USER=").length > 4 && collect("ext.d/traefik", "", "", { env: "URL=http://nohost.test USER= " }).trim() === "ok 0");
+      fs.rmSync(sd, { recursive: true, force: true });
+    }
     // nextdns: the profile ID is a path segment,so anything but [A-Za-z0-9]{1,32} is refused before the request
     {
       const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-n-")), lg = () => fs.existsSync(path.join(sd, "log")) ? fs.readFileSync(path.join(sd, "log"), "utf8") : "";

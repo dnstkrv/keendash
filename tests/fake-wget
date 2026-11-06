@@ -81,6 +81,8 @@ case "$u" in
   *//nextdns.test/*) echo "nextdns$a" >> "${LOG:-/dev/null}"; need "X-Api-Key: testkey" ;;
   # Speedtest Tracker: Bearer testkey; created_at comes from $AT; /nobits has no *_bits, /none no data
   *//speedtest.test/*) echo "speedtest$a" >> "${LOG:-/dev/null}"; need "Authorization: Bearer testkey" ;;
+  # Traefik: no auth of its own, requests go to $LOG; /none has no http.routers
+  *//traefik.test/*) echo "traefik$a" >> "${LOG:-/dev/null}" ;;
   # Nginx Proxy Manager: login only for me@example.test / p"a\ss (JSON-escaped in the body), it answers T0K-test; data routes need it as Bearer
   # (/expired/ has only expired certificates, /empty/ empty lists). Requests go to $LOG
   *//npm.test/*) printf 'npm%s\n' "$a" >> "${LOG:-/dev/null}"
@@ -172,6 +174,8 @@ case "$u" in
   *//speedtest.test/none/*) f=net/speedtest_none ;;
   *//speedtest.test/nobits/*) f=net/speedtest_latest_nobits ;;
   *//speedtest.test/*) f=net/speedtest_latest ;;
+  *//traefik.test/none/*) f=net/traefik_none ;;
+  *//traefik.test/*) f=net/traefik_overview ;;
   *//npm.test/*api/tokens) f=net/npm_tokens ;;
   *//npm.test/empty/*) f=net/npm_empty ;;
   *//npm.test/*proxy-hosts) f=net/npm_proxy_hosts ;;
