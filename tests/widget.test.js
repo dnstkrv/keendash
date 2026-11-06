@@ -436,7 +436,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       fs.utimesSync(path.join(tmp, f), t, t);
     });
     const t = unix(tmp), bin = unix(path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin", "settings"));
-    const out = cp.spawnSync("sh", ["-c", 'KEENDASH_ETC="' + t + '/etc" KEENDASH_VAR="' + t + '/var" KEENDASH_TMP="' + t + '/tmp" KEENDASH_EXTD="' + t + '/ext.d" KEENDASH_PUB="' + t + '/pub" sh "' + bin + '" ' + cmd], { encoding: "utf8" }).stdout;
+    const out = cp.spawnSync("sh", ["-c", 'KEENDASH_ETC="' + t + '/etc" KEENDASH_VAR="' + t + '/var" KEENDASH_TMP="' + t + '/tmp" KEENDASH_EXTD="' + t + '/ext.d" KEENDASH_PUB="' + t + '/pub" KEENDASH_SCAN="' + t + '/fakescan" sh "' + bin + '" ' + cmd], { encoding: "utf8" }).stdout;
     const rd = f => { try { return fs.readFileSync(path.join(tmp, f), "utf8"); } catch (e) { return null; } };
     return { tmp, out, rd, mode: f => fs.statSync(path.join(tmp, f)).mode & 0o777, ls: d => fs.readdirSync(path.join(tmp, d)), rm: () => fs.rmSync(tmp, { recursive: true, force: true }) };
   }
@@ -541,6 +541,29 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       "inst|pl|plex|Plex 'A'|http://10.0.0.6:32400||token||||\ninst|qb-2|qb|qBittorrent 2|http://10.0.0.5:8080|admin|pass||||\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|2|0|1|Дом и сеть\nlay|c|sys|1|0|0|g1\nlay|c|qb-2|2|1|1|\nlay|g|g2|2|0||Старая\nlay|c|old|1|0||g2\nlay|c|old2|2|1||\n" &&
       !/s3cret|t0ken/.test(r.out), JSON.stringify(r.out));
     r.rm();
+
+    // scan: "settings apply" starts bin/scan (here a fake that leaves a marker) detached, and only for a whole valid message
+    {
+      const wait = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+      const FS = { "fakescan": 'echo ran >> "$KEENDASH_TMP/ran"\n' };
+      const go = (rev, lines) => { const x = settingsRun(Object.assign({ ["var/inbox/" + rev + ".txt"]: msg(rev, lines) }, FS, base), "apply"); wait(250); return x; };
+      let x = go("s1", ["scan"]);
+      ok("settings apply: scan starts bin/scan", x.rd("tmp/ran") === "ran\n" && x.rd("tmp/settings.state") === "rev s1\nerr \n", JSON.stringify([x.rd("tmp/ran"), x.rd("tmp/settings.state")]));
+      x.rm();
+      x = go("s2", ["hide main awg", "scan"]);
+      ok("settings apply: scan with other lines", x.rd("tmp/ran") === "ran\n" && x.rd("etc/ui.conf") === "hide page cron\nhide main awg\nhide main telemt\n" && x.rd("tmp/settings.state") === "rev s2\nerr \n", JSON.stringify([x.rd("tmp/ran"), x.rd("etc/ui.conf")]));
+      x.rm();
+      const bad = [];
+      [["scan x"], ["scan", "bogus"], ["scan", "set nope name X"]].forEach((l, i) => {
+        x = go("s3" + i, l);
+        if (x.rd("tmp/ran") !== null || !/^rev s3\d\nerr .+\n$/.test(x.rd("tmp/settings.state"))) bad.push(l.join(" / ") + " -> " + JSON.stringify([x.rd("tmp/ran"), x.rd("tmp/settings.state")]));
+        x.rm();
+      });
+      ok("settings apply: scan x or a bad line rejects the message, nothing starts", !bad.length, bad.join("; "));
+      x = settingsRun({ "tmp/scan": "state|done|2|3|1700000000\nfound|10.0.0.5|nas|jellyfin|http://10.0.0.5:8096\n" }, "list");
+      ok("settings list: scan lines as they are", x.out.endsWith("scan|state|done|2|3|1700000000\nscan|found|10.0.0.5|nas|jellyfin|http://10.0.0.5:8096\n"), JSON.stringify(x.out));
+      x.rm();
+    }
 
     // # hint: header, the map field
     const ZZ = "#!/bin/sh\n# name: ZZ\n# group: Медиа\n# hint: Ключ: Settings → API\n# fields: url key\n", MP = "#!/bin/sh\n# name: MP\n# group: Медиа\n# hint: a|b\n# fields: url map\n";
@@ -770,6 +793,91 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const bad = [];
     Object.keys(pr).forEach(a => Object.keys(pr).forEach(b => { if (a !== b && pr[a].ports.some(p => pr[b].ports.includes(p)) && ans[b].includes(pr[a].match)) bad.push(a + " in " + b); }));
     ok("probe: no cross-matches on a shared port", !bad.length, bad.join(", "));
+  }
+  // bin/scan in a scratch install: bin/ has scan, extlib and a fake rci (the router at 192.168.1.1 and its clients) and the fake wget.
+  // o.types {name: "# probe:" header}, o.clients [[ip, active, name, hostname]], o.ans {"<url with / and : as _>": response; "HANG" never answers},
+  // o.conf {id: services/<id>.conf}, o.lock the pid in scan.lock, o.env "NAME=value ". The fake wget leaves its argument lines in fake/log and
+  // the number of wgets running at its start in fake/conc; an address without an answer is refused (exit 4) after WSLEEP seconds
+  if (haveCc) {
+    const bin = path.join(__dirname, "..", "files", "opt", "share", "keendash", "bin");
+    const src = n => fs.readFileSync(path.join(bin, n), "utf8").replace(/\r/g, "").replace(/^PATH=.*$/m, ":");
+    const FWGET = '#!/bin/sh\nfor u; do :; done\necho "$*" >> "$FAKE/log"\nmkdir -p "$FAKE/run"; : > "$FAKE/run/$$"; ls "$FAKE/run" | wc -l >> "$FAKE/conc"\n' +
+      'f=$FAKE/ans/$(echo "$u" | tr "/:" "__")\ntrap \'rm -f "$FAKE/run/$$"; exit 143\' TERM\n' +
+      'if [ -f "$f" ]; then [ "$(cat "$f")" = HANG ] && exec sleep 30; cat "$f"; rm -f "$FAKE/run/$$"; exit 0; fi\n' +
+      '[ -z "$HANG" ] || exec sleep 30\nsleep "${WSLEEP:-0}"; rm -f "$FAKE/run/$$"; exit 4\n';
+    const FRCI = "#!/bin/sh\ncase $1 in\n  show/interface/Bridge0) printf 'address\\t192.168.1.1\\nmask\\t255.255.255.0\\n' ;;\n  show/ip/hotspot) cat \"$FAKE/hotspot\" ;;\nesac\n";
+    const scan = o => {
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kdscan-")), t = unix(tmp), put = (f, c, m) => fs.writeFileSync(path.join(tmp, f), c, { mode: m || 0o644 });
+      ["bin", "ext.d", "etc/services", "tmp", "fake/ans"].forEach(d => fs.mkdirSync(path.join(tmp, d), { recursive: true }));
+      put("bin/scan", src("scan"), 0o755); put("bin/extlib", src("extlib")); put("bin/rci", FRCI, 0o755); put("bin/wget", FWGET, 0o755);
+      Object.keys(o.types).forEach(n => put("ext.d/" + n, "#!/bin/sh\n# name: " + n + "\n" + o.types[n] + "\n"));
+      Object.keys(o.conf || {}).forEach(n => put("etc/services/" + n + ".conf", o.conf[n]));
+      Object.keys(o.ans || {}).forEach(n => put("fake/ans/" + n, o.ans[n]));
+      put("fake/hotspot", o.clients.map((c, i) => "host." + i + ".interface.name\tBridge0\nhost." + i + ".ip\t" + c[0] + "\nhost." + i + ".active\t" + (c[1] ? "true" : "false") + "\n" +
+        (c[2] ? "host." + i + ".name\t" + c[2] + "\n" : "") + (c[3] ? "host." + i + ".hostname\t" + c[3] + "\n" : "")).join(""));
+      if (o.lock) put("tmp/scan.lock", o.lock + "\n");
+      const t0 = Date.now();
+      cp.spawnSync("sh", ["-c", 'PATH="' + t + '/bin:$PATH" FAKE="' + t + '/fake" KEENDASH_ETC="' + t + '/etc" KEENDASH_TMP="' + t + '/tmp" KEENDASH_EXTD="' + t + '/ext.d" ' + (o.env || "") + 'sh "' + t + '/bin/scan"'], { encoding: "utf8" });
+      const rd = f => { try { return fs.readFileSync(path.join(tmp, f), "utf8"); } catch (e) { return null; } };
+      const lines = (rd("fake/log") || "").split("\n").filter(Boolean);
+      return { rd, ex: f => fs.existsSync(path.join(tmp, f)), lines, ms: Date.now() - t0, maxc: Math.max(0, ...(rd("fake/conc") || "").split("\n").filter(Boolean).map(Number)), rm: () => fs.rmSync(tmp, { recursive: true, force: true }) };
+    };
+    const st = r => (r.rd("tmp/scan") || "").split("\n");
+    const sorted = a => a.slice().sort();
+    const JF = '  HTTP/1.1 200 OK\n\n{"ServerName":"jf","ProductName":"Jellyfin Server"}\n';
+    const T1 = { jellyfin: '# probe: 8096 /System/Info/Public "ProductName":"Jellyfin Server"', kuma: "# probe: 8081 / Uptime Kuma", metube: "# probe: 8081 / MeTube",
+      proxmox: "# probe: https:8006 / Proxmox Virtual Environment", aa: "# probe: 7000 / AAA", ab: "# probe: 7000 /second BBB" };
+    const A1 = { "http___192.168.1.10_8096_System_Info_Public": JF, "http___192.168.1.11_8081_": "<title>MeTube</title>\n", "https___192.168.1.1_8006_": "Proxmox Virtual Environment\n",
+      "http___192.168.1.1_7000_": "AAA\n", "http___192.168.1.13_7000_": "AAA\n", "http___192.168.1.12_8096_System_Info_Public": JF, "http___8.8.8.8_8096_System_Info_Public": JF };
+    const nm = "a|b\x01<i>" + "y".repeat(200), clean = "ab<i>" + "y".repeat(59);
+    const C1 = [["192.168.1.10", 1, "nas"], ["192.168.1.11", 1, nm], ["192.168.1.12", 0, "off"], ["8.8.8.8", 1, "pub"], ["192.168.1.13", 1, "", "tv"]];
+    {
+      const r = scan({ types: T1, clients: C1, ans: A1 }), l = st(r);
+      ok("bin/scan: exact result file", /^state\|done\|4\|4\|\d{10}$/.test(l[0]) && l[l.length - 1] === "" && l.length === 7 && JSON.stringify(sorted(l.slice(1, 6).filter(Boolean))) === JSON.stringify(sorted([
+        "found|192.168.1.1|Роутер|aa|http://192.168.1.1:7000", "found|192.168.1.1|Роутер|proxmox|https://192.168.1.1:8006", "found|192.168.1.10|nas|jellyfin|http://192.168.1.10:8096",
+        "found|192.168.1.11|" + clean + "|metube|http://192.168.1.11:8081", "found|192.168.1.13|tv|aa|http://192.168.1.13:7000"])), JSON.stringify(l).slice(0, 600));
+      ok("bin/scan: name cleaned and cut to 64, router named, hostname when no name", Array.from(clean).length === 64 && l.includes("found|192.168.1.11|" + clean + "|metube|http://192.168.1.11:8081") && l.includes("found|192.168.1.13|tv|aa|http://192.168.1.13:7000"), l.join("\n"));
+      ok("bin/scan: inactive and public clients get no request", r.lines.length > 0 && !r.lines.some(x => /192\.168\.1\.12|8\.8\.8\.8/.test(x)), r.lines.join(" / "));
+      ok("bin/scan: no certificate check except for https", r.lines.every(x => /https:/.test(x) === /--no-check-certificate/.test(x)) && r.lines.some(x => /https:/.test(x)), r.lines.join(" / "));
+      ok("bin/scan: one response per port and path, the match ends the port, a refused port the other paths", r.lines.filter(x => /192\.168\.1\.11:8081\//.test(x)).length === 1 && !r.lines.some(x => /\/second/.test(x)), r.lines.join(" / "));
+      ok("bin/scan: lock and work dir gone", !r.ex("tmp/scan.lock") && !r.ex("tmp/scan.d") && !r.ex("tmp/scan.new"));
+      r.rm();
+    }
+    {
+      const r = scan({ types: T1, clients: C1, ans: A1, conf: { jf: "TYPE='jellyfin'\nNAME='J'\nURL='http://192.168.1.10:8096/'\nKEY='k'\n", px: "TYPE='proxmox'\nURL='https://127.0.0.1:8006'\n", other: "TYPE='metube'\nURL='http://192.168.1.99:8081'\n" } }), l = st(r);
+      ok("bin/scan: an added service is not listed (same type and host:port, 127.0.0.1 is the router), another address is",
+        !l.some(x => /\|jellyfin\||\|proxmox\|/.test(x)) && l.some(x => /\|metube\|/.test(x)) && l.some(x => /\|aa\|/.test(x)), l.join("\n"));
+      r.rm();
+    }
+    {
+      const T = {};
+      for (let i = 1; i <= 12; i++) T["t" + (i < 10 ? "0" : "") + i] = "# probe: " + (9000 + i) + " / X" + i;
+      const r = scan({ types: T, clients: [], env: "WSLEEP=1 " });
+      ok("bin/scan: at most 8 wgets at once, in batches", r.lines.length === 12 && r.maxc === 8 && /^state\|done\|1\|1\|/.test(st(r)[0]), r.lines.length + " " + r.maxc + " " + st(r)[0]);
+      r.rm();
+    }
+    {
+      const T = { "a-jf": T1.jellyfin };
+      for (let i = 1; i <= 12; i++) T["t" + (i < 10 ? "0" : "") + i] = "# probe: " + (9000 + i) + " / X" + i;
+      const r = scan({ types: T, clients: [["192.168.1.10", 1, "a"], ["192.168.1.11", 1, "b"], ["192.168.1.12", 1, "c"]], ans: { "http___192.168.1.1_8096_System_Info_Public": JF }, env: "HANG=1 KEENDASH_SCAN_LIMIT=2 " }), l = st(r);
+      ok("bin/scan: the time limit ends it as done with what was found", /^state\|done\|0\|4\|\d{10}$/.test(l[0]) && l[1] === "found|192.168.1.1|Роутер|a-jf|http://192.168.1.1:8096" && r.ms >= 2000 && r.ms < 15000 && !r.ex("tmp/scan.lock"), r.ms + " " + l.join("\n"));
+      r.rm();
+    }
+    {
+      const sl = cp.spawn("sleep", ["30"]);
+      let r = scan({ types: T1, clients: C1, ans: A1, lock: String(sl.pid) });
+      ok("bin/scan: a second run while the lock's pid lives does nothing", r.rd("tmp/scan") === null && r.rd("tmp/scan.lock") === sl.pid + "\n" && !r.lines.length, r.rd("tmp/scan.lock") + " " + r.lines.length);
+      r.rm(); sl.kill();
+      const dead = cp.spawnSync("sh", ["-c", "echo $$"], { encoding: "utf8" }).stdout.trim();
+      r = scan({ types: T1, clients: C1, ans: A1, lock: dead });
+      ok("bin/scan: a lock with a dead pid is taken over", /^state\|done\|4\|4\|/.test(st(r)[0]) && !r.ex("tmp/scan.lock"), st(r)[0]);
+      r.rm();
+    }
+    {
+      const r = scan({ types: { aa: T1.aa }, clients: Array.from({ length: 300 }, (_, i) => ["10.1." + Math.floor(i / 250) + "." + (i % 250 + 1), 1, "h" + i]) });
+      ok("bin/scan: at most 254 devices", /^state\|done\|254\|254\|/.test(st(r)[0]) && r.lines.length === 254, st(r)[0] + " " + r.lines.length);
+      r.rm();
+    }
   }
   if (haveCc) {
     const env = {
@@ -1397,7 +1505,8 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
     fs.writeFileSync(path.join(sd, "settings"), "vol|v1:\nrev|r1\nerr|\ntype|qb|qBittorrent|Медиа|url,user,pass|Ключ: \"x\"\ntype|pl|Plex|Медиа|url,token\ninst|qb-2|qb|Торренты|http://q|admin|pass|A=x.y:b|h.test x.test|15|1\n" +
-      "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|3|0|0|Дом \"a\" \\b\nlay|c|sys|1|0|1|\nlay|c|qb-2|2|1||g1\n");
+      "inst|pl|plex|Plex|http://p||token|\nhide|page|cron\nhide|main|telemt\ncol|telemt,awg\ncol|qb-2\nlay|g|g1|3|0|0|Дом \"a\" \\b\nlay|c|sys|1|0|1|\nlay|c|qb-2|2|1||g1\n" +
+      "scan|state|run|3|12|1700000000\nscan|found|192.168.1.5|a \"q\" \\b|jellyfin|http://192.168.1.5:8096\nscan|found|192.168.1.1|Роутер|metube|http://192.168.1.1:8081\n");
     fs.mkdirSync(path.join(sd, "x"));
     fs.writeFileSync(path.join(sd, "x", "qb-2"), "ok 1\n~dl 5\nlist|a|1\n");
     fs.writeFileSync(path.join(sd, "s.qb-2.dl"), "4\n5\n"); fs.writeFileSync(path.join(sd, "s.qb-2.t"), "7\n"); fs.writeFileSync(path.join(sd, ".s.qb-2.dl.t"), "9\n");
@@ -1416,7 +1525,11 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: Tailscale", s.ts.run === 1 && s.ts.online === 1 && s.ts.total === 0 && eq(s.ts.self, [["Running", "router", "100.64.0.1", "waw", "", 0, "", ""]]) &&
         eq(s.ts.list, [["pc", "windows", 1, 1, 1, "", "0001-01-01T00:00:00Z", 10, 20, 0, 0, ""]]), JSON.stringify(s.ts));
       ok("keendashd status: newer version", s.upd.new === "9.9.9" && s.upd.busy === 0, JSON.stringify(s.upd));
-      ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]], lay: [["g", "g1", 3, 0, "0", 'Дом "a" \\b'], ["c", "sys", 1, 0, "1", ""], ["c", "qb-2", 2, 1, "", "g1"]] }), JSON.stringify(s.cfg));
+      ok("keendashd status: cfg", eq(s.cfg, { vol: "v1:", rev: "r1", err: "", hide: { page: ["cron"], main: ["telemt"] }, cols: [["telemt", "awg"], ["qb-2"]], lay: [["g", "g1", 3, 0, "0", 'Дом "a" \\b'], ["c", "sys", 1, 0, "1", ""], ["c", "qb-2", 2, 1, "", "g1"]], scan: s.cfg.scan }), JSON.stringify(s.cfg));
+      ok("keendashd status: cfg.scan", eq(s.cfg.scan, { state: "run", n: 3, of: 12, at: 1700000000, found: [["192.168.1.5", 'a "q" \\b', "jellyfin", "http://192.168.1.5:8096"], ["192.168.1.1", "Роутер", "metube", "http://192.168.1.1:8081"]] }), JSON.stringify(s.cfg.scan));
+      let s0 = null;
+      try { s0 = JSON.parse(cp.execFileSync(kd, ["status"], { env: Object.assign({}, env, { KEENDASH_SETTINGS: "echo vol\\|v1:" }), encoding: "utf8" })); } catch (e) { s0 = e.message; }
+      ok("keendashd status: cfg.scan is null without the file", s0 && s0.cfg && s0.cfg.scan === null, JSON.stringify(s0 && s0.cfg));
       ok("keendashd status: types", eq(s.types, [["qb", "qBittorrent", "Медиа", ["url", "user", "pass"], 'Ключ: "x"'], ["pl", "Plex", "Медиа", ["url", "token"], ""]]), JSON.stringify(s.types));
       ok("keendashd status: inst, data or null", eq(s.inst, [["qb-2", "qb", "Торренты", "http://q", "admin", ["pass"], { ok: 1, dl: 5, list: [["a", 1]] }, "A=x.y:b", "h.test x.test", "15", "1"],
         ["pl", "plex", "Plex", "http://p", "", ["token"], null, "", "", "", ""]]), JSON.stringify(s.inst));

@@ -189,6 +189,22 @@ static void one(buf *b, lines *L, const char *tag) {
     if (!strncmp(L->l[i], tag, tl) && L->l[i][tl] == '|') { const char *v = L->l[i] + tl + 1; jstr(b, v, strcspn(v, "\r")); return; }
   bs(b, "null");
 }
+/* bin/scan's "scan|state|run|n|of|at" and "scan|found|ip|name|type|url" lines as an object, null without a state line */
+static void scan(buf *b, lines *L) {
+  static const char *k[] = { "state", "n", "of", "at" };
+  int i = 0;
+  while (i < L->n && strncmp(L->l[i], "scan|state|", 11)) i++;
+  if (i == L->n) { bs(b, "null"); return; }
+  const char *f = L->l[i] + 11;
+  bs(b, "{");
+  for (int j = 0; j < 4; j++) {
+    size_t n = strcspn(f, "|\r");
+    bf(b, "%s\"%s\":", j ? "," : "", k[j]);
+    fld(b, f, n, j ? 'n' : 's');
+    f += n; if (*f == '|') f++;
+  }
+  bs(b, ",\"found\":["); rows(b, L, "scan|found", "ssss"); bs(b, "]}");
+}
 /* length of a collector's key ([a-z0-9_]+) followed by " " or "|" (into *sep), 0 for any other line */
 static size_t kname(const char *s, char *sep) {
   size_t n = 0;
@@ -321,7 +337,8 @@ static void status(buf *o) {
   bs(o, "],\"main\":["); rows(o, &C, "hide|main", "=s");
   bs(o, "]},\"cols\":["); rows(o, &C, "col", "=a");
   bs(o, "],\"lay\":["); rows(o, &C, "lay", "ssnnss");
-  bs(o, "]},\"types\":["); rows(o, &C, "type", "sssas");
+  bs(o, "],\"scan\":"); scan(o, &C);
+  bs(o, "},\"types\":["); rows(o, &C, "type", "sssas");
   bs(o, "],\"inst\":["); insts(o, &C, tmp);
   bs(o, "]");
   free(cb.p); free(C.l);

@@ -4,7 +4,7 @@ export PATH
 # wget with our own deadline: busybox wget may have no -T, GNU wget waits 15 minutes by default
 dl() {
   wget "$@" & p=$!
-  ( sleep 4; kill $p ) >/dev/null 2>&1 & k=$!
+  ( sleep "${DLT:-4}"; kill $p ) >/dev/null 2>&1 & k=$!
   wait $p; r=$?; kill $k 2>/dev/null; return $r
 }
 # JSON from the API flattened to "path<TAB>value" lines: records.0.series.title<TAB>Silo

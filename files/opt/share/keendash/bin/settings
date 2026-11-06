@@ -1,11 +1,11 @@
 #!/bin/sh
 # Settings from the web UI. The browser uploads a message to $VAR/inbox/<rev>.txt through the firmware's file manager
 # (/rci/put + /fui), keendashd runs "settings apply" every 5 s while the inbox has files.
-#   settings list    the settings for status.json (keendashd status): vol|, rev|, err|, type|, inst|, hide|, col|, lay| lines
+#   settings list    the settings for status.json (keendashd status): vol|, rev|, err|, type|, inst|, hide|, col|, lay|, scan| lines
 #   settings vol     the volume of /opt for the firmware file manager: "<name>:" or "<name>:/<folder>", exit 1 if not found
 #   settings apply   check and apply the inbox messages, oldest first; the last result goes to $TMP/settings.state
 #   settings migrate move the third-party keys of keendash.conf (before v2) into services/<type>.conf
-# A message is "keendash 1 <rev>", then add/set/del/hide/show/group/card lines, then "end". One bad line rejects all of it.
+# A message is "keendash 1 <rev>", then add/set/del/hide/show/group/card/scan lines, then "end". One bad line rejects all of it.
 # Values from the browser are never run: services/<id>.conf has only KEY='value' lines, ids are [a-z0-9-].
 PATH=/opt/sbin:/opt/bin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
@@ -49,6 +49,7 @@ list() {
     function out(  s) { s = (V["PASS"] != "" ? ",pass" : "") (V["KEY"] != "" ? ",key" : "") (V["TOKEN"] != "" ? ",token" : "")
       print "inst|" id "|" V["TYPE"] "|" V["NAME"] "|" V["URL"] "|" V["USER"] "|" substr(s, 2) "|" V["MAP"] "|" V["HOSTS"] "|" V["EVERY"] "|" V["SNAP"] }
     END { if (id != "") out() }' "$@"
+  [ -f "$TMP/scan" ] && sed 's/^/scan|/' "$TMP/scan"
   [ -f "$ETC/ui.conf" ] && awk '$1 == "hide" && NF == 3 && ($2 == "page" || $2 == "main") { print "hide|" $2 "|" $3 }
     $1 == "col" { s = ""; for (i = 3; i <= NF; i++) s = s (i > 3 ? "," : "") $i; print "col|" s }
     # lines from before the x column (a gid or nothing in field 5, a name not led by 0-2) come out with x empty
@@ -62,7 +63,7 @@ list() {
 
 # check a message against the types, the instances and ui.conf; print "E <error>" or what to move into place:
 # "N <id>" (new: drop any cache and history of that id), "M <id>" ($W/<id>.conf -> services), "R <id>" (remove, cache too),
-# "U" ($W/ui.conf)
+# "U" ($W/ui.conf), "S" (start bin/scan)
 CHECK='# cut to k bytes, not inside a UTF-8 character
 function cut(s, k) { while (k > 0 && substr(s, k + 1, 1) ~ cont) k--; return substr(s, 1, k) }
 function bad(r) { if (err == "") err = "строка " FNR ": " cut(r, 120) }
@@ -129,6 +130,7 @@ $1 == "set" { s = substr($0, 5); id = s; sub(/ .*/, "", id); s = substr(s, lengt
   next }
 $1 == "hide" || $1 == "show" { if (NF != 3 || ($2 != "page" && $2 != "main") || !okname($3)) bad("неверная строка " $1)
   else { if ($1 == "hide") H[$2, $3] = 1; else delete H[$2, $3]; ui = 1 } next }
+$1 == "scan" { if (NF != 1) bad("scan без аргументов"); else sc = 1; next }
 # layout: "group <gid> <w> <c> <x> <name>" / "card <id> <w> <c> <x> [<gid>]" (x: the start column 0-2, x + w <= 3);
 # the first one drops the stored layout and the col lines
 $1 == "group" || $1 == "card" {
@@ -171,6 +173,7 @@ END {
     k = 0; for (n = 0; n < 32; n++) if (n in C) print "col " (k++) (C[n] == "" ? "" : " " C[n]) > o
     close(o); print "U"
   }
+  if (sc) print "S"
 }'
 
 # /opt is a volume (mounted in $MNT/<name>) or a folder of one; -ef compares the device and inode
@@ -219,6 +222,8 @@ apply() {
             M) mv -f "$W/$id.conf" "$ETC/services/$id.conf" || exit 1 ;;
             R) rm -f "$ETC/services/$id.conf" "$TMP/x/$id" "$TMP/s.$id."* "$TMP/chk.$id."* "$TMP/.chk.$id."* "$PUB/cam/$id"-[0-9].jpg "$PUB/cam/.$id"-[0-9].jpg.t || exit 1 ;;
             U) mv -f "$W/ui.conf" "$ETC/ui.conf" || exit 1 ;;
+            # detached, so apply returns at once; KEENDASH_SCAN is for the tests
+            S) sh "${KEENDASH_SCAN:-${0%/*}/scan}" </dev/null >/dev/null 2>&1 & ;;
           esac
         done || err="не удалось записать настройки"
       else
