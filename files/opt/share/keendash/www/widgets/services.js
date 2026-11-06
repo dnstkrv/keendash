@@ -624,6 +624,8 @@
       .then(function (r) { if (!r.ok) throw r.status; return r.json(); })
       .then(function (d) {
         lastData = d; lost = false; sess(); watchUpdate(d.upd); render(); renderPage();
+        /* a scan is on and the dialog is open: look again soon */
+        if (renderScan()) { clearTimeout(upTimer); upTimer = setTimeout(update, 5000); }
         /* status.json left from the last viewer: this read makes keendashd rebuild it within ~20 s */
         if (ST && d.now && Date.now() / 1000 - d.now > 60) { clearTimeout(upTimer); upTimer = setTimeout(update, 5000); }
       })
@@ -702,7 +704,7 @@
       ".kd-dlg-x{background:none;border:0;color:inherit;opacity:.7;font-size:28px;line-height:1;cursor:pointer}.kd-dlg-x:hover{opacity:1}" +
       ".kd-dlg input[type=text],.kd-dlg input[type=password],.kd-dlg select{width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid rgba(128,128,128,.4);border-radius:4px;background:transparent;color:inherit;font:inherit;font-size:14px}" +
       ".kd-dlg select option{background:var(--dashboard-background);color:inherit}" +
-      ".kd-dlg-sess{margin:12px 24px 0;color:" + BAD + ";font-size:13px}.kd-dlg-sess:empty{display:none}.kd-dlg-q{margin:16px 24px 0;width:calc(100% - 48px)!important}.kd-dlg-body{flex:1;min-height:0;overflow-y:auto;padding:0 24px 24px}" +
+      ".kd-dlg-sess{margin:12px 24px 0;color:" + BAD + ";font-size:13px}.kd-dlg-sess:empty{display:none}.kd-dlg-qr{display:flex;gap:12px;margin:16px 24px 0}.kd-dlg-q{min-width:0}.kd-dlg-sb{display:flex;gap:8px 12px;padding:12px 0}.kd-dlg-miss input{border-color:" + BAD + "!important}.kd-dlg-body{flex:1;min-height:0;overflow-y:auto;padding:0 24px 24px}" +
       ".kd-dlg-h{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.55;margin:20px 0 4px}" +
       ".kd-dlg-r{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;width:100%;box-sizing:border-box;padding:10px 0;border:0;border-bottom:1px solid rgba(128,128,128,.2);background:none;color:inherit;font:inherit;font-size:14px;text-align:left}" +
       ".kd-dlg-hd,.kd-dlg-add{cursor:pointer}.kd-dlg-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.kd-dlg-t{max-width:50%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;opacity:.6}" +
@@ -1216,9 +1218,12 @@
   var CHOICE = { every: [["1", "1 мин"], ["5", "5 мин"], ["15", "15 мин"], ["30", "30 мин"], ["60", "1 ч"]], snap: [["0", "Нет"], ["1", "Да"]] };
   var TRASH = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zM6 9h12l-1 12H7L6 9z"/></svg>';
   /* dd: the status the dialog works from (taken when it opens, again after a save), so a failed poll changes nothing;
-   * lost: the last poll got 401; down: where the mouse button went down. dlg: the backdrop; draft: {inst: [{id, type, name, url, user, vals}], del: [id], hide: {page, main}}; dopen: the instance
+   * lost: the last poll got 401; down: where the mouse button went down. dlg: the backdrop; draft: {inst: [{id, type, name, url, user, vals}], del: [id], hide: {page, main}}; dopen: {id: 1} of the instances
    * whose form is open; dst: {busy} or {err} of the last save; dtried: Save was pressed, empty required fields are errors */
-  var dlg = null, dd = null, lost = false, down = null, draft = null, dq = "", dopen = "", dst = null, dtried = false;
+  var dlg = null, dd = null, lost = false, down = null, draft = null, dq = "", dopen = {}, dst = null, dtried = false;
+  /* LAN scan: scw: {at, tm} between the click and the router's first answer (at: the result's at before the click); scerr: {t, at} the last
+   * start error, shown while that result is still the newest; scoff: finds unchecked in the block; scrows: the finds the block shows */
+  var SCANHIDE = "ui.services.scanhide", SCANERR = "Не удалось просканировать", NEED = "Заполните поле", scw = null, scerr = null, scoff = {}, scrows = [];
 
   /* the id for a new instance of a type: the type, then type-2, type-3…; taken: {id: 1} of the router's and the draft's */
   function newId(type, taken) {
@@ -1346,11 +1351,14 @@
   }
   function hint(inp) {
     var f = inp.getAttribute("data-f"), s = sets(dd, entry(inp.getAttribute("data-id"))).filter(function (x) { return x[0] === f; })[0];
-    inp.nextSibling.textContent = s ? bad(f, s[1], dtried && (f === "name" || f === "url" || f === "hosts")) : "";
+    var en = entry(inp.getAttribute("data-id")), m = s ? bad(f, s[1], dtried && (f === "name" || f === "url" || f === "hosts")) : "";
+    /* a service found by the scan: its key, token or password is still to be filled in */
+    if (!m && en.need && SECRET.test(f) && !fv(en, f)) m = NEED;
+    inp.nextSibling.textContent = m; inp.parentNode.classList.toggle("kd-dlg-miss", m === NEED);
   }
   function renderList() {
     if (!dlg) return;
-    var d = dd, was = {}, h = ((d.cfg || {}).vol ? "" : '<div class="kd-dlg-err">Не найден диск Entware</div>') + '<h2 class="kd-dlg-h">Добавленные</h2>';
+    var d = dd, was = {}, h = ((d.cfg || {}).vol ? "" : '<div class="kd-dlg-err">Не найден диск Entware</div>') + '<div class="kd-dlg-sr"></div><h2 class="kd-dlg-h">Добавленные</h2>';
     function match(s) { return !dq || s.toLowerCase().indexOf(dq) >= 0; }
     instOf(d).forEach(function (i) { was[i.id] = i; });
     draft.inst.forEach(function (e) {
@@ -1358,7 +1366,7 @@
       if (draft.del.indexOf(e.id) >= 0 || !match(e.name + " " + t.name + " " + e.type)) return;
       h += '<div class="kd-dlg-i" data-id="' + esc(e.id) + '"><div class="kd-dlg-r kd-dlg-hd"><span class="kd-dlg-n">' + esc(e.name) + '</span><span class="kd-dlg-t">' +
         esc(t.name) + (e.url ? " · " + esc(e.url) : "") + '</span><button type="button" class="kd-dlg-del" aria-label="Удалить" title="Удалить">' + TRASH + "</button></div>";
-      if (dopen === e.id) h += '<div class="kd-dlg-form">' + ["name"].concat(t.fields).map(function (f) { return fld(e, f, ((was[e.id] || {}).set || []).indexOf(f) >= 0); }).join("") + (t.hint ? '<div class="kd-dlg-tip">' + esc(t.hint) + "</div>" : "") + "</div>";
+      if (dopen[e.id]) h += '<div class="kd-dlg-form">' + ["name"].concat(t.fields).map(function (f) { return fld(e, f, ((was[e.id] || {}).set || []).indexOf(f) >= 0); }).join("") + (t.hint ? '<div class="kd-dlg-tip">' + esc(t.hint) + "</div>" : "") + "</div>";
       h += "</div>";
     });
     h += '<h2 class="kd-dlg-h">Найденные автоматически</h2>';
@@ -1374,6 +1382,64 @@
     Array.prototype.forEach.call(list.querySelectorAll("[data-f]"), function (inp) {
       inp.value = fv(entry(inp.getAttribute("data-id")), inp.getAttribute("data-f")); hint(inp);
     });
+    renderScan();
+  }
+  /* the scan button and the «Найдено в сети» block, from the freshest status; true while a scan is on (the caller then polls every 5 s) */
+  function renderScan() {
+    if (!dlg) return false;
+    var d = lastData || dd, c = d.cfg || {}, s = c.scan, now = d.now || Date.now() / 1000, run, h = "", ago, b = dlg.querySelector(".kd-dlg-scan");
+    if (scw && s && s.at > scw.at) { clearTimeout(scw.tm); scw = null; }
+    /* a run older than 240 s was killed */
+    run = !!scw || !!(s && s.state === "run" && now - s.at < 240);
+    b.disabled = run || !c.vol;
+    b.textContent = run ? "Сканирование…" + (!scw && s ? " " + (+s.n || 0) + " из " + (+s.of || 0) : "") : "Сканировать сеть";
+    scrows = [];
+    if (!run) {
+      if (scerr && scerr.at === (s ? s.at : 0)) h += '<div class="kd-dlg-err">' + esc(scerr.t) + "</div>";
+      if (s && s.state === "done") {
+        var m = Math.max(0, Math.floor((now - s.at) / 60)), fnd = s.found || [], gone = false;
+        ago = m < 1 ? "только что" : m < 60 ? m + " мин назад" : m < 1440 ? Math.floor(m / 60) + " ч назад" : Math.floor(m / 1440) + " дн назад";
+        scrows = fnd.filter(function (f) { return !draft.inst.some(function (e) { return e.type === f[2] && e.url.trim() === f[3] && draft.del.indexOf(e.id) < 0; }); });
+        try { gone = +localStorage.getItem(SCANHIDE) >= s.at; } catch (e) {}
+        if (!fnd.length) h += '<div class="kd-dlg-tip">Ничего нового не найдено · ' + ago + "</div>";
+        else if (scrows.length && !gone) {
+          h += '<h2 class="kd-dlg-h">Найдено в сети · ' + ago + "</h2>";
+          scrows.forEach(function (f, i) {
+            h += '<label class="kd-dlg-r kd-dlg-c"><input type="checkbox" data-s="' + i + '"' + (scoff[fkey(f)] ? "" : " checked") + '><span class="kd-dlg-n">' +
+              esc(typeOf(d, f[2]).name + " · " + (f[1] || f[0]) + " · " + f[3]) + "</span></label>";
+          });
+          h += '<div class="kd-dlg-sb"><button type="button" class="kd-btn kd-btn-p kd-dlg-sadd">Добавить выбранные</button><button type="button" class="kd-btn kd-dlg-shide">Скрыть</button></div>';
+        }
+      }
+    }
+    dlg.querySelector(".kd-dlg-sr").innerHTML = h;
+    return run;
+  }
+  function fkey(f) { return f[0] + "|" + f[2] + "|" + f[3]; }
+  function doScan() {
+    var s = ((lastData || dd).cfg || {}).scan, my = scw = { at: s ? s.at : 0 }, rev = newRev();
+    function fail(why) {
+      if (scw !== my) return;
+      clearTimeout(my.tm); scw = null; scerr = { at: my.at, t: SCANERR + ": " + why }; renderScan();
+    }
+    scerr = null; renderScan();
+    /* the router starts the scan within ~5 s of the upload; no new result by then means it did not */
+    my.tm = setTimeout(function () { fail("нет ответа"); }, 45000);
+    upload("keendash 1 " + rev + "\nscan\nend\n", rev).then(update, function (e) { fail(typeof e === "string" && /^Сессия/.test(e) ? e : "ошибка отправки"); });
+  }
+  function addFound() {
+    if (dst && dst.busy) return;
+    var sel = scrows.filter(function (f) { return !scoff[fkey(f)]; }), n = {}, first = "";
+    sel.forEach(function (f) { n[f[2]] = (n[f[2]] || 0) + 1; });
+    dopen = {};
+    sel.forEach(function (f) {
+      var t = typeOf(dd, f[2]), dev = Array.from(f[1] || f[0]).slice(0, Math.max(0, 61 - Array.from(t.name).length)).join(""),
+        e = pushInst(f[2], { name: n[f[2]] > 1 ? t.name + " (" + dev + ")" : t.name, url: f[3] });
+      first = first || e.id;
+      if (t.fields.some(function (x) { return SECRET.test(x); })) { dopen[e.id] = 1; e.need = true; }
+    });
+    if (!first) return;
+    dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; renderList(); renderStrip(); reveal(first);
   }
   function renderStrip() {
     if (!dlg) return;
@@ -1383,20 +1449,28 @@
       (dst && dst.err ? '<div class="kd-dlg-err">' + esc(dst.err) + "</div>" : "") +
       '<button type="button" class="kd-btn kd-btn-p kd-dlg-save"' + (((lastData || dd).cfg || {}).vol ? "" : " disabled") + '>Сохранить</button><button type="button" class="kd-btn kd-dlg-cancel">Отменить</button>';
   }
-  function addInst(type) {
-    var d = dd, taken = {}, id, n;
+  /* a new entry in the draft; o: {name, url} of a found service, else the type's name (with the id's number) and no url */
+  function pushInst(type, o) {
+    var d = dd, taken = {}, id, n, e;
     instOf(d).concat(draft.inst).forEach(function (i) { taken[i.id] = 1; });
     id = newId(type, taken); n = id.slice(type.length + 1);
-    draft.inst.push({ id: id, type: type, name: typeOf(d, type).name + (n ? " " + n : ""), url: "", user: "", map: "", hosts: "", every: "5", snap: "0", vals: {} });
-    dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; dopen = id; renderList(); renderStrip();
-    /* the form opens above the catalog the click was in */
+    e = { id: id, type: type, name: o ? o.name : typeOf(d, type).name + (n ? " " + n : ""), url: o ? o.url : "", user: "", map: "", hosts: "", every: "5", snap: "0", vals: {} };
+    draft.inst.push(e);
+    return e;
+  }
+  function addInst(type) {
+    var id = pushInst(type).id;
+    dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; dopen = {}; dopen[id] = 1; renderList(); renderStrip(); reveal(id);
+  }
+  /* the form opens above the catalog the click was in */
+  function reveal(id) {
     var el = dlg.querySelector('.kd-dlg-i[data-id="' + id + '"]');
     if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
   }
   function delInst(id) {
     if (instOf(dd).some(function (i) { return i.id === id; })) draft.del.push(id);
     else draft.inst = draft.inst.filter(function (e) { return e.id !== id; });
-    if (dopen === id) dopen = "";
+    delete dopen[id];
     renderList(); renderStrip();
   }
   function doSave() {
@@ -1405,11 +1479,11 @@
       if (!badId && draft.del.indexOf(e.id) < 0 && sets(d, e).some(function (s) { return bad(s[0], s[1], s[0] === "name" || s[0] === "url" || s[0] === "hosts"); })) badId = e.id;
     });
     dtried = true;
-    if (badId) { dopen = badId; dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; renderList(); return; }
+    if (badId) { dopen = {}; dopen[badId] = 1; dq = ""; dlg.querySelector(".kd-dlg-q").value = ""; renderList(); return; }
     my = dst = { busy: true }; renderStrip();
     upload(buildMsg(rev, d, draft), rev).then(function () { return awaitRev(rev, 45000); }).then(function () {
       if (dst !== my) return;
-      dd = lastData || dd; draft = fresh(dd); dopen = ""; dst = null; dtried = false; renderList(); renderStrip();
+      dd = lastData || dd; draft = fresh(dd); dopen = {}; dst = null; dtried = false; renderList(); renderStrip();
     }, function (e) {
       if (dst !== my) return;
       dst = { err: typeof e !== "string" ? NOSAVE : /^(Не удалось|Сессия)/.test(e) ? e : NOSAVE + ": " + e }; renderStrip();
@@ -1420,10 +1494,13 @@
     var t = e.target, c = function (s) { return t.closest ? t.closest(s) : null; }, i = c(".kd-dlg-i");
     if ((t === dlg && down === dlg) || c(".kd-dlg-x")) closeSettings();
     else if (c(".kd-dlg-save")) doSave();
-    else if (c(".kd-dlg-cancel")) { dd = lastData || dd; draft = fresh(dd); dopen = ""; dst = null; dtried = false; renderList(); renderStrip(); }
+    else if (c(".kd-dlg-cancel")) { dd = lastData || dd; draft = fresh(dd); dopen = {}; dst = null; dtried = false; renderList(); renderStrip(); }
+    else if (c(".kd-dlg-scan")) doScan();
+    else if (c(".kd-dlg-sadd")) addFound();
+    else if (c(".kd-dlg-shide")) { try { localStorage.setItem(SCANHIDE, String(((lastData || dd).cfg.scan || {}).at)); } catch (x) {} renderScan(); }
     else if (c(".kd-dlg-add")) addInst(c(".kd-dlg-add").getAttribute("data-type"));
     else if (c(".kd-dlg-del")) delInst(i.getAttribute("data-id"));
-    else if (c(".kd-dlg-hd")) { var id = i.getAttribute("data-id"); dopen = dopen === id ? "" : id; renderList(); }
+    else if (c(".kd-dlg-hd")) { var id = i.getAttribute("data-id"); if (dopen[id]) delete dopen[id]; else { dopen = {}; dopen[id] = 1; } renderList(); }
   }
   function onInput(e) {
     var t = e.target, f = t.getAttribute("data-f"), en;
@@ -1433,18 +1510,19 @@
   /* the boxes mean "shown": unchecked names go to the hide lists */
   function onChange(e) {
     var t = e.target, w = t.getAttribute("data-w"), n = t.getAttribute("data-n"), l = w && draft.hide[w], k = l ? l.indexOf(n) : 0;
+    if (t.hasAttribute("data-s")) scoff[fkey(scrows[t.getAttribute("data-s")])] = !t.checked;
     if (!l) return;
     if (t.checked && k >= 0) l.splice(k, 1); else if (!t.checked && k < 0) l.push(n);
     renderStrip();
   }
   function openSettings(id) {
     if (dlg || !lastData) return;
-    dd = lastData; draft = fresh(dd); dq = ""; dopen = id || ""; dst = null; dtried = false;
+    dd = lastData; draft = fresh(dd); dq = ""; dopen = {}; if (id) dopen[id] = 1; dst = null; dtried = false;
     addStyle();
     dlg = document.createElement("div");
     dlg.className = "kd-dlg-ov";
     dlg.innerHTML = '<div class="kd-dlg" role="dialog" aria-modal="true"><div class="kd-dlg-top"><h1>Настройки сервисов</h1><button type="button" class="kd-dlg-x" aria-label="Закрыть">×</button></div>' +
-      '<div class="kd-dlg-sess"></div><input type="text" class="kd-dlg-q" placeholder="Поиск" aria-label="Поиск"><div class="kd-dlg-body"></div><div class="kd-dlg-bar"></div></div>';
+      '<div class="kd-dlg-sess"></div><div class="kd-dlg-qr"><input type="text" class="kd-dlg-q" placeholder="Поиск" aria-label="Поиск"><button type="button" class="kd-btn kd-dlg-scan">Сканировать сеть</button></div><div class="kd-dlg-body"></div><div class="kd-dlg-bar"></div></div>';
     dlg.addEventListener("mousedown", function (e) { down = e.target; }); dlg.addEventListener("click", onClick); dlg.addEventListener("input", onInput); dlg.addEventListener("change", onChange);
     document.addEventListener("keydown", onKey);
     document.body.appendChild(dlg);

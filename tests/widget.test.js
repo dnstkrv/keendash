@@ -2448,5 +2448,84 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     const put = post(fcalls, /rci.put$/)[0];
     ok("settings: upload takes the volume of the freshest status", put && /^v1:.var.lib.keendash.inbox./.test(JSON.parse(put[1].body).filename), put && put[1].body);
   }, w => { const f = fm(fcalls, {})(w); return (u, i) => novol && !/rci|fui/.test(u) ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(Object.assign({}, full, { cfg: Object.assign({}, full.cfg, { vol: "" }) })) }) : f(u, i); }, URL0);
+  // LAN scan in the settings dialog: the button sends "scan", cfg.scan drives the label and the «Найдено в сети» block
+  const scanT = [["jellyfin", "Jellyfin", "Медиа", ["url", "key"], "Ключ: Панель управления → API-ключи"], ["metube", "MeTube", "Загрузки", ["url"], ""]].concat(full.types);
+  const NOW = full.now, FIND = [["192.168.1.5", "nas", "jellyfin", "http://192.168.1.5:8096"], ["192.168.1.6", "tv", "jellyfin", "http://192.168.1.6:8096"],
+    ["192.168.1.7", "<b>x</b>", "metube", "http://192.168.1.7:8081"], ["192.168.1.8", "pc", "plex", "http://192.168.1.8:32400"]];
+  const scanned = scan => Object.assign({}, full, { types: scanT, cfg: Object.assign({}, full.cfg, { scan }) });
+  // the status follows S.scan, the uploaded files are kept in S.msgs, S.put makes /rci/put fail
+  const scanFetch = S => w => (u, init) => {
+    const r = (ok, status, body) => Promise.resolve({ ok, status, json: () => Promise.resolve(body) });
+    if (/\/rci\/put$/.test(u)) return S.put ? r(false, S.put) : r(true, 200, { port: { port: "7" } });
+    if (/\/fui$/.test(u)) { S.msgs.push(init.body.get("Filedata")); return r(true, 200, {}); }
+    return r(true, 200, scanned(S.scan));
+  };
+  const sbtn = dlg => dlg.querySelector(".kd-dlg-scan"), srows = dlg => Array.from(dlg.querySelectorAll(".kd-dlg-sr label")).map(x => x.textContent);
+  let S = { scan: null, msgs: [] };
+  await run(scanned(null), async w => {
+    const dlg = await openDlg(w), W = w.__servicesWidget, b = () => sbtn(dlg), sr = dlg.querySelector(".kd-dlg-sr");
+    ok("scan: button «Сканировать сеть» next to the search, enabled, no block", b().textContent === "Сканировать сеть" && !b().disabled && b().parentNode === dlg.querySelector(".kd-dlg-q").parentNode && !sr.textContent, b() && b().outerHTML);
+    b().click(); await wait(100);
+    const txt = S.msgs.length === 1 ? await blobText(w, S.msgs[0]) : "";
+    ok("scan: the button sends the single line scan", /^keendash 1 [a-z0-9]{12}\nscan\nend\n$/.test(txt), JSON.stringify(txt));
+    ok("scan: after the click it waits for the router's first answer", b().disabled && b().textContent === "Сканирование…", b().textContent);
+    S.scan = { state: "run", n: 3, of: 9, at: NOW - 2, found: [] }; await W.update();
+    ok("scan: running -> «Сканирование… 3 из 9», disabled", b().disabled && b().textContent === "Сканирование… 3 из 9", b().textContent);
+    S.scan = { state: "done", n: 9, of: 9, at: NOW - 1, found: FIND }; await W.update();
+    ok("scan: done -> button enabled, block with all rows checked", !b().disabled && b().textContent === "Сканировать сеть" && /Найдено в сети/.test(sr.textContent) && sr.querySelectorAll("input:checked").length === 4 &&
+      srows(dlg).join("\n") === "Jellyfin · nas · http://192.168.1.5:8096\nJellyfin · tv · http://192.168.1.6:8096\nMeTube · <b>x</b> · http://192.168.1.7:8081\nPlex · pc · http://192.168.1.8:32400", srows(dlg).join("|"));
+    ok("scan: a device name is text, not markup", !sr.querySelector("b,img"));
+    sr.querySelector('input[data-s="3"]').click();
+    sr.querySelector(".kd-dlg-sadd").click();
+    const items = Array.from(dlg.querySelectorAll(".kd-dlg-i")).slice(-3), q = s => dlg.querySelector(s);
+    ok("scan: «Добавить выбранные» -> three new draft entries named by type and device", items.map(x => x.getAttribute("data-id")).join() === "jellyfin,jellyfin-2,metube" &&
+      items.map(x => x.querySelector(".kd-dlg-n").textContent).join() === "Jellyfin (nas),Jellyfin (tv),MeTube" &&
+      items.map(x => x.querySelector(".kd-dlg-t").textContent).join() === "Jellyfin · http://192.168.1.5:8096,Jellyfin · http://192.168.1.6:8096,MeTube · http://192.168.1.7:8081", items.map(x => x.textContent).join("|"));
+    ok("scan: forms of types with a key open with the tip, MeTube stays closed", !!q('[data-id="jellyfin"] .kd-dlg-form') && !!q('[data-id="jellyfin-2"] .kd-dlg-form') && !q('[data-id="metube"] .kd-dlg-form') &&
+      dlg.querySelectorAll(".kd-dlg-tip").length === 2 && q('[data-id="jellyfin-2"] input[data-f="url"]').value === "http://192.168.1.6:8096");
+    const key = () => q('[data-id="jellyfin"] input[data-f="key"]'), miss = () => key().parentNode.classList.contains("kd-dlg-miss") && /Заполните/.test(key().parentNode.textContent);
+    ok("scan: the empty key field is highlighted, typing clears it", miss() && (typeIn(w, key(), "k"), !miss()));
+    ok("scan: added rows leave the block, the unchecked one stays unchecked", srows(dlg).join() === "Plex · pc · http://192.168.1.8:32400" && !q(".kd-dlg-sr input:checked") && !!q(".kd-dlg-save"), srows(dlg).join());
+    q('.kd-dlg-add[data-type="jellyfin"]').click();
+    ok("scan: ids follow the manual add rules", !!q('.kd-dlg-i[data-id="jellyfin-3"]'));
+    q('[data-id="jellyfin-3"] .kd-dlg-del').click(); q('[data-id="jellyfin-2"] .kd-dlg-del').click();
+    ok("scan: a deleted draft entry brings its row back", srows(dlg).length === 2 && /tv/.test(srows(dlg)[0]), srows(dlg).join());
+  }, scanFetch(S), URL0);
+  S = { scan: null, msgs: [] };
+  await run(scanned(null), async w => {
+    S.scan = { state: "done", n: 9, of: 9, at: NOW - 1, found: FIND };
+    const dlg = await openDlg(w), W = w.__servicesWidget, sr = dlg.querySelector(".kd-dlg-sr"); await W.update();
+    ok("scan: «Скрыть» hides the block", srows(dlg).length === 4 && (sr.querySelector(".kd-dlg-shide").click(), !sr.textContent.includes("Найдено")) && w.localStorage.getItem("ui.services.scanhide") === String(NOW - 1), sr.textContent);
+    await W.update();
+    ok("scan: stays hidden for the same result", !sr.textContent.includes("Найдено"));
+    S.scan = Object.assign({}, S.scan, { at: NOW + 5 }); await W.update();
+    ok("scan: a newer result shows again", srows(dlg).length === 4);
+  }, scanFetch(S), URL0);
+  S = { scan: { state: "done", n: 9, of: 9, at: NOW - 600, found: FIND }, msgs: [] };
+  await run(scanned(S.scan), async w => {
+    const dlg = await openDlg(w), sr = dlg.querySelector(".kd-dlg-sr");
+    ok("scan: an old result shows its age", /Найдено в сети · 10 мин назад/.test(sr.textContent), sr.textContent);
+    S.scan = { state: "done", n: 9, of: 9, at: NOW - 600, found: [] }; await w.__servicesWidget.update();
+    ok("scan: no finds -> «Ничего нового не найдено» with the age", /Ничего нового не найдено · 10 мин назад/.test(sr.textContent) && !sr.querySelector(".kd-dlg-sadd"), sr.textContent);
+    S.scan = { state: "run", n: 1, of: 9, at: NOW - 300, found: [] }; await w.__servicesWidget.update();
+    ok("scan: a run older than 240 s is finished, the button is enabled", !sbtn(dlg).disabled && sbtn(dlg).textContent === "Сканировать сеть", sbtn(dlg).textContent);
+  }, scanFetch(S), URL0);
+  S = { scan: null, msgs: [], put: 500 };
+  await run(scanned(null), async w => {
+    const dlg = await openDlg(w); sbtn(dlg).click(); await wait(100);
+    ok("scan: the message failing -> «Не удалось просканировать: …», button enabled", /Не удалось просканировать: \S/.test(dlg.querySelector(".kd-dlg-sr").textContent) && !sbtn(dlg).disabled && !S.msgs.length, dlg.querySelector(".kd-dlg-sr").textContent);
+  }, scanFetch(S), URL0);
+  S = { scan: null, msgs: [] };
+  await run(scanned(null), async w => {
+    const st = w.setTimeout; w.setTimeout = (f, t, ...a) => st(f, t === 45000 ? 50 : t, ...a);
+    const dlg = await openDlg(w); sbtn(dlg).click(); await wait(200);
+    ok("scan: no answer in 45 s -> the error note, button enabled", /Не удалось просканировать: нет ответа/.test(dlg.querySelector(".kd-dlg-sr").textContent) && !sbtn(dlg).disabled, dlg.querySelector(".kd-dlg-sr").textContent);
+  }, scanFetch(S), URL0);
+  S = { scan: { state: "run", n: 3, of: 9, at: NOW - 2, found: [] }, msgs: [] };
+  await run(scanned(S.scan), async w => {
+    const ms = [], st = w.setTimeout; w.setTimeout = (f, t, ...a) => (ms.push(t), st(f, t, ...a));
+    const dlg = await openDlg(w); await w.__servicesWidget.update();
+    ok("scan: while it runs and the dialog is open the status is polled every 5 s", ms.includes(5000) && sbtn(dlg).textContent === "Сканирование… 3 из 9", ms.join());
+  }, scanFetch(S), URL0);
   console.log(res.join("\n")); process.exit(res.some(r => r.startsWith("FAIL")) ? 1 : 0);
 })();
