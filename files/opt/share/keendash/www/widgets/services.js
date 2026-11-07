@@ -577,6 +577,16 @@
     }
     h = '<div class="us-grid">' + blocks + "</div>" +
       line(y.disk > 90 ? BAD : OK, "Диск /opt", y.disk + "% · свободно " + y.free + " МБ") +
+      (y.disks || []).map(function (k) {
+        // [name, model, ok, temp, hours, realloc, pending, wear, asleep]
+        var c = !k[2] ? BAD : (k[5] > 0 || k[6] > 0 || k[3] > 55 ? WARN : OK), r = [k[2] ? "PASSED" : "FAILED"];
+        if (k[3] !== null) r.push(k[3] + " °C");
+        if (k[4] !== null) r.push(fmtN(k[4]) + " ч");
+        if (k[5] !== null || k[6] !== null) r.push("сектора " + (k[5] || 0) + "/" + (k[6] || 0));
+        if (k[7] !== null) r.push("износ " + k[7] + "%");
+        if (k[8]) r.push("спит");
+        return line(c, "Диск " + esc(k[0]) + " · " + esc(k[1]), r.join(" · "));
+      }).join("") +
       line(OK, "Оперативная память", y.memtotal + " МБ всего") +
       line(OK, "Аптайм роутера", fmtDur(y.up));
     return h;

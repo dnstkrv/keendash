@@ -258,3 +258,5 @@ echo "sys_memtotal $(awk '/MemTotal/{printf "%d", $2/1024}' /proc/meminfo)"
 if [ -r /sys/class/thermal/thermal_zone0/temp ]; then t=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null); echo "sys_temp $(( ${t:-0} / 1000 ))"; fi
 df -k /opt 2>/dev/null | tail -1 | awk '{gsub("%","",$(NF-1)); print "sys_disk " $(NF-1); print "sys_free " int($(NF-2)/1024)}'
 echo "sys_uptime $(awk '{printf "%d",$1}' /proc/uptime)"
+# "disk|..." lines of bin/smart
+cat "${KEENDASH_TMP:-/tmp/keendash}/smart" 2>/dev/null || :

@@ -20,6 +20,16 @@ c=/opt/etc/keendash/keendash.conf
   sed -i '/^$/N;/^\n$/D' "$c"
 # 1.2.x: third-party service keys of keendash.conf -> services/<type>.conf
 /opt/share/keendash/bin/settings migrate >/dev/null 2>&1
+# smartmontools for the System card, only if a disk (not a flash stick) is attached; detached: opkg holds its lock while this runs
+PATH=/opt/sbin:/opt/bin:$PATH
+if ! command -v smartctl >/dev/null 2>&1; then
+  dk=$(/opt/share/keendash/bin/smart disks | tr '\n' ' ')
+  if [ -n "$dk" ]; then
+    mkdir -p /tmp/keendash
+    nohup sh -c 'i=0; while [ $i -lt 24 ]; do opkg install smartmontools && exit 0; i=$((i+1)); sleep 5; done' > /tmp/keendash/smart-install.log 2>&1 </dev/null &
+    echo "keendash: installing smartmontools in the background for the disk(s): $dk"
+  fi
+fi
 # keendashd finds the services itself right at its start (bin/tick 5)
 /opt/etc/init.d/S81keendash restart >/dev/null 2>&1
 echo "keendash installed. Reload the Keenetic web UI main page (Ctrl+F5). Settings: /opt/etc/keendash/keendash.conf"

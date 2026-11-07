@@ -1,7 +1,7 @@
 #!/bin/sh
 # keendash periodic jobs, run by keendashd (no cron needed):
 #   tick 1 - every minute: metrics sample (ring buffers in /tmp/keendash, ~3 h of history), third-party services, country lookups, Frigate frames (bin/snap)
-#   tick 5 - every 5 minutes: find services and their web UIs, new keendash version (checks the feed at most every 6 hours)
+#   tick 5 - every 5 minutes: find services and their web UIs, SMART of the attached disks, new keendash version (checks the feed at most every 6 hours)
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 BIN=/opt/share/keendash/bin
 D=/tmp/keendash; mkdir -p "$D"
@@ -20,6 +20,7 @@ case "$1" in
   ;;
 5)
   $BIN/services --discover
+  $BIN/smart
   # the volume of /opt for the web UI's file upload
   $BIN/settings vol > "$D/vol.t" && mv "$D/vol.t" "$D/vol" || rm -f "$D/vol.t" "$D/vol"
   # interface names as people gave them, for bin/stats: "kernel name|name" from the NDMS interface descriptions

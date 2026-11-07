@@ -17,15 +17,19 @@ const full = Object.assign({}, base, {
   svc: [["cron",1,""],["dropbear",1,""],["nfqws2",1,""],["lighttpd",1,"90"],["portal",1,"81"],["ascn",1,""],["awg-manager",1,"2222"],["firc",1,"666"],["haproxy",0,""],["telemt",2,""],["telemt-panel",1,"8083"],["foo",3,"http://example.org:99/x"],["hrweb",1,"2000"]],
   firc: Object.assign({}, base.firc, { list: base.firc.list.concat([["\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" C:\\\\x \\u00e9", "nwg0", 1, 99]]) })
 });
+// ONLY=<regex> (env): only the checks whose names match it, for a commit; the full suite before a push
+const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY) : null;
 const mini = { tabs: ["sys"], svc: [["dropbear", 1, ""]], sys: { load: 10, mem: 30, memtotal: 256, temp: null, disk: 10, free: 100, up: 3600 }, series: {} };
 function run(data, tests, fetchFn, pageUrl) {
+  // ONLY=<regex>: only the run() blocks whose code mentions it
+  if (ONLY && !ONLY.test(tests.toString())) return Promise.resolve();
   const card = `<div cdkdrag="" class="cdk-drag ndw-drag-panel__row"><div><ndw-segments-card><ndw-dashboard-card class="segments-card"><div class="dashboard-card"><div class="dashboard-card__header"><ndw-router-link class="dashboard-card__header-link"><a href="/x">Сегменты</a></ndw-router-link><div class="dashboard-card__header-buttons"><ndw-svg-icon class="ndw-drag-handle dashboard-card__drag-icon"><svg></svg></ndw-svg-icon></div></div><div class="dashboard-card__content">old</div></div></ndw-dashboard-card></ndw-segments-card></div></div>`;
   const dom = new JSDOM(`<!doctype html><body><div id="c0" class="ndw-drag-panel__column">${card}</div></body>`, { url: pageUrl || "http://192.168.0.1/", runScripts: "outside-only", pretendToBeVisual: true });
   const w = dom.window; w.fetch = fetchFn ? fetchFn(w) : () => Promise.resolve({ ok: true, json: () => Promise.resolve(data) });
   w.eval(fs.readFileSync(path.join(__dirname, "..", "files", "opt", "share", "keendash", "www", "widgets", "services.js"), "utf8"));
   return new Promise(r => setTimeout(() => { r(tests(w, w.document.querySelector('[data-services="1"]'))); }, 300));
 }
-const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (c ? "" : " -> " + e));
+const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ? "PASS " : "FAIL ") + n + (c ? "" : " -> " + e));
 (async () => {
   await run(full, (w, m) => {
     const click = t => m.querySelector('[data-tab="' + t + '"]').dispatchEvent(new w.Event("click", { bubbles: true }));
@@ -1847,7 +1851,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     a = awg('{\n  "port": 2222,\n  "authEnabled": true\n}\n', "AWG_KEY=k-123 ");
     ok("bin/stats: awg-manager login on, no API key -> not asked, awg_nokey", a.tun === "awg_nokey 1\nawg_up 0\nawg_total 0" && !a.log.some(l => l.startsWith("awg ")), a.tun + " || " + a.log.join(" / "));
     d = state();
-    collect("tick", "5", "", { state: d, files: { services: "#!/bin/sh\n", settings: "#!/bin/sh\n", update: "#!/bin/sh\n", "firc/groups.yaml": "groups:\n",
+    collect("tick", "5", "", { state: d, files: { services: "#!/bin/sh\n", smart: "#!/bin/sh\n", settings: "#!/bin/sh\n", update: "#!/bin/sh\n", "firc/groups.yaml": "groups:\n",
       "firc/tunnels.yaml": 'tunnels:\n- id: t1\n  device: fw0\n  description: "Firc tunnel"\n' },
       edit: (x, t) => x.replace(/^BIN=.*$/m, "BIN=" + t).replace(/^D=\/tmp\/keendash/m, 'D="$KEENDASH_TMP"').replace(/\/opt\/etc\/firc\//g, t + "/firc/") });
     const batch = "[" + ["GigabitEthernet1", "Bridge0", "OpkgTun10", "OpkgTun11", "Proxy0", "Wireguard1"].map(n => '{"show":{"interface":{"system-name":{"name":"' + n + '"}}}}').join() + "]";
@@ -1865,6 +1869,68 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     d = state(); fs.writeFileSync(path.join(d, "links"), "");
     out = collect("services", "", "", { state: d, edit: x => x.replace(/^INITD=.*$/m, "INITD=/nonexistent").replace(/^D=\/tmp\/keendash;/m, 'D="$KEENDASH_TMP";') });
     ok("bin/services: KeenDNS web apps from RCI", out === "ndp|firc.r.example.net|127.0.0.1|666|1\nndp|adguard.r.example.net|10.0.0.2|3000|0\n", out);
+    // bin/smart: fake sysfs (KEENDASH_SYS) and a fake smartctl that answers from fake/<dev>[.sat].json|.rc and logs the device it was asked for
+    {
+      const attr = (id, v) => ({ id, raw: { value: v, string: String(v) } });
+      const hdd = { model_name: "Example HDD 4TB", model_family: "Example", serial_number: "SERIAL-SECRET", smart_status: { passed: true }, temperature: { current: 38 }, power_on_time: { hours: 12345 },
+        ata_smart_attributes: { table: [attr(1, 0), attr(5, 8), attr(9, 12345), attr(197, 0)] } };
+      const ssd = { model_name: "Example SSD 1TB", smart_status: { passed: false }, temperature: { current: 31 }, power_on_time: { hours: 900 }, endurance_used: { current_percent: 12 }, ata_smart_attributes: { table: [attr(5, 0), attr(197, 2)] } };
+      const nvme = { model_family: "Example|Family", smart_status: { passed: true }, nvme_smart_health_information_log: { percentage_used: 3 } };
+      const nosmart = { json_format_version: [1, 0] };
+      const fakeCtl = '#!/bin/sh\nfor a; do dev=${a#/dev/}; done\ns=; case " $* " in *" -d sat "*) s=.sat;; esac\necho "$dev$s" >> "$KEENDASH_TMP/fake/calls"\nf=$KEENDASH_TMP/fake/$dev$s\n[ -f "$f.json" ] && cat "$f.json"\nrc=0; [ -f "$f.rc" ] && rc=$(cat "$f.rc")\nexit $rc\n';
+      // disks: name -> [removable, plain answer, plain exit code, answer with -d sat]
+      const mk = (disks, cache) => {
+        const d = state(); fs.mkdirSync(path.join(d, "fake"));
+        Object.keys(disks).forEach(n => {
+          const a = disks[n];
+          fs.mkdirSync(path.join(d, "sys", "block", n), { recursive: true }); fs.writeFileSync(path.join(d, "sys", "block", n, "removable"), a[0] + "\n");
+          if (a[1] !== undefined) fs.writeFileSync(path.join(d, "fake", n + ".json"), JSON.stringify(a[1]));
+          if (a[2] !== undefined) fs.writeFileSync(path.join(d, "fake", n + ".rc"), String(a[2]));
+          if (a[3] !== undefined) fs.writeFileSync(path.join(d, "fake", n + ".sat.json"), JSON.stringify(a[3]));
+        });
+        if (cache) fs.writeFileSync(path.join(d, "smart"), cache);
+        return d;
+      };
+      const sysEnv = d => "KEENDASH_SYS=" + unix(d) + "/sys ";
+      const smart = (d, env, noctl) => collect("smart", "", "", { state: d, env: sysEnv(d) + (env || ""), files: noctl ? {} : { smartctl: fakeCtl } });
+      const rd = (d, f) => fs.existsSync(path.join(d, f)) ? fs.readFileSync(path.join(d, f), "utf8") : null;
+      // sda: plain; sdb: only with -d sat; sdc: asleep, has an old line; sdd: asleep, no old line; sde: no SMART; sdf: flash stick; sdg: model_family only
+      const disks = { sda: [0, hdd, 4], sdb: [0, nosmart, 2, ssd], sdc: [0, {}, 9], sdd: [0, {}, 9], sde: [0, nosmart, 2, nosmart], sdf: [1, hdd], sdg: [0, nvme] };
+      let d = mk(disks, "disk|sdc|Example Old|1|40|5000|0|0||0\ndisk|sdx|Gone|1||||||0\n"), o = smart(d);
+      ok("bin/smart disks: only removable=0", collect("smart", "disks", "", { state: d, env: sysEnv(d) }) === "sda\nsdb\nsdc\nsdd\nsde\nsdg\n");
+      ok("bin/smart: the cache lines (HDD, -d sat SSD, asleep keeps the old line, no SMART skipped)", rd(d, "smart") ===
+        "disk|sda|Example HDD 4TB|1|38|12345|8|0||0\ndisk|sdb|Example SSD 1TB|0|31|900|0|2|12|0\ndisk|sdc|Example Old|1|40|5000|0|0||1\ndisk|sdg|Example Family|1|||||3|0\n", rd(d, "smart"));
+      const calls = rd(d, "fake/calls").trim().split("\n");
+      ok("bin/smart: -d sat only after a plain try without smart_status; none for an asleep disk or a flash stick; no serial", calls.join() === "sda,sdb,sdb.sat,sdc,sdd,sde,sde.sat,sdg" && !/SECRET/.test(rd(d, "smart")), calls.join());
+      ok("bin/smart: writes atomically, prints nothing", !fs.existsSync(path.join(d, "smart.t")) && o === "", o);
+      d = mk({ sdf: [1, hdd], sde: [0, {}, 2] }, "disk|sdx|Old|1||||||0\n"); smart(d);
+      ok("bin/smart: no disk with SMART -> cache removed", rd(d, "smart") === null);
+      d = mk({ sda: [0, hdd] }, "disk|sdx|Old|1||||||0\n"); smart(d, "PATH=/usr/bin:/bin ", true);
+      ok("bin/smart: no smartctl -> cache removed", rd(d, "smart") === null);
+      // bin/stats ends with the cache lines
+      d = mk({}, "disk|sda|Example HDD 4TB|1|38|12345|8|0||0\n");
+      o = collect("stats", "", "", { state: d, edit: x => x.replace(/^(HAS_\w+)=0;.*$/gm, "$1=0") });
+      ok("bin/stats: the disk lines after sys_uptime", /^sys_uptime \d+\ndisk\|sda\|Example HDD 4TB\|1\|38\|12345\|8\|0\|\|0\n$/m.test(o.slice(o.indexOf("sys_uptime"))), o.slice(-120));
+      // postinst: its smartmontools block cut out of the real file; opkg is a fake that logs its arguments. The detached job
+      // runs after collect() has removed its temp dir, so the fakes live in the state dir; no /usr/sbin: the build server has a smartctl
+      const block = x => x.slice(x.indexOf("# smartmontools"), x.indexOf("# keendashd finds"));
+      const pinst = (disks2, withCtl) => {
+        const dd = mk(disks2);
+        fs.writeFileSync(path.join(dd, "opkg"), '#!/bin/sh\necho "opkg $*" >> "$KEENDASH_TMP/opkg.log"\n', { mode: 0o755 });
+        if (withCtl) fs.writeFileSync(path.join(dd, "smartctl"), "#!/bin/sh\n", { mode: 0o755 });
+        const out = collect("ipk/postinst", "", "", { state: dd, env: sysEnv(dd) + "PATH=" + unix(dd) + ":/usr/bin:/bin ",
+          files: { smart: fs.readFileSync(path.join(__dirname, "..", "files/opt/share/keendash/bin/smart"), "utf8").replace(/^PATH=.*$/m, ":") },
+          edit: (x, t) => block(x).replace("/opt/share/keendash/bin/", t + "/").replace(/\/tmp\/keendash/g, unix(dd)).replace(/^PATH=.*$/m, ":") });
+        for (let k = 0; k < 10 && !fs.existsSync(path.join(dd, "opkg.log")); k++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+        return { log: rd(dd, "opkg.log"), out };
+      };
+      let r = pinst({ sda: [0], sdb: [1] });
+      ok("postinst: a disk and no smartctl -> opkg install smartmontools, one line naming sda", r.log === "opkg install smartmontools\n" && /smartmontools.*sda/.test(r.out) && r.out.trim().split("\n").length === 1, r.log + r.out);
+      r = pinst({ sdb: [1] });
+      ok("postinst: only a flash stick -> no install", r.log === null && r.out === "", r.log + r.out);
+      r = pinst({ sda: [0] }, true);
+      ok("postinst: smartctl present -> no install", r.log === null && r.out === "", r.log + r.out);
+    }
     states.forEach(x => fs.rmSync(x, { recursive: true, force: true }));
   }
   if (haveCc) {
@@ -1883,7 +1949,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     // keendashd status: stats/services output -> the card's JSON; broken numbers become 0/null, strings are escaped
     const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));
     fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "awg_nokey 1", "telemt_ok 1", "telemt_conn 12", "telemt_users x", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
-      "sys_load 007", "sys_temp", "ts_running 1", "ts_online 1", "tss|Running|router|100.64.0.1|waw||0||", "tsp|pc|windows|1|1|1||0001-01-01T00:00:00Z|10|20|0|0|"].join("\n") + "\n");
+      "sys_load 007", "sys_temp", "disk|sda|Example \"HDD\" 4TB|1|38|12345|8|||0", "disk|sdb|Example SSD|0|||||12|1", "ts_running 1", "ts_online 1", "tss|Running|router|100.64.0.1|waw||0||", "tsp|pc|windows|1|1|1||0001-01-01T00:00:00Z|10|20|0|0|"].join("\n") + "\n");
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
@@ -1904,6 +1970,7 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
       ok("keendashd status: strings escaped", eq(s.telemt.list, [['alice "a"\\b', 3, 100, 200]]), JSON.stringify(s.telemt.list));
       ok("keendashd status: empty fields 0 / null", eq(s.awg.px, [["home", "freeturn-server", 1, 0, null, ""]]), JSON.stringify(s.awg.px));
       ok("keendashd status: 007 -> 7, empty temp -> null", s.sys.load === 7 && s.sys.temp === null, JSON.stringify(s.sys));
+      ok("keendashd status: sys.disks, empty fields null", eq(s.sys.disks, [["sda", 'Example "HDD" 4TB', 1, 38, 12345, 8, null, null, 0], ["sdb", "Example SSD", 0, null, null, null, null, 12, 1]]), JSON.stringify(s.sys.disks));
       ok("keendashd status: graph history, broken lines skipped", eq(s.series.sys_load, [10, 20, 30]) && eq(s.series.awg_bytes, []), JSON.stringify(s.series.sys_load));
       ok("keendashd status: Tailscale", s.ts.run === 1 && s.ts.online === 1 && s.ts.total === 0 && eq(s.ts.self, [["Running", "router", "100.64.0.1", "waw", "", 0, "", ""]]) &&
         eq(s.ts.list, [["pc", "windows", 1, 1, 1, "", "0001-01-01T00:00:00Z", 10, 20, 0, 0, ""]]), JSON.stringify(s.ts));
@@ -1998,6 +2065,20 @@ const res = []; const ok = (n, c, e) => res.push((c ? "PASS " : "FAIL ") + n + (
     ok("issue1: link on nfqws2, not lighttpd", links.length === 1 && links[0].textContent.trim().startsWith("nfqws2") && links[0].href === "http://192.168.0.1:8090/", links.map(a => a.textContent).join());
     ok("issue1: 2 chips", m.querySelectorAll(".us-body > .us-chips:first-child .us-chip").length === 2);
   });
+  // sys.disks: [name, model, ok, temp, hours, realloc, pending, wear, asleep]; null = not reported
+  await run(Object.assign({}, mini, { sys: Object.assign({}, mini.sys, { disks: [
+    ["sda", "Example HDD 4TB", 1, 38, 12345, 8, 0, null, 0], ["sdb", "Example <SSD> 1TB", 1, 31, 900, null, null, 12, 0],
+    ["sdc", "Bad HDD", 0, 40, 5, null, null, null, 0], ["sdd", "Sleepy HDD", 1, null, 77, null, null, null, 1], ["sde", "Hot HDD", 1, 60, 5, 0, 0, null, 0]] }) }), (w, m) => {
+    const rows = Array.from(m.querySelectorAll(".us-row")).filter(r => /^Диск sd/.test(r.querySelector(".us-nm").textContent)), t = i => rows[i].querySelector(".us-nm").textContent + " | " + rows[i].querySelector(".us-r").textContent;
+    ok("disks: one row each, after Диск /opt", rows.length === 5 && Array.from(m.querySelectorAll(".us-row")).findIndex(r => /^Диск \/opt/.test(r.textContent)) < Array.from(m.querySelectorAll(".us-row")).indexOf(rows[0]), rows.length);
+    ok("disks: HDD with sectors", t(0) === "Диск sda · Example HDD 4TB | PASSED · 38 °C · 12 345 ч · сектора 8/0" && rows[0].innerHTML.includes("#f5a623"), t(0));
+    ok("disks: SSD with wear, model escaped", t(1) === "Диск sdb · Example <SSD> 1TB | PASSED · 31 °C · 900 ч · износ 12%" && rows[1].innerHTML.includes("&lt;SSD&gt;") && rows[1].innerHTML.includes("#3ecf8e"), rows[1].innerHTML);
+    ok("disks: FAILED is red", t(2) === "Диск sdc · Bad HDD | FAILED · 40 °C · 5 ч" && rows[2].innerHTML.includes("#ff6b6b"), t(2));
+    ok("disks: sleeping one", t(3) === "Диск sdd · Sleepy HDD | PASSED · 77 ч · спит", t(3));
+    ok("disks: over 55 °C warns", rows[4].innerHTML.includes("#f5a623"), rows[4].innerHTML);
+  });
+  await run(Object.assign({}, mini, { sys: Object.assign({}, mini.sys, { disks: [] }) }), (w, m) => ok("disks: empty -> no extra rows", !/Диск sd/.test(m.textContent) && /Диск \/opt/.test(m.textContent)));
+  await run(mini, (w, m) => ok("disks: absent -> no extra rows", !/Диск sd/.test(m.textContent) && /Диск \/opt/.test(m.textContent)));
   await run(mini, (w, m) => {
     ok("mini: only sys tab", m.querySelectorAll(".us-tab").length === 1 && m.querySelector(".us-tab").getAttribute("data-tab") === "sys");
     ok("mini: sys active", !!m.querySelector(".us-tab.us-on"));
