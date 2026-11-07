@@ -26,7 +26,10 @@ if ! command -v smartctl >/dev/null 2>&1; then
   dk=$(/opt/share/keendash/bin/smart disks | tr '\n' ' ')
   if [ -n "$dk" ]; then
     mkdir -p /tmp/keendash
-    nohup sh -c 'i=0; while [ $i -lt 24 ]; do opkg install smartmontools && exit 0; i=$((i+1)); sleep 5; done' > /tmp/keendash/smart-install.log 2>&1 </dev/null &
+    # a stalled feed must not keep the opkg lock for hours (as in bin/update); 5 minutes of tries while the parent opkg
+    # and keendashd's first update check hold it; then the first reading at once, not at the next tick 5
+    printf 'timeout = 20\ntries = 2\n' > /tmp/keendash/wgetrc
+    WGETRC=/tmp/keendash/wgetrc nohup sh -c 'i=0; while [ $i -lt 60 ]; do opkg install smartmontools && exec /opt/share/keendash/bin/smart now; i=$((i+1)); sleep 5; done' > /tmp/keendash/smart-install.log 2>&1 </dev/null &
     echo "keendash: installing smartmontools in the background for the disk(s): $dk"
   fi
 fi

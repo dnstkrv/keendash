@@ -1903,6 +1903,11 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
       const calls = rd(d, "fake/calls").trim().split("\n");
       ok("bin/smart: -d sat only after a plain try without smart_status; none for an asleep disk or a flash stick; no serial", calls.join() === "sda,sdb,sdb.sat,sdc,sdd,sde,sde.sat,sdg" && !/SECRET/.test(rd(d, "smart")), calls.join());
       ok("bin/smart: writes atomically, prints nothing", !fs.existsSync(path.join(d, "smart.t")) && o === "", o);
+      // within 30 minutes nothing is asked; "now" asks again, but not a disk that had no SMART
+      fs.writeFileSync(path.join(d, "fake/calls"), ""); smart(d);
+      ok("bin/smart: not asked again within 30 minutes", rd(d, "fake/calls") === "", rd(d, "fake/calls"));
+      collect("smart", "now", "", { state: d, env: sysEnv(d), files: { smartctl: fakeCtl } });
+      ok("bin/smart now: asked again, not the disk without SMART", rd(d, "fake/calls").trim().split("\n").join() === "sda,sdb,sdb.sat,sdc,sdd,sdg", rd(d, "fake/calls"));
       d = mk({ sdf: [1, hdd], sde: [0, {}, 2] }, "disk|sdx|Old|1||||||0\n"); smart(d);
       ok("bin/smart: no disk with SMART -> cache removed", rd(d, "smart") === null);
       d = mk({ sda: [0, hdd] }, "disk|sdx|Old|1||||||0\n"); smart(d, "PATH=/usr/bin:/bin ", true);
@@ -2068,13 +2073,13 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
   // sys.disks: [name, model, ok, temp, hours, realloc, pending, wear, asleep]; null = not reported
   await run(Object.assign({}, mini, { sys: Object.assign({}, mini.sys, { disks: [
     ["sda", "Example HDD 4TB", 1, 38, 12345, 8, 0, null, 0], ["sdb", "Example <SSD> 1TB", 1, 31, 900, null, null, 12, 0],
-    ["sdc", "Bad HDD", 0, 40, 5, null, null, null, 0], ["sdd", "Sleepy HDD", 1, null, 77, null, null, null, 1], ["sde", "Hot HDD", 1, 60, 5, 0, 0, null, 0]] }) }), (w, m) => {
+    ["sdc", "Bad HDD", 0, 40, 5, null, null, null, 0], ["sdd", "Sleepy HDD", 1, 58, 77, null, null, null, 1], ["sde", "Hot HDD", 1, 60, 5, 0, 0, null, 0]] }) }), (w, m) => {
     const rows = Array.from(m.querySelectorAll(".us-row")).filter(r => /^Диск sd/.test(r.querySelector(".us-nm").textContent)), t = i => rows[i].querySelector(".us-nm").textContent + " | " + rows[i].querySelector(".us-r").textContent;
     ok("disks: one row each, after Диск /opt", rows.length === 5 && Array.from(m.querySelectorAll(".us-row")).findIndex(r => /^Диск \/opt/.test(r.textContent)) < Array.from(m.querySelectorAll(".us-row")).indexOf(rows[0]), rows.length);
     ok("disks: HDD with sectors", t(0) === "Диск sda · Example HDD 4TB | PASSED · 38 °C · 12 345 ч · сектора 8/0" && rows[0].innerHTML.includes("#f5a623"), t(0));
     ok("disks: SSD with wear, model escaped", t(1) === "Диск sdb · Example <SSD> 1TB | PASSED · 31 °C · 900 ч · износ 12%" && rows[1].innerHTML.includes("&lt;SSD&gt;") && rows[1].innerHTML.includes("#3ecf8e"), rows[1].innerHTML);
     ok("disks: FAILED is red", t(2) === "Диск sdc · Bad HDD | FAILED · 40 °C · 5 ч" && rows[2].innerHTML.includes("#ff6b6b"), t(2));
-    ok("disks: sleeping one", t(3) === "Диск sdd · Sleepy HDD | PASSED · 77 ч · спит", t(3));
+    ok("disks: sleeping one, its old temperature neither shown nor warned about", t(3) === "Диск sdd · Sleepy HDD | PASSED · 77 ч · спит" && rows[3].innerHTML.includes("#3ecf8e"), t(3));
     ok("disks: over 55 °C warns", rows[4].innerHTML.includes("#f5a623"), rows[4].innerHTML);
   });
   await run(Object.assign({}, mini, { sys: Object.assign({}, mini.sys, { disks: [] }) }), (w, m) => ok("disks: empty -> no extra rows", !/Диск sd/.test(m.textContent) && /Диск \/opt/.test(m.textContent)));
