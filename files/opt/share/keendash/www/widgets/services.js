@@ -748,6 +748,7 @@
       ".us-open + .us-open{margin-left:10px}" +
       ".us-sub{display:flex;flex-wrap:wrap;gap:6px}" +
       ".us-mt{background:none;border:1px solid rgba(128,128,128,.35);border-radius:12px;color:inherit;opacity:.7;font:inherit;font-size:12px;padding:2px 10px;cursor:pointer;white-space:nowrap}" +
+      ".us-tab,.us-mt{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}.us-lift{opacity:1;outline:1px dashed currentColor;outline-offset:-2px}" +
       ".us-mt:hover{opacity:1}.us-mt.us-on{opacity:1;border-color:" + ACC + ";color:" + ACC + "}" +
       ".us-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}" +
       ".us-blk{display:flex;flex-direction:column;gap:6px;min-width:0}" +
@@ -866,9 +867,10 @@
       try { localStorage.setItem(TABKEY, tab); } catch (x) {}
       render();
     });
-    /* tabs and media sub-tabs reorder by drag and drop (HTML5: on touch screens it starts with a long press) */
-    var DRAG = ".us-tab,.us-mt";
+    /* tabs and media sub-tabs reorder by drag and drop: HTML5 for a mouse, own touch handling below for a finger */
+    var DRAG = ".us-tab,.us-mt", lp = 0, tx = 0, ty = 0, tt = null;
     bodyEl.addEventListener("dragstart", function (e) {
+      if (lp || tt) { e.preventDefault(); return; } /* a touch has the tab: the browser's own touch drag (Chrome) would fight it */
       tabDrag = e.target.closest ? e.target.closest(DRAG) : null;
       if (!tabDrag || !e.dataTransfer) return;
       e.dataTransfer.effectAllowed = "move";
@@ -883,6 +885,36 @@
       b.parentNode.insertBefore(tabDrag, e.clientX < r.left + r.width / 2 ? b : b.nextSibling);
     });
     bodyEl.addEventListener("drop", function (e) { if (tabDrag) e.preventDefault(); });
+    /* Firefox for Android has no HTML5 drag by touch: a finger held still for 400 ms lifts the tab, then moves it; moved sooner,
+     * the strip scrolls as before */
+    function lpEnd() { clearTimeout(lp); lp = 0; if (tt) tt.classList.remove("us-lift"); tt = null; }
+    bodyEl.addEventListener("touchstart", function (e) {
+      lpEnd();
+      var b = e.touches.length === 1 && e.target.closest ? e.target.closest(DRAG) : null;
+      if (!b) return;
+      tx = e.touches[0].clientX; ty = e.touches[0].clientY;
+      lp = setTimeout(function () { lp = 0; if (b.isConnected) { tt = tabDrag = b; b.classList.add("us-lift"); } }, 400);
+    }, { passive: true });
+    bodyEl.addEventListener("touchmove", function (e) {
+      var p = e.touches[0];
+      if (lp && Math.abs(p.clientX - tx) + Math.abs(p.clientY - ty) > 8) lpEnd();
+      if (!tt) return;
+      e.preventDefault();
+      var el = document.elementFromPoint(p.clientX, p.clientY), b = el && el.closest ? el.closest(DRAG) : null;
+      if (!b || b === tt || b.parentNode !== tt.parentNode) return;
+      var r = b.getBoundingClientRect();
+      b.parentNode.insertBefore(tt, p.clientX < r.left + r.width / 2 ? b : b.nextSibling);
+    }, { passive: false });
+    function touchEnd(e) {
+      var up = !!tt;
+      lpEnd();
+      if (!up) return;
+      if (e.cancelable) e.preventDefault(); /* no click: the dropped tab doesn't open */
+      saveOrder();
+    }
+    bodyEl.addEventListener("touchend", touchEnd);
+    bodyEl.addEventListener("touchcancel", touchEnd);
+    bodyEl.addEventListener("contextmenu", function (e) { if (tt) e.preventDefault(); });
     /* the tab strip has no scrollbar and dragging a tab reorders it: the mouse wheel scrolls it sideways */
     bodyEl.addEventListener("wheel", function (e) {
       var tl = e.target.closest ? e.target.closest(".us-tl") : null, dy = e.deltaMode ? e.deltaY * 16 : e.deltaY;
@@ -891,14 +923,15 @@
       tl.scrollLeft += dy;
       if (tl.scrollLeft !== x) e.preventDefault();
     }, { passive: false });
-    bodyEl.addEventListener("dragend", function () {
+    bodyEl.addEventListener("dragend", saveOrder);
+    function saveOrder() {
       if (!tabDrag) return;
       var mt = tabDrag.classList.contains("us-mt");
       var ids = Array.prototype.map.call(tabDrag.parentNode.querySelectorAll(DRAG), function (b) { return b.getAttribute(mt ? "data-m" : "data-tab"); });
       tabDrag = null;
       try { localStorage.setItem(mt ? MORDKEY : ORDKEY, JSON.stringify(ids)); } catch (x) {}
       render();
-    });
+    }
     content.appendChild(bodyEl);
     attachDrag(r, findHandle(header));
     return r;

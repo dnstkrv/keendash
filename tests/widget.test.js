@@ -443,7 +443,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     ok("ha: no entities -> the note", !m.querySelector(".us-row") && m.querySelector(".us-note").textContent === "Добавьте сущности в поле «Что показывать»", m.innerHTML);
   });
   // media tab: one sub-tab per configured service
-  await run(full, (w, m) => {
+  await run(full, async (w, m) => {
     const click = (sel) => m.querySelector(sel).dispatchEvent(new w.Event("click", { bubbles: true }));
     click('[data-tab="grp:Медиа"]');
     const subs = Array.from(m.querySelectorAll(".us-mt")).map(b => b.textContent);
@@ -475,6 +475,18 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     ok("drag tab: order saved and kept on re-render", ids(".us-tab", "data-tab").startsWith("awg,telemt,firc") && w.localStorage.getItem("ui.services.order").startsWith('["awg","telemt"'), ids(".us-tab", "data-tab"));
     drag('[data-m="qb"]', '[data-m="immich"]');
     ok("drag media sub-tab: own order", ids(".us-mt", "data-m") === "plex,sonarr,radarr,prowlarr,overseerr,immich,qb" && /"qb"\]$/.test(w.localStorage.getItem("ui.services.morder")), ids(".us-mt", "data-m"));
+    // a finger (Firefox for Android has no HTML5 drag by touch): held still 400 ms it lifts the tab and moves it; moved sooner it scrolls
+    const touch = (el, t, x) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.touches = t === "touchend" ? [] : [{ clientX: x, clientY: 10 }]; el.dispatchEvent(e); return e; };
+    let under = null; w.document.elementFromPoint = () => under;
+    let ft = m.querySelector('[data-tab="firc"]'); const before = ids(".us-tab", "data-tab");
+    touch(ft, "touchstart", 10); touch(ft, "touchmove", 40); await new Promise(r => setTimeout(r, 450));
+    ok("touch tab: moved at once it is a scroll, nothing lifted", !m.querySelector(".us-lift") && !touch(ft, "touchend", 40).defaultPrevented && ids(".us-tab", "data-tab") === before);
+    ft = m.querySelector('[data-tab="firc"]'); touch(ft, "touchstart", 10); await new Promise(r => setTimeout(r, 450));
+    ok("touch tab: held still it lifts", ft.classList.contains("us-lift"), ft.className);
+    under = m.querySelector('[data-tab="awg"]');
+    ok("touch tab: the move keeps the page still", touch(ft, "touchmove", -1).defaultPrevented);
+    const upE = touch(ft, "touchend", -1);
+    ok("touch tab: dropped before awg, order saved, no click", upE.defaultPrevented && ids(".us-tab", "data-tab").startsWith("firc,awg,telemt") && w.localStorage.getItem("ui.services.order").startsWith('["firc","awg","telemt"') && !m.querySelector(".us-lift"), ids(".us-tab", "data-tab"));
     w.localStorage.setItem("ui.services.order", '["sys","gone"]'); click('[data-tab="grp:Медиа"]');
     ok("saved order first, unsaved tabs after in default order", ids(".us-tab", "data-tab") === "sys,telemt,awg,firc,nfqws,hydra,grp:AdGuard,grp:Медиа,ascn", ids(".us-tab", "data-tab"));
     // jsdom has no layout: the strip's scroll range is faked, 0..100
