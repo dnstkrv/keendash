@@ -2081,6 +2081,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     ok("disks: FAILED is red", t(2) === "Диск sdc · Bad HDD | FAILED · 40 °C · 5 ч" && rows[2].innerHTML.includes("#ff6b6b"), t(2));
     ok("disks: sleeping one, its old temperature neither shown nor warned about", t(3) === "Диск sdd · Sleepy HDD | PASSED · 77 ч · спит" && rows[3].innerHTML.includes("#3ecf8e"), t(3));
     ok("disks: over 55 °C warns", rows[4].innerHTML.includes("#f5a623"), rows[4].innerHTML);
+    ok("disks: rows wrap instead of hiding the model", rows.every(r => r.classList.contains("us-wrap")) && /\.us-wrap\{flex-wrap:wrap/.test(w.document.getElementById("us-style").textContent), rows[0].className);
   });
   await run(Object.assign({}, mini, { sys: Object.assign({}, mini.sys, { disks: [] }) }), (w, m) => ok("disks: empty -> no extra rows", !/Диск sd/.test(m.textContent) && /Диск \/opt/.test(m.textContent)));
   await run(mini, (w, m) => ok("disks: absent -> no extra rows", !/Диск sd/.test(m.textContent) && /Диск \/opt/.test(m.textContent)));

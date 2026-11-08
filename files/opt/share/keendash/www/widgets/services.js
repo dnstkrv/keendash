@@ -119,8 +119,8 @@
   function note(text) { return '<div class="us-note">' + text + "</div>"; }
   function sec(text) { return '<div class="us-sec">' + text + "</div>"; }
   function dot(c) { return '<i class="us-dot" style="background:' + c + '"></i>'; }
-  function line(color, left, right, dim) {
-    return '<div class="us-row' + (dim ? " us-dim" : "") + '">' + dot(color) + '<span class="us-nm">' + left + '</span><span class="us-r">' + right + "</span></div>";
+  function line(color, left, right, dim, cls) {
+    return '<div class="us-row' + (dim ? " us-dim" : "") + (cls ? " " + cls : "") + '">' + dot(color) + '<span class="us-nm">' + left + '</span><span class="us-r">' + right + "</span></div>";
   }
   function last(a) { return a && a.length ? a[a.length - 1] : null; }
   function div(a, k) { return (a || []).map(function (x) { return x / k; }); }
@@ -586,7 +586,8 @@
         if (k[5] !== null || k[6] !== null) r.push("сектора " + (k[5] || 0) + "/" + (k[6] || 0));
         if (k[7] !== null) r.push("износ " + k[7] + "%");
         if (k[8]) r.push("спит");
-        return line(c, "Диск " + esc(k[0]) + " · " + esc(k[1]), r.join(" · "));
+        // us-wrap: on a narrow card the figures go to a second line instead of squeezing the model out
+        return line(c, "Диск " + esc(k[0]) + " · " + esc(k[1]), r.join(" · "), false, "us-wrap");
       }).join("") +
       line(OK, "Оперативная память", y.memtotal + " МБ всего") +
       line(OK, "Аптайм роутера", fmtDur(y.up));
@@ -757,7 +758,7 @@
       ".us-row{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.us-dim{opacity:.55}" +
       ".us-bar{height:6px;border-radius:3px;background:rgba(128,128,128,.25);overflow:hidden}.us-bar i{display:block;height:100%}" +
       ".us-hist{display:flex;gap:2px;height:6px}.us-hist i{flex:1 1 0;max-width:12px;border-radius:1px}.us-hu{background:" + OK + "}.us-hd{background:" + BAD + "}.us-hp{background:" + OFF + "}" +
-      ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+      ".us-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.us-wrap{flex-wrap:wrap;row-gap:2px}" +
       ".us-r{margin-left:auto;opacity:.75;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:8px}" +
       ".us-tag{font-size:11px;opacity:.7;border:1px solid rgba(128,128,128,.4);border-radius:4px;padding:0 5px;margin-left:4px}" +
       /* the whole picture at its own ratio, never cropped or stretched (an iframe has none: 16/9) */
