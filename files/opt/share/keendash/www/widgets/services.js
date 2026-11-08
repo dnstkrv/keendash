@@ -950,13 +950,34 @@
     if (ref) { if (placeholder.parentNode !== best || placeholder.nextSibling !== ref) best.insertBefore(placeholder, ref); }
     else if (placeholder.parentNode !== best || placeholder.nextSibling) best.appendChild(placeholder);
   }
+  /* a dragged card held near the top or bottom edge of what's visible scrolls its scroll box, as the firmware's own cards do;
+   * again() re-places the dragged card, since the content moved under a still pointer */
+  function autoScroll(el, again) {
+    var sc = el.parentNode, y = -1, raf = 0, E = 60;
+    while (sc && sc.nodeType === 1 && sc !== document.body && !(sc.scrollHeight > sc.clientHeight && /auto|scroll/.test(getComputedStyle(sc).overflowY))) sc = sc.parentNode;
+    if (!sc || sc.nodeType !== 1 || sc === document.body) sc = document.scrollingElement || document.documentElement;
+    function tick() {
+      raf = 0;
+      if (y < 0) return;
+      var win = sc === (document.scrollingElement || document.documentElement), b = win ? { top: 0, bottom: innerHeight } : sc.getBoundingClientRect(),
+        top = Math.max(0, b.top), bot = Math.min(innerHeight, b.bottom), d = y < top + E ? y - top - E : y > bot - E ? y - bot + E : 0, was = sc.scrollTop;
+      if (!d) return;
+      sc.scrollTop = was + Math.max(-E, Math.min(E, d)) / 3; /* up to 20 px a frame, faster closer to the edge */
+      raf = requestAnimationFrame(tick);
+      if (sc.scrollTop !== was) again();
+    }
+    return {
+      at: function (cy) { y = cy; if (!raf) raf = requestAnimationFrame(tick); },
+      stop: function () { y = -1; if (raf) cancelAnimationFrame(raf); raf = 0; }
+    };
+  }
   function attachDrag(r, handle) {
     handle.style.touchAction = "none";
     handle.style.cursor = "grab";
     handle.addEventListener("pointerdown", function (ev) {
       if (ev.pointerType === "mouse" && ev.button !== 0) return;
       ev.preventDefault();
-      var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false;
+      var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, last, as = autoScroll(r, function () { move(last); });
       try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
       function begin() {
         started = true; dragging = true;
@@ -972,8 +993,10 @@
         if (!started) { if (Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 5) return; begin(); }
         r.style.left = (e.clientX - offX) + "px"; r.style.top = (e.clientY - offY) + "px";
         place(e.clientX, e.clientY);
+        last = { clientX: e.clientX, clientY: e.clientY }; as.at(e.clientY);
       }
       function end() {
+        as.stop();
         handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end);
         try { handle.releasePointerCapture(ev.pointerId); } catch (e) {}
         if (!started) return;
@@ -1263,7 +1286,7 @@
       pageSk = ""; /* the drag changes the DOM: the next draw is a whole one */
       if (busy()) return; /* a name field or a menu is open: no preventDefault, so the field blurs and saves */
       ev.preventDefault();
-      var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, ph, lay = r.parentNode, grids = r.hasAttribute("data-g") ? [lay] : Array.prototype.slice.call(page.querySelectorAll(".kd-lay")), rw = +r.getAttribute("data-w");
+      var rect = r.getBoundingClientRect(), sx = ev.clientX, sy = ev.clientY, offX = sx - rect.left, offY = sy - rect.top, started = false, ph, lay = r.parentNode, grids = r.hasAttribute("data-g") ? [lay] : Array.prototype.slice.call(page.querySelectorAll(".kd-lay")), rw = +r.getAttribute("data-w"), last, as = autoScroll(r, function () { move(last); });
       try { handle.setPointerCapture(ev.pointerId); } catch (e) {}
       function kids() { return Array.prototype.filter.call(lay.children, function (k) { return k !== r && k.classList.contains("kd-item"); }); }
       function move(e) {
@@ -1289,8 +1312,10 @@
         ph.setAttribute("data-x", col < 0 ? "" : col);
         if (ref) { if (ph.nextSibling !== ref) lay.insertBefore(ph, ref); } else if (ph.parentNode !== lay || ph.nextSibling) lay.appendChild(ph);
         placeAll();
+        last = { clientX: e.clientX, clientY: e.clientY }; as.at(e.clientY);
       }
       function end(e) {
+        as.stop();
         handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end);
         try { handle.releasePointerCapture(ev.pointerId); } catch (x) {}
         if (!started) return;

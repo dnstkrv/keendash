@@ -2748,6 +2748,26 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     const [rev, txt] = await sent(w, fcalls);
     ok("drag: below the cards of column 1 the card goes last with x 1", /^keendash 1 [a-z0-9]{12}\ncard sys 1 0 1\ncard awg 1 0 2\ncard hydra 1 0 0\ncard telemt 1 0 1\nend\n$/.test(txt), txt);
   }, fm(fcalls, { base: D1 }), URL0);
+  // a card held near the bottom edge of the scrolling content scrolls it, away from the edge or dropped it stops
+  fcalls = [];
+  await run(D1, async w => {
+    const p = await openPage(w), c = id => p.querySelector('[data-id="' + id + '"]'), main = w.document.querySelector(".layout__content__main");
+    main.style.overflowY = "auto"; Object.defineProperty(main, "scrollHeight", { value: 2000 }); Object.defineProperty(main, "clientHeight", { value: 400 }); rc(main, 0, 0, 900, 400);
+    Array.from(p.querySelectorAll(".kd-item,.kd-lay")).forEach(e => rc(e, 5000, 5000, 10, 10));
+    rc(p.querySelector(".kd-lay"), 0, 0, 900, 400); rc(c("telemt"), 0, 0, 290, 100); rc(c("sys"), 300, 0, 290, 100); rc(c("awg"), 600, 0, 290, 100); rc(c("hydra"), 0, 124, 290, 100);
+    const h = c("telemt").querySelector(".kd-drag"), fire = (t, x, y) => { const e = new w.Event(t, { bubbles: true, cancelable: true }); e.clientX = x; e.clientY = y; e.pointerId = 1; e.pointerType = "mouse"; e.button = 0; h.dispatchEvent(e); };
+    fire("pointerdown", 10, 10); fire("pointermove", 100, 200); await wait(100);
+    ok("autoscroll: nothing in the middle", main.scrollTop === 0, main.scrollTop);
+    fire("pointermove", 100, 390); await wait(150);
+    const s1 = main.scrollTop;
+    ok("autoscroll: near the bottom edge it scrolls down", s1 > 20, s1);
+    fire("pointermove", 100, 200); await wait(100); const s2 = main.scrollTop; await wait(100);
+    ok("autoscroll: back in the middle it stops", main.scrollTop === s2, s2 + " " + main.scrollTop);
+    fire("pointermove", 100, 5); await wait(100);
+    ok("autoscroll: near the top edge it scrolls up", main.scrollTop < s2, s2 + " " + main.scrollTop);
+    fire("pointerup", 100, 5); const s3 = main.scrollTop; await wait(100);
+    ok("autoscroll: the drop stops it", main.scrollTop === s3, s3 + " " + main.scrollTop);
+  }, fm(fcalls, { base: D1 }), URL0);
   // groups: «Новая группа», rename, «Разгруппировать»
   const key = (w, el, k) => el.dispatchEvent(new w.KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
   const L1 = [["c", "sys", 1, 0, "0", ""], ["g", "g1", 3, 0, "0", "Дом"], ["c", "awg", 1, 0, "0", "g1"]];
