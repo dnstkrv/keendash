@@ -1,7 +1,8 @@
 #!/bin/sh
 # SMART of the attached HDDs/SSDs for the System card (bin/tick 5, needs smartmontools).
 #   smart disks - sd* block devices that are not removable (USB flash sticks say removable=1)
-#   smart [now] - (now: without the 30-minute wait) $D/smart: "disk|name|model|ok|temp|hours|realloc|pending|wear|asleep" per disk that answers SMART
+#   smart [now] - (now: without the 30-minute wait) $D/smart: "disk|name|model|ok|temp|hours|realloc|pending|wear|asleep|label" per disk that answers SMART
+#   (label = partition labels and, without a SMART model, "manufacturer product": the names of Keenetic's Накопители page, via RCI)
 PATH=/opt/sbin:/opt/bin:/usr/sbin:/usr/bin:/sbin:/bin
 SYS=${KEENDASH_SYS:-/sys}
 D=${KEENDASH_TMP:-/tmp/keendash}
@@ -15,8 +16,8 @@ command -v smartctl >/dev/null 2>&1 || { rm -f "$D/smart"; exit 0; }
 touch "$D/smart.at"
 old=$(cat "$D/smart" 2>/dev/null)
 : > "$D/smart.t"
-# -n standby,9: a sleeping disk is not woken, smartctl exits 9 instead
-try() { j=$(smartctl -n standby,9 -j -H -A -l devstat "$@" "/dev/$n" 2>/dev/null); rc=$?; f=$(printf '%s\n' "$j" | "${0%/*}/keendashd" json); }
+# -n standby,9: a sleeping disk is not woken, smartctl exits 9 instead; model_name is in the JSON only with -i
+try() { j=$(smartctl -n standby,9 -j -i -H -A -l devstat "$@" "/dev/$n" 2>/dev/null); rc=$?; f=$(printf '%s\n' "$j" | "${0%/*}/keendashd" json); }
 for n in $(disks); do
   grep -qx "$n" "$D/smart.no" 2>/dev/null && continue
   try
@@ -45,4 +46,18 @@ for n in $(disks); do
       print "disk|" n "|" (m != "" ? m : fam) "|" ok "|" t "|" h "|" re "|" pe "|" (w != "" ? w : w2) "|0"
     }' >> "$D/smart.t"
 done
-if [ -s "$D/smart.t" ]; then mv "$D/smart.t" "$D/smart"; else rm -f "$D/smart.t" "$D/smart"; fi
+if [ -s "$D/smart.t" ]; then
+  # one RCI pass for all lines, asleep ones too: kernel name -> "name|labels|manufacturer product" (no RCI: lines get an empty label)
+  r="${0%/*}/rci"
+  { "$r" show/usb; "$r" show/media; } | awk -F'\t' '
+    { split($1, k, "."); v = $2; gsub(/[|\t]/, " ", v) }
+    k[3] == "DEVPATH" { sub(/.*\//, "", v); dev[k[2]] = v }
+    k[2] == "manufacturer" { mf[k[1]] = v } k[2] == "product" { pr[k[1]] = v }
+    k[2] == "partition" && k[4] == "label" && v != "" { lb[k[1]] = lb[k[1]] (lb[k[1]] != "" ? ", " : "") v }
+    END { for (m in dev) { s = mf[m] " " pr[m]; gsub(/^ +| +$/, "", s); print dev[m] "|" lb[m] "|" s } }' > "$D/smart.m"
+  awk -F'|' -v OFS='|' -v f="$D/smart.m" '
+    BEGIN { while ((getline l < f) > 0) { split(l, a, "|"); lb[a[1]] = a[2]; md[a[1]] = a[3] } }
+    { $11 = lb[$2]; if ($3 == "") $3 = md[$2]; print }' "$D/smart.t" > "$D/smart.u" && mv "$D/smart.u" "$D/smart.t"
+  rm -f "$D/smart.m" "$D/smart.u"
+  mv "$D/smart.t" "$D/smart"
+else rm -f "$D/smart.t" "$D/smart"; fi

@@ -1,0 +1,4 @@
+{
+  "Media0": { "manufacturer": "Example", "product": "USB Disk", "partition": { "Partition1": { "label": "Data" }, "Partition2": { "label": "" }, "Partition3": { "label": "Backup" } } },
+  "Media1": { "manufacturer": "", "product": "", "partition": { "Partition1": { "label": "Photos|1" } } }
+}

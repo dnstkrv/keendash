@@ -578,7 +578,7 @@
     h = '<div class="us-grid">' + blocks + "</div>" +
       line(y.disk > 90 ? BAD : OK, "Диск /opt", y.disk + "% · свободно " + y.free + " МБ") +
       (y.disks || []).map(function (k) {
-        // [name, model, ok, temp, hours, realloc, pending, wear, asleep]
+        // [name, model, ok, temp, hours, realloc, pending, wear, asleep, label]
         // a sleeping disk's temperature is an old one: not shown
         var t = k[8] ? null : k[3], c = !k[2] ? BAD : (k[5] > 0 || k[6] > 0 || t > 55 ? WARN : OK), r = [k[2] ? "PASSED" : "FAILED"];
         if (t !== null) r.push(t + " °C");
@@ -587,7 +587,7 @@
         if (k[7] !== null) r.push("износ " + k[7] + "%");
         if (k[8]) r.push("спит");
         // us-wrap: on a narrow card the figures go to a second line instead of squeezing the model out
-        return line(c, "Диск " + esc(k[0]) + " · " + esc(k[1]), r.join(" · "), false, "us-wrap");
+        return line(c, "Диск " + esc(k[9] || k[0]) + (k[1] ? " · " + esc(k[1]) : ""), r.join(" · "), false, "us-wrap");
       }).join("") +
       line(OK, "Оперативная память", y.memtotal + " МБ всего") +
       line(OK, "Аптайм роутера", fmtDur(y.up));

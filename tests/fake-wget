@@ -245,6 +245,8 @@ case "$u" in
   *//npm.test/*certificates) f=net/npm_certificates ;;
   */rci/show/interface) f=rci/interface ;;
   */rci/show/ip/http/proxy) f=rci/proxy ;;
+  */rci/show/usb) f=rci/usb ;;
+  */rci/show/media) f=rci/media ;;
   */rci/) f=rci/system_name ;;
   */api/tunnels/all) f=awg/tunnels_all ;;
   */api/singbox/tunnels) f=awg/singbox_tunnels ;;

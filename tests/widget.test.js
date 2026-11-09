@@ -1889,7 +1889,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
       const ssd = { model_name: "Example SSD 1TB", smart_status: { passed: false }, temperature: { current: 31 }, power_on_time: { hours: 900 }, endurance_used: { current_percent: 12 }, ata_smart_attributes: { table: [attr(5, 0), attr(197, 2)] } };
       const nvme = { model_family: "Example|Family", smart_status: { passed: true }, nvme_smart_health_information_log: { percentage_used: 3 } };
       const nosmart = { json_format_version: [1, 0] };
-      const fakeCtl = '#!/bin/sh\nfor a; do dev=${a#/dev/}; done\ns=; case " $* " in *" -d sat "*) s=.sat;; esac\necho "$dev$s" >> "$KEENDASH_TMP/fake/calls"\nf=$KEENDASH_TMP/fake/$dev$s\n[ -f "$f.json" ] && cat "$f.json"\nrc=0; [ -f "$f.rc" ] && rc=$(cat "$f.rc")\nexit $rc\n';
+      const fakeCtl = '#!/bin/sh\nfor a; do dev=${a#/dev/}; done\ns=; case " $* " in *" -d sat "*) s=.sat;; esac\necho "$dev$s" >> "$KEENDASH_TMP/fake/calls"\nf=$KEENDASH_TMP/fake/$dev$s\n[ -f "$f.json" ] && { case " $* " in *" -i "*) cat "$f.json";; *) sed -E \'s/"model_(name|family)":"[^"]*",?//g\' "$f.json";; esac; }\nrc=0; [ -f "$f.rc" ] && rc=$(cat "$f.rc")\nexit $rc\n';
       // disks: name -> [removable, plain answer, plain exit code, answer with -d sat]
       const mk = (disks, cache) => {
         const d = state(); fs.mkdirSync(path.join(d, "fake"));
@@ -1911,7 +1911,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
       let d = mk(disks, "disk|sdc|Example Old|1|40|5000|0|0||0\ndisk|sdx|Gone|1||||||0\n"), o = smart(d);
       ok("bin/smart disks: only removable=0", collect("smart", "disks", "", { state: d, env: sysEnv(d) }) === "sda\nsdb\nsdc\nsdd\nsde\nsdg\n");
       ok("bin/smart: the cache lines (HDD, -d sat SSD, asleep keeps the old line, no SMART skipped)", rd(d, "smart") ===
-        "disk|sda|Example HDD 4TB|1|38|12345|8|0||0\ndisk|sdb|Example SSD 1TB|0|31|900|0|2|12|0\ndisk|sdc|Example Old|1|40|5000|0|0||1\ndisk|sdg|Example Family|1|||||3|0\n", rd(d, "smart"));
+        "disk|sda|Example HDD 4TB|1|38|12345|8|0||0|Data, Backup\ndisk|sdb|Example SSD 1TB|0|31|900|0|2|12|0|\ndisk|sdc|Example Old|1|40|5000|0|0||1|Photos 1\ndisk|sdg|Example Family|1|||||3|0|\n", rd(d, "smart"));
       const calls = rd(d, "fake/calls").trim().split("\n");
       ok("bin/smart: -d sat only after a plain try without smart_status; none for an asleep disk or a flash stick; no serial", calls.join() === "sda,sdb,sdb.sat,sdc,sdd,sde,sde.sat,sdg" && !/SECRET/.test(rd(d, "smart")), calls.join());
       ok("bin/smart: writes atomically, prints nothing", !fs.existsSync(path.join(d, "smart.t")) && o === "", o);
@@ -1924,6 +1924,11 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
       ok("bin/smart: no disk with SMART -> cache removed", rd(d, "smart") === null);
       d = mk({ sda: [0, hdd] }, "disk|sdx|Old|1||||||0\n"); smart(d, "PATH=/usr/bin:/bin ", true);
       ok("bin/smart: no smartctl -> cache removed", rd(d, "smart") === null);
+      // Keenetic's names (RCI show/usb + show/media, tests/fixtures/rci): the labels always, "manufacturer product" only for an empty SMART model; none without RCI
+      d = mk({ sda: [0, { smart_status: { passed: true } }] }); smart(d);
+      ok("bin/smart: empty SMART model -> Keenetic's manufacturer + product, labels joined, empty one skipped", rd(d, "smart") === "disk|sda|Example USB Disk|1||||||0|Data, Backup\n", rd(d, "smart"));
+      d = mk({ sda: [0, hdd] }); collect("smart", "", "", { state: d, env: sysEnv(d), files: { smartctl: fakeCtl }, edit: x => x.replace('r="${0%/*}/rci"', "r=false") });
+      ok("bin/smart: RCI failing -> the line as before plus an empty label", rd(d, "smart") === "disk|sda|Example HDD 4TB|1|38|12345|8|0||0|\n" && !fs.existsSync(path.join(d, "smart.m")), rd(d, "smart"));
       // bin/stats ends with the cache lines
       d = mk({}, "disk|sda|Example HDD 4TB|1|38|12345|8|0||0\n");
       o = collect("stats", "", "", { state: d, edit: x => x.replace(/^(HAS_\w+)=0;.*$/gm, "$1=0") });
@@ -1966,7 +1971,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     // keendashd status: stats/services output -> the card's JSON; broken numbers become 0/null, strings are escaped
     const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));
     fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "awg_nokey 1", "telemt_ok 1", "telemt_conn 12", "telemt_users x", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
-      "sys_load 007", "sys_temp", "disk|sda|Example \"HDD\" 4TB|1|38|12345|8|||0", "disk|sdb|Example SSD|0|||||12|1", "ts_running 1", "ts_online 1", "tss|Running|router|100.64.0.1|waw||0||", "tsp|pc|windows|1|1|1||0001-01-01T00:00:00Z|10|20|0|0|"].join("\n") + "\n");
+      "sys_load 007", "sys_temp", "disk|sda|Example \"HDD\" 4TB|1|38|12345|8|||0|Data \"1\"", "disk|sdb|Example SSD|0|||||12|1", "ts_running 1", "ts_online 1", "tss|Running|router|100.64.0.1|waw||0||", "tsp|pc|windows|1|1|1||0001-01-01T00:00:00Z|10|20|0|0|"].join("\n") + "\n");
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
     fs.writeFileSync(path.join(sd, "upd.new"), "9.9.9\n");
@@ -1987,7 +1992,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
       ok("keendashd status: strings escaped", eq(s.telemt.list, [['alice "a"\\b', 3, 100, 200]]), JSON.stringify(s.telemt.list));
       ok("keendashd status: empty fields 0 / null", eq(s.awg.px, [["home", "freeturn-server", 1, 0, null, ""]]), JSON.stringify(s.awg.px));
       ok("keendashd status: 007 -> 7, empty temp -> null", s.sys.load === 7 && s.sys.temp === null, JSON.stringify(s.sys));
-      ok("keendashd status: sys.disks, empty fields null", eq(s.sys.disks, [["sda", 'Example "HDD" 4TB', 1, 38, 12345, 8, null, null, 0], ["sdb", "Example SSD", 0, null, null, null, null, 12, 1]]), JSON.stringify(s.sys.disks));
+      ok("keendashd status: sys.disks, empty fields null", eq(s.sys.disks, [["sda", 'Example "HDD" 4TB', 1, 38, 12345, 8, null, null, 0, 'Data "1"'], ["sdb", "Example SSD", 0, null, null, null, null, 12, 1, ""]]), JSON.stringify(s.sys.disks));
       ok("keendashd status: graph history, broken lines skipped", eq(s.series.sys_load, [10, 20, 30]) && eq(s.series.awg_bytes, []), JSON.stringify(s.series.sys_load));
       ok("keendashd status: Tailscale", s.ts.run === 1 && s.ts.online === 1 && s.ts.total === 0 && eq(s.ts.self, [["Running", "router", "100.64.0.1", "waw", "", 0, "", ""]]) &&
         eq(s.ts.list, [["pc", "windows", 1, 1, 1, "", "0001-01-01T00:00:00Z", 10, 20, 0, 0, ""]]), JSON.stringify(s.ts));
@@ -2082,16 +2087,20 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     ok("issue1: link on nfqws2, not lighttpd", links.length === 1 && links[0].textContent.trim().startsWith("nfqws2") && links[0].href === "http://192.168.0.1:8090/", links.map(a => a.textContent).join());
     ok("issue1: 2 chips", m.querySelectorAll(".us-body > .us-chips:first-child .us-chip").length === 2);
   });
-  // sys.disks: [name, model, ok, temp, hours, realloc, pending, wear, asleep]; null = not reported
+  // sys.disks: [name, model, ok, temp, hours, realloc, pending, wear, asleep, label]; null = not reported
   await run(Object.assign({}, mini, { sys: Object.assign({}, mini.sys, { disks: [
     ["sda", "Example HDD 4TB", 1, 38, 12345, 8, 0, null, 0], ["sdb", "Example <SSD> 1TB", 1, 31, 900, null, null, 12, 0],
-    ["sdc", "Bad HDD", 0, 40, 5, null, null, null, 0], ["sdd", "Sleepy HDD", 1, 58, 77, null, null, null, 1], ["sde", "Hot HDD", 1, 60, 5, 0, 0, null, 0]] }) }), (w, m) => {
-    const rows = Array.from(m.querySelectorAll(".us-row")).filter(r => /^Диск sd/.test(r.querySelector(".us-nm").textContent)), t = i => rows[i].querySelector(".us-nm").textContent + " | " + rows[i].querySelector(".us-r").textContent;
-    ok("disks: one row each, after Диск /opt", rows.length === 5 && Array.from(m.querySelectorAll(".us-row")).findIndex(r => /^Диск \/opt/.test(r.textContent)) < Array.from(m.querySelectorAll(".us-row")).indexOf(rows[0]), rows.length);
+    ["sdc", "Bad HDD", 0, 40, 5, null, null, null, 0], ["sdd", "Sleepy HDD", 1, 58, 77, null, null, null, 1], ["sde", "Hot HDD", 1, 60, 5, 0, 0, null, 0],
+    ["sdf", "WDC WD10JPVX", 1, 30, 1, null, null, null, 0, "Data"], ["sdg", "", 1, 30, 1, null, null, null, 0, "Data, <b>x</b>"], ["sdh", "", 1, 30, 1, null, null, null, 0, ""]] }) }), (w, m) => {
+    const rows = Array.from(m.querySelectorAll(".us-row")).filter(r => /^Диск (sd|Data)/.test(r.querySelector(".us-nm").textContent)), t = i => rows[i].querySelector(".us-nm").textContent + " | " + rows[i].querySelector(".us-r").textContent;
+    ok("disks: one row each, after Диск /opt", rows.length === 8 && Array.from(m.querySelectorAll(".us-row")).findIndex(r => /^Диск \/opt/.test(r.textContent)) < Array.from(m.querySelectorAll(".us-row")).indexOf(rows[0]), rows.length);
     ok("disks: HDD with sectors", t(0) === "Диск sda · Example HDD 4TB | PASSED · 38 °C · 12 345 ч · сектора 8/0" && rows[0].innerHTML.includes("#f5a623"), t(0));
     ok("disks: SSD with wear, model escaped", t(1) === "Диск sdb · Example <SSD> 1TB | PASSED · 31 °C · 900 ч · износ 12%" && rows[1].innerHTML.includes("&lt;SSD&gt;") && rows[1].innerHTML.includes("#3ecf8e"), rows[1].innerHTML);
     ok("disks: FAILED is red", t(2) === "Диск sdc · Bad HDD | FAILED · 40 °C · 5 ч" && rows[2].innerHTML.includes("#ff6b6b"), t(2));
     ok("disks: sleeping one, its old temperature neither shown nor warned about", t(3) === "Диск sdd · Sleepy HDD | PASSED · 77 ч · спит" && rows[3].innerHTML.includes("#3ecf8e"), t(3));
+    ok("disks: label replaces the name, model after it", t(5).startsWith("Диск Data · WDC WD10JPVX | "), t(5));
+    ok("disks: label escaped, empty model -> no dangling dot", t(6).startsWith("Диск Data, <b>x</b> | ") && rows[6].innerHTML.includes("&lt;b&gt;x&lt;/b&gt;") && !rows[6].querySelector("b"), rows[6].innerHTML);
+    ok("disks: no label and no model -> just the name", t(7).startsWith("Диск sdh | "), t(7));
     ok("disks: over 55 °C warns", rows[4].innerHTML.includes("#f5a623"), rows[4].innerHTML);
     ok("disks: rows wrap instead of hiding the model", rows.every(r => r.classList.contains("us-wrap")) && /\.us-wrap\{flex-wrap:wrap/.test(w.document.getElementById("us-style").textContent), rows[0].className);
   });

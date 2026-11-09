@@ -318,7 +318,7 @@ static void status(buf *o) {
   bs(o, ",\"self\":["); rows(o, &S, "tss", "sssssnss");
   bs(o, "],\"list\":["); rows(o, &S, "tsp", "ssnnnssnnnns");
   bs(o, "]},\"sys\":{"); kv(o, &S, "load=sys_load mem=sys_mem memtotal=sys_memtotal temp=?sys_temp disk=sys_disk free=sys_free up=sys_uptime");
-  bs(o, ",\"disks\":["); rows(o, &S, "disk", "ssnNNNNNn");
+  bs(o, ",\"disks\":["); rows(o, &S, "disk", "ssnNNNNNns");
   bs(o, "]},\"series\":{");
   static const char *ser[] = { "telemt_conn", "telemt_octets", "awg_bytes", "awg_up", "firc_domains", "ascn_ips", "ascn_honeypot",
                                "nfq_pkts", "nfq_auto", "hr_ips", "ts_bytes", "ts_online", "sys_load", "sys_mem", "sys_temp" };

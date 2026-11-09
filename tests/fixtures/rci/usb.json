@@ -1,0 +1,6 @@
+{
+  "device": {
+    "Media0": { "DEVPATH": "/devices/platform/example/usb1/1-1/1-1:1.0/host0/target0:0:0/0:0:0:0/block/sda" },
+    "Media1": { "DEVPATH": "/devices/platform/example/usb1/1-2/1-2:1.0/host1/target1:0:0/1:0:0:0/block/sdc" }
+  }
+}
