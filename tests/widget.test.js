@@ -968,6 +968,19 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     fs.rmSync(tmp, { recursive: true, force: true });
     return out;
   }
+  // services --discover: KEENDASH_INITD and KEENDASH_NS (comm|addr|port lines instead of /proc) in a scratch dir; the fake wget logs the probes
+  {
+    const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kd-d-")), s = unix(sd);
+    fs.mkdirSync(path.join(sd, "init.d"));
+    [["S10web-a", "webd"], ["S11web-b", "webd"], ["S51dropbear", "dropbear"], ["S52openssh", "sshd"]].forEach(([n, p]) => fs.writeFileSync(path.join(sd, "init.d", n), "ENABLED=yes\nPROCS=" + p + "\n"));
+    fs.writeFileSync(path.join(sd, "ns"), "webd|0.0.0.0|8080\ndropbear|0.0.0.0|222\ndropbear|192.168.0.1|22\nsshd|0.0.0.0|2200\n");
+    collect("services", "--discover", "", { state: sd, env: 'KEENDASH_INITD="' + s + '/init.d" KEENDASH_NS="' + s + '/ns" ' });
+    const lg = fs.readFileSync(path.join(sd, "log"), "utf8").split("\n").filter(Boolean), lk = fs.readFileSync(path.join(sd, "links"), "utf8");
+    ok("services --discover: no probe of dropbear and sshd ports", lg.length > 0 && !lg.some(l => /:(222|22|2200)\/$/.test(l)), JSON.stringify(lg));
+    ok("services --discover: a port shared by two services is probed once", lg.filter(l => /:8080\/$/.test(l)).length === 1, JSON.stringify(lg));
+    ok("services --discover: every service on the port gets its cache line with the title", lk === "web-a|8080|Fake UI\nweb-b|8080|Fake UI\n", JSON.stringify(lk));
+    fs.rmSync(sd, { recursive: true, force: true });
+  }
   {
     const out = collect("ext.d/agh", "", "", { env: "URL=http://192.168.1.10:3000/ USER=u PASS=p " });
     const want = ["ok 1", "q 52310", "b 7840", "ms 18", "days 0", "top|ads.example.com|812", "top|pixel.example.com|64",

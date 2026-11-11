@@ -18,6 +18,9 @@ case "$u" in
     [ -z "$t" ] || [ "$t" = Tk0123456789abcdefghijklmnopqrstuvWXYZ ] || { printf '  HTTP/1.1 403 Forbidden\n  X-Detail: 0x2312, not identified\n' >&2; exit 8; } ;;
   # awg-manager with its login on (AWG_KEY): only its API key passes. Requests go to $LOG
   http://127.0.0.1:2222/api/*) echo "awg /${u#*/api/}" >> "${LOG:-/dev/null}"; [ -z "$AWG_KEY" ] || need "Authorization: Bearer $AWG_KEY" ;;
+  # services --discover probes (-S -O <file> http://127.0.0.1:<port>/): every one goes to $LOG; answers a page titled "Fake UI"
+  http://127.0.0.1:[0-9]*/) echo "disc $u" >> "${LOG:-/dev/null}"; printf '  HTTP/1.1 200 OK\n' >&2
+    while [ $# -gt 1 ]; do [ "$1" = -O ] && echo "<html><title>Fake UI</title></html>" > "$2"; shift; done; exit 0 ;;
   # availability check: up.test answers 200, bad.test 503, down.test not at all, slow.test after 1 s. Requests go to $LOG; UPBUMP moves the fake uptime file by 120 ms
   *//up.test[:/]* | *//bad.test[:/]* | *//down.test[:/]* | *//slow.test[:/]*)
     echo "check$a" >> "${LOG:-/dev/null}"
