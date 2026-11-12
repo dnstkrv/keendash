@@ -17,7 +17,7 @@ NF_DIR=""; for d in /opt/etc/nfqws2 /opt/etc/nfqws; do [ -d "$d" ] && { NF_DIR=$
 NF_PID=$(pidof nfqws2 2>/dev/null || pidof nfqws 2>/dev/null); NF_PID=${NF_PID%% *}
 HAS_NFQWS=0; { [ -n "$NF_DIR" ] || [ -n "$NF_PID" ]; } && HAS_NFQWS=1
 HR_PID=$(pidof hrneo 2>/dev/null); HR_PID=${HR_PID%% *}
-HAS_HR=0; { [ -f /opt/etc/HydraRoute/hrneo.conf ] || [ -n "$HR_PID" ]; } && HAS_HR=1
+HAS_HR=0; { command -v hrneo >/dev/null 2>&1 || [ -n "$HR_PID" ]; } && HAS_HR=1
 TS_PID=$(pidof tailscaled 2>/dev/null); TS_PID=${TS_PID%% *}
 HAS_TS=0; { command -v tailscale >/dev/null 2>&1 || [ -n "$TS_PID" ]; } && HAS_TS=1
 [ $HAS_TELEMT = 1 ] && echo "tab|telemt"

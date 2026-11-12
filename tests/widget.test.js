@@ -1875,6 +1875,11 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     ok("bin/stats: awg-manager login on -> its API key", a.tun === tuns, a.tun + " || " + a.log.join(" / "));
     a = awg('{\n  "port": 2222,\n  "authEnabled": true\n}\n', "AWG_KEY=k-123 ");
     ok("bin/stats: awg-manager login on, no API key -> not asked, awg_nokey", a.tun === "awg_nokey 1\nawg_up 0\nawg_total 0" && !a.log.some(l => l.startsWith("awg ")), a.tun + " || " + a.log.join(" / "));
+    // Hydra tab: by the hrneo binary or process; awg-manager leaves an empty hrneo.conf even without HydraRoute
+    const hydra = files => collect("stats", "", "", { state: state(), files, edit: x => x.replace(/^(HAS_(?!HR)\w+)=0;.*$/gm, "$1=0").replace(/^HR_PID=.*$/m, "HR_PID=") })
+      .split("\n").filter(l => l === "tab|hydra").length;
+    ok("bin/stats: no hrneo -> no tab|hydra", hydra({}) === 0);
+    ok("bin/stats: hrneo on PATH -> tab|hydra", hydra({ hrneo: "#!/bin/sh\nexit 1\n" }) === 1);
     d = state();
     collect("tick", "5", "", { state: d, files: { services: "#!/bin/sh\n", smart: "#!/bin/sh\n", settings: "#!/bin/sh\n", update: "#!/bin/sh\n", "firc/groups.yaml": "groups:\n",
       "firc/tunnels.yaml": 'tunnels:\n- id: t1\n  device: fw0\n  description: "Firc tunnel"\n' },
