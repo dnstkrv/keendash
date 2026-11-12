@@ -1868,7 +1868,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
         edit: (x, t) => x.replace(/^(HAS_\w+)=0;.*$/gm, (m, v) => v + "=" + (v === "HAS_AWG" ? 1 : 0)).replace(/^  AS=.*$/m, "  AS=" + t + "/awgm.json") });
       return { tun: o.split("\n").filter(l => /^(tun\||awg_up |awg_total |awg_nokey )/.test(l)).join("\n"), log: log(s) };
     };
-    const tuns = "tun|Warp|1|0|0|431836\ntun|Home WG|0|0|0|0\ntun|mihomo|1|0|0|1234\nawg_up 2\nawg_total 3";
+    const tuns = "tun|Warp|1|0|0|431836\ntun|Home WG|0|0|0|0\ntun|Office-NL|1|0|0|5000\ntun|mihomo|1|0|0|1234\nawg_up 3\nawg_total 4";
     let a = awg('{\n  "port": 2222,\n  "authEnabled": false\n}\n');
     ok("bin/stats: tunnels from RCI", a.tun === tuns && a.log.filter(l => l.startsWith("rci ")).join() === "rci /show/interface " + TK, a.tun + " || " + a.log.join(" / "));
     a = awg('{\n  "apiKey": "k-123",\n  "server": { "port": 2222 },\n  "authEnabled": true\n}\n', "AWG_KEY=k-123 ");

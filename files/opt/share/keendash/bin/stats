@@ -73,14 +73,15 @@ if [ $HAS_AWG = 1 ]; then
   # first "key":"string" / "key":number of a JSON chunk (string kept JSON-escaped)
   JF='function get(s, k) { return match(s, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"") ? substr(s, RSTART + length(k) + 4, RLENGTH - length(k) - 5) : "" }
     function num(s, k) { return match(s, "\"" k "\":-?[0-9]+") ? substr(s, RSTART + length(k) + 3, RLENGTH - length(k) - 3) : "" }'
-  # "iface|NdmsName|name" lines; only the "tunnels" array of tunnels/all (its "system" list holds native WG servers)
+  # "iface|NdmsName|name" lines; tunnels/all: "tunnels" plus "system" (native WG client interfaces, NDMS name = id); "external" has no ndmsName and no WireguardN id, so it prints nothing
   tl=$( { aget /tunnels/all | sed -n 's/.*"tunnels":\[//p'; echo; aget /singbox/tunnels; echo; grep -o 'opkgtun[0-9]*' /proc/net/dev | sort -u; } 2>/dev/null | awk -F'|' "$JF"'
     /^opkgtun[0-9]+$/ { n = $0; sub(/opkgtun/, "", n); if (!s[$0]++) print $0 "|OpkgTun" n "|"; next }
     { gsub(/\{"(id|tag)":/, "\n&"); m = split($0, o, "\n")
       for (i = 2; i <= m; i++) {
         f = get(o[i], "interfaceName"); if (f == "") f = get(o[i], "kernelInterface")
         N = get(o[i], "ndmsName"); if (N == "") N = get(o[i], "proxyInterface")
-        d = get(o[i], "name"); if (d == "") d = get(o[i], "tag")
+        if (N == "" && f != "" && get(o[i], "id") ~ /^Wireguard[0-9]+$/) N = get(o[i], "id")
+        d = get(o[i], "name"); if (d == "") d = get(o[i], "tag"); if (d == "") d = get(o[i], "description")
         if (f != "" && N != "" && !s[f]++) print f "|" N "|" d
       } }')
   # every NDMS interface at once ("Name.field<TAB>value"), one RCI request per run
