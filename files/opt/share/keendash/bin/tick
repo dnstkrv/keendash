@@ -9,7 +9,7 @@ case "$1" in
 1)
   # Frigate frames every 5/15/30 s for the next ~minute; in the background, tick does not wait for it
   sh $BIN/snap </dev/null >/dev/null 2>&1 &
-  $BIN/stats | while read -r k v; do
+  $BIN/stats --sample-awg | while read -r k v; do
     case "$k" in
       telemt_conn|telemt_octets|awg_bytes|awg_up|firc_domains|ascn_ips|ascn_honeypot|nfq_pkts|nfq_auto|hr_ips|ts_bytes|ts_online|sys_load|sys_mem|sys_temp)
         f="$D/$k"; { tail -n 179 "$f" 2>/dev/null; echo "$v"; } > "$f.t" && mv "$f.t" "$f";;

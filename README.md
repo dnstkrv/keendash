@@ -29,7 +29,7 @@
 | Вкладка | Сервис | Что показывает |
 |---|---|---|
 | telemt | telemt, telemt-panel | подключения, трафик, пользователи онлайн, аптайм, неудачные подключения |
-| AWG | awg-manager | туннели (AmneziaWG, WireGuard, sing-box, OpkgTun): состояние, трафик, аптайм; раздача FreeTurn и WDTT |
+| AWG | WireGuard, awg-manager | состояние, трафик и аптайм туннелей; для WG/AWG — последний handshake, обнаруженная активность и результат проверки адреса из awg-manager, если он доступен; раздача FreeTurn и WDTT |
 | firc | firc | домены в пуле, группы и их интерфейсы |
 | nfqws | nfqws2, nfqws-keenetic | процесс, пакеты в обработке, списки доменов, доступность сайтов из монитора nfqws-ui, события автолиста |
 | Hydra | HydraRoute Neo (hrneo, hrweb) | процесс, правила: домены и адреса |

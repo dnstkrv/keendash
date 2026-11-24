@@ -138,11 +138,23 @@
     });
     return h + note("Аптайм telemt: <b>" + fmtDur(t.up) + "</b> · неудачных подключений: <b>" + t.bad + "</b>");
   }
+  function awgAge(at, now) {
+    return at > 0 && at <= now ? (now - at < 60 ? "только что" : fmtDur(now - at) + " назад") : "";
+  }
+  var AWG_CHECK = { alive: "активна", recovering: "восстановление", dead: "сбой" };
   function tabAwg(d, s) {
-    var a = d.awg || {}, ar = rates(s.awg_bytes || []), h = sec("Туннели");
+    var a = d.awg || {}, ar = rates(s.awg_bytes || []), h = sec("Туннели"), now = d.now || Date.now() / 1000;
     if (a.nokey) h += note('<span style="color:' + BAD + '">В awg-manager включён вход по паролю</span> · чтобы keendash видел туннели, сгенерируйте API-ключ в настройках awg-manager');
     (a.tun || []).forEach(function (x) {
       h += line(x[1] ? OK : OFF, esc(x[0]), x[1] ? "↓ " + fmtBytes(x[2]) + " · ↑ " + fmtBytes(x[3]) + " · " + fmtDur(x[4]) : "выключен", !x[1]);
+      var at = /^\d+$/.test(x[5]) ? +x[5] : Date.parse(x[5]) / 1000;
+      var hs = at === 0 ? "ещё не было" : awgAge(at, now), traffic = awgAge(x[6], now), details = [];
+      var checked = awgAge(Date.parse(x[9]) / 1000, now);
+      if (hs) details.push("Handshake: " + hs);
+      if (traffic) details.push("Трафик: " + traffic);
+      if (checked && (x[8] === 1 || x[8] === 0)) details.push("Проверка адреса: " + (x[8] ? "успешно, " : "сбой, ") + checked);
+      else if (Object.prototype.hasOwnProperty.call(AWG_CHECK, x[7])) details.push("Проверка: " + AWG_CHECK[x[7]]);
+      if (details.length) h += '<div class="us-note us-awg-detail">' + details.join(" · ") + '</div>';
     });
     h += '<div class="us-grid">' + blk("Трафик туннелей", fmtBytes(last(ar)) + "/с", ar, OK) +
       blk("Активных туннелей", a.up + " / " + a.total, s.awg_up || [], ACC) + "</div>";
@@ -767,7 +779,7 @@
       /* the whole picture at its own ratio, never cropped or stretched (an iframe has none: 16/9) */
       ".us-cams{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px 16px;margin-top:12px}.us-cam{min-width:0}" +
       ".us-snap,.us-stream{display:block;width:100%;height:auto;border:0;border-radius:6px}iframe.us-stream{aspect-ratio:16/9}" +
-      ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}" +
+      ".us-note{font-size:12px;opacity:.75}.us-note b{font-weight:600;opacity:1}.us-awg-detail{padding-left:14px}" +
       ".us-upd{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:8px;background:rgba(0,151,220,.1);font-size:13px}" +
       ".us-upd-t b{font-weight:600}.us-upd-b{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px}" +
       /* Keenetic primary button (.ndw-button--primary), a size smaller to fit the card */

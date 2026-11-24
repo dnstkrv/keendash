@@ -22,6 +22,11 @@
   },
   "Wireguard1": {
     "id": "Wireguard1", "index": 1, "type": "Wireguard", "description": "Wireguard VPN", "link": "up", "connected": "yes", "state": "up", "uptime": 5000,
-    "wireguard": { "peer": [ { "description": "laptop", "online": true } ] }
+    "wireguard": { "peer": [
+      { "description": "laptop", "online": true, "last-handshake": 120, "enabled": true },
+      { "description": "backup", "enabled": true, "last-handshake": 900 },
+      { "description": "new", "enabled": true, "last-handshake": 2147483647 },
+      { "description": "disabled", "enabled": false, "last-handshake": 2 }
+    ] }
   }
 }

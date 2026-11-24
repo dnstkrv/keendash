@@ -15,6 +15,12 @@ const full = Object.assign({}, base, {
     ["immich","immich","Immich","http://10.0.0.5:2283","",["key"],{ok:1,photos:18230,videos:1204,usage:442381631488,list:[["Alice",15000,1000,400000000000],["Bob",3230,204,42381631488]]}]],
   series: Object.assign({}, base.series, {"qb.dl":[0,1048576,5242880],"qb.up":[0,0,524288]}),
   svc: [["cron",1,""],["dropbear",1,""],["nfqws2",1,""],["lighttpd",1,"90"],["portal",1,"81"],["ascn",1,""],["awg-manager",1,"2222"],["firc",1,"666"],["haproxy",0,""],["telemt",2,""],["telemt-panel",1,"8083"],["foo",3,"http://example.org:99/x"],["hrweb",1,"2000"]],
+  awg: Object.assign({}, base.awg, { tun: base.awg.tun.concat([
+    ["WG health", 1, 1, 2, 3600, "2026-10-31T09:25:17Z", 1793438777, "alive", 1, "2026-10-31T09:25:17Z"],
+    ["WG never", 0, 0, 0, 0, "0", null, "recovering"],
+    ["WG unknown", 1, 0, 0, 0, "", null, "disabled"],
+    ["WG check failed", 1, 0, 0, 0, "", null, "alive", 0, "2026-10-31T09:25:17Z"]
+  ]) }),
   firc: Object.assign({}, base.firc, { list: base.firc.list.concat([["\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" C:\\\\x \\u00e9",
     "\\U0001F1F1\\U0001F1FB LV, \\U0001F1F3\\U0001F1F1NL, WARP <HEL>, C:\\temp", 1, 99]]) })
 });
@@ -47,6 +53,14 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     click("awg"); ok("awg tab link 2222", m.querySelector("a.us-open").href.endsWith(":2222/"));
     const wd = Array.from(m.querySelectorAll(".us-row")).find(r => /^AWGM WDTT$/.test(r.querySelector(".us-nm").textContent));
     ok("awg tunnel: [name, up, rx, tx, uptime]", wd && wd.querySelector(".us-r").textContent === "↓ 0 Б · ↑ 2.4 МБ · 1д 20ч", wd && wd.querySelector(".us-r").textContent);
+    const awgDetail = n => {
+      const row = Array.from(m.querySelectorAll(".us-row")).find(r => r.querySelector(".us-nm")?.textContent === n);
+      return row?.nextElementSibling?.classList.contains("us-awg-detail") ? row.nextElementSibling.textContent : "";
+    };
+    ok("awg health: handshake age, traffic and successful destination check", awgDetail("WG health") === "Handshake: 2м назад · Трафик: 1м назад · Проверка адреса: успешно, 2м назад", awgDetail("WG health"));
+    ok("awg health: destination failure is shown even with an active monitor", awgDetail("WG check failed") === "Проверка адреса: сбой, 2м назад", awgDetail("WG check failed"));
+    ok("awg health: never, unknown and old rows", awgDetail("WG never") === "Handshake: ещё не было · Проверка: восстановление" &&
+      !awgDetail("WG unknown") && !awgDetail("AWGM WDTT"), m.textContent);
     const pxSec = Array.from(m.querySelectorAll(".us-sec")).find(e => e.textContent === "Раздача"), px = [];
     for (let e = pxSec && pxSec.nextElementSibling; e && e.classList.contains("us-row"); e = e.nextElementSibling) px.push(e.textContent);
     ok("awg sharing rows", /Раздача/.test(m.textContent) && px.length === 3, px.join(" / "));
@@ -958,6 +972,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     const src = s => fs.readFileSync(s.includes("/") && !s.startsWith("ext.d/") ? path.join(__dirname, "..", s) : path.join(sh, s.startsWith("ext.d/") ? "" : "bin", s), "utf8").replace(/^PATH=.*$/m, ":");
     const name = path.basename(script), ext = script === "ext" || script.startsWith("ext.d/");
     fs.writeFileSync(path.join(tmp, "rci"), src("rci"), { mode: 0o755 });
+    if (script === "stats") fs.writeFileSync(path.join(tmp, "extlib"), src("extlib"));
     if (ext) {
       fs.mkdirSync(path.join(tmp, "bin")); fs.mkdirSync(path.join(tmp, "ext.d"), { recursive: true });
       fs.writeFileSync(path.join(tmp, "bin", "extlib"), src("extlib"));
@@ -1866,18 +1881,57 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
 
     // the collectors: the same lines as from ndmc before, one RCI request for all interfaces
     // only the awg provider, whatever the test machine has; awg-manager's settings.json from the test
-    const awg = (settings, env) => {
-      const s = state(), o = collect("stats", "", "", { state: s, env: env || "", files: { "awgm.json": settings || "{}" },
-        edit: (x, t) => x.replace(/^(HAS_\w+)=0;.*$/gm, (m, v) => v + "=" + (v === "HAS_AWG" ? 1 : 0)).replace(/^  AS=.*$/m, "  AS=" + t + "/awgm.json") });
+    const awg = (settings, env, s = state(), netdev = "", args = "", index = "19") => {
+      const o = collect("stats", args, "", { state: s, env: env || "",
+        files: Object.assign({ netdev, "sys/class/net/nwg1/ifindex": index + "\n", date: "#!/bin/sh\necho 1793438837\n" },
+          settings == null ? {} : { "awgm.json": settings }),
+        edit: (x, t) => x.replace(/^(HAS_(?!AWG)\w+)=0;.*$/gm, "$1=0")
+          .replace(/^HAS_AWG=.*$/m, netdev ? "$&" : "HAS_AWG=1")
+          .replace(/^  AS=.*$/m, "  AS=" + t + "/awgm.json")
+          .replace(/\/opt\/bin\/awg-manager/g, t + "/awg-manager")
+          .replace("/proc/net/dev", t + "/netdev").replace(/^  SYS=\/sys$/m, "  SYS=" + t + "/sys")
+          .replace("/tmp/keendash/awg-traffic", s + "/awg-traffic").replace("/tmp/keendash/awg-checks", s + "/awg-checks") });
       return { tun: o.split("\n").filter(l => /^(tun\||awg_up |awg_total |awg_nokey )/.test(l)).join("\n"), log: log(s) };
     };
-    const tuns = "tun|Office-NL|1|0|0|5000\ntun|Warp|1|0|0|431836\ntun|Home WG|0|0|0|0\ntun|mihomo|1|0|0|1234\nawg_up 3\nawg_total 4";
+    const tuns = "tun|Office-NL|1|0|0|5000|1793438717||||\ntun|Warp main|1|0|0|431836|2026-10-31T09:25:17Z||alive||\ntun|Home WG|0|0|0|0|0||||\ntun|mihomo|1|0|0|1234|||||\nawg_up 3\nawg_total 4";
     let a = awg('{\n  "port": 2222,\n  "authEnabled": false\n}\n');
     ok("bin/stats: tunnels from RCI", a.tun === tuns && a.log.filter(l => l.startsWith("rci ")).join() === "rci /show/interface " + TK, a.tun + " || " + a.log.join(" / "));
     a = awg('{\n  "apiKey": "k-123",\n  "server": { "port": 2222 },\n  "authEnabled": true\n}\n', "AWG_KEY=k-123 ");
     ok("bin/stats: awg-manager login on -> its API key", a.tun === tuns, a.tun + " || " + a.log.join(" / "));
     a = awg('{\n  "port": 2222,\n  "authEnabled": true\n}\n', "AWG_KEY=k-123 ");
     ok("bin/stats: awg-manager login on, no API key -> not asked, awg_nokey", a.tun === "awg_nokey 1\nawg_up 0\nawg_total 0" && !a.log.some(l => l.startsWith("awg ")), a.tun + " || " + a.log.join(" / "));
+    const as = state(), dev = (rx, tx) => " nwg1: " + rx + " 0 0 0 0 0 0 0 " + tx + " 0 0 0 0 0 0 0\n";
+    a = awg(null, "RCI_WG_ONLY=1 ", state(), dev(5, 10).replace("nwg1", "nwg7"));
+    ok("bin/stats: awg tab data for native WireGuard without manager", a.tun === "tun|Wireguard VPN|1|5|10|5000|1793438717||||\nawg_up 1\nawg_total 1" &&
+      !a.log.some(l => l.startsWith("awg ")) && a.log.some(l => l.includes('"system-name":{"name":"Wireguard1"}')), a.tun + " || " + a.log.join(" / "));
+    const traffic = (rx, tx, args, index) => awg("{}", "", as, dev(rx, tx), args, index).tun.split("\n")[0].split("|").slice(0, 9).join("|");
+    const store = path.join(as, "awg-traffic");
+    ok("bin/stats: awg traffic baseline does not invent activity", traffic(20, 30, "--sample-awg") === "tun|Office-NL|1|20|30|5000|1793438717||");
+    ok("bin/stats: awg status reads do not write samples", traffic(40, 50) === "tun|Office-NL|1|40|50|5000|1793438717||" &&
+      fs.existsSync(store) && fs.readFileSync(store, "utf8") === "nwg1|19|20|30|\n");
+    ok("bin/stats: awg traffic counter increase and unchanged sample", traffic(40, 50, "--sample-awg") === "tun|Office-NL|1|40|50|5000|1793438717|1793438837|" &&
+      traffic(40, 50, "--sample-awg") === "tun|Office-NL|1|40|50|5000|1793438717|1793438837|");
+    ok("bin/stats: awg traffic reset and interface replacement clear activity", traffic(1, 60, "--sample-awg") === "tun|Office-NL|1|1|60|5000|1793438717||" &&
+      traffic(10, 70, "--sample-awg") === "tun|Office-NL|1|10|70|5000|1793438717|1793438837|" &&
+      traffic(20, 80, "--sample-awg", "20") === "tun|Office-NL|1|20|80|5000|1793438717||");
+    ok("bin/stats: awg traffic history drops absent interfaces", traffic(30, 90, "--sample-awg", "20").includes("|1793438837|") &&
+      !awg("{}", "", as, dev(1, 2).replace("nwg1", "eth0"), "--sample-awg").tun && fs.readFileSync(store, "utf8") === "" &&
+      traffic(40, 100, "--sample-awg", "20") === "tun|Office-NL|1|40|100|5000|1793438717||");
+    const cs = state(), checkRun = (args, env) => awg("{}", env || "", cs, "", args);
+    const expectedChecks = ["|2026-10-31T09:25:17Z||alive|1|2026-10-31T09:25:17Z", "|0|||0|2026-10-31T09:25:17Z"];
+    a = checkRun("--sample-awg");
+    const checks = path.join(cs, "awg-checks");
+    ok("bin/stats: awg destination checks use exact tunnel and self cell", expectedChecks.every(k => a.tun.includes(k)) &&
+      a.log.filter(l => l === "awg /monitoring/matrix").length === 1 && !/target|t10/.test(a.tun) &&
+      fs.readFileSync(checks, "utf8").trim().split("\n").sort().join("\n") === "t1|1|2026-10-31T09:25:17Z\nt2|0|2026-10-31T09:25:17Z", a.tun);
+    a = checkRun("");
+    ok("bin/stats: awg destination checks are read from cache between samples", expectedChecks.every(k => a.tun.includes(k)) &&
+      a.log.filter(l => l === "awg /monitoring/matrix").length === 1, a.tun);
+    a = checkRun("--sample-awg", "AWG_MATRIX_OFFLINE=1 ");
+    ok("bin/stats: awg destination checks fall back to monitor state without matrix API", a.tun === tuns &&
+      fs.readFileSync(checks, "utf8") === "", a.tun);
+    ok("bin/stats: awg destination checks discard failed or partial matrix replies", ["failed", "partial"].every(mode =>
+      checkRun("--sample-awg", "AWG_MATRIX_OFFLINE=" + mode + " ").tun === tuns && fs.readFileSync(checks, "utf8") === ""));
     // Hydra tab: by the hrneo binary or process; awg-manager leaves an empty hrneo.conf even without HydraRoute
     const hydra = files => collect("stats", "", "", { state: state(), files, edit: x => x.replace(/^(HAS_(?!HR)\w+)=0;.*$/gm, "$1=0").replace(/^HR_PID=.*$/m, "HR_PID=") })
       .split("\n").filter(l => l === "tab|hydra").length;
@@ -1894,11 +1948,12 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     // tick 1 starts bin/snap in the background and does not wait for it (the stub runs 5 s)
     d = state();
     const tk0 = Date.now();
-    collect("tick", "1", "", { state: d, files: { stats: "#!/bin/sh\n", ext: "#!/bin/sh\n", geo: "#!/bin/sh\n", snap: "#!/bin/sh\necho started > \"$KEENDASH_TMP/snap.started\"\nsleep 5\n" },
+    collect("tick", "1", "", { state: d, files: { stats: "#!/bin/sh\nprintf '%s' \"$1\" > \"$KEENDASH_TMP/stats.args\"\n", ext: "#!/bin/sh\n", geo: "#!/bin/sh\n", snap: "#!/bin/sh\necho started > \"$KEENDASH_TMP/snap.started\"\nsleep 5\n" },
       edit: (x, t) => x.replace(/^BIN=.*$/m, "BIN=" + t).replace(/^D=\/tmp\/keendash/m, 'D="$KEENDASH_TMP"') });
     const tkms = Date.now() - tk0;
     for (let k = 0; k < 20 && !fs.existsSync(path.join(d, "snap.started")); k++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
     ok("bin/tick 1: starts bin/snap in the background and returns without waiting for it", tkms < 3000 && fs.existsSync(path.join(d, "snap.started")), tkms + " " + fs.readdirSync(d).join());
+    ok("bin/tick 1: awg traffic sampling is enabled for the timer", fs.readFileSync(path.join(d, "stats.args"), "utf8") === "--sample-awg");
     d = state(); fs.writeFileSync(path.join(d, "links"), "");
     out = collect("services", "", "", { state: d, edit: x => x.replace(/^INITD=.*$/m, "INITD=/nonexistent").replace(/^D=\/tmp\/keendash;/m, 'D="$KEENDASH_TMP";') });
     ok("bin/services: KeenDNS web apps from RCI", out === "ndp|firc.r.example.net|127.0.0.1|666|1\nndp|adguard.r.example.net|10.0.0.2|3000|0\n", out);
@@ -1992,6 +2047,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     // keendashd status: stats/services output -> the card's JSON; broken numbers become 0/null, strings are escaped
     const sd = fs.mkdtempSync(path.join(os.tmpdir(), "kds-"));
     fs.writeFileSync(path.join(sd, "stats"), ["tab|telemt", "tab|sys", "awg_nokey 1", "telemt_ok 1", "telemt_conn 12", "telemt_users x", 'u|alice "a"\\b|3|100|200', "px|home|freeturn-server|1|||",
+      "tun|wg1|1|10|20|30|2026-10-31T09:25:17Z|1793438777|alive|1|2026-10-31T09:25:17Z", "tun|old|0|0|0|0",
       "sys_load 007", "sys_temp", "disk|sda|Example \"HDD\" 4TB|1|38|12345|8|||0|Data \"1\"", "disk|sdb|Example SSD|0|||||12|1", "ts_running 1", "ts_online 1", "tss|Running|router|100.64.0.1|waw||0||", "tsp|pc|windows|1|1|1||0001-01-01T00:00:00Z|10|20|0|0|"].join("\n") + "\n");
     fs.writeFileSync(path.join(sd, "services"), "svc|cron|1|\nweb|lighttpd|8090|nfqws2\nndp|firc.r.example.net|127.0.0.1|666|1\n");
     fs.writeFileSync(path.join(sd, "sys_load"), "10\n20\nbad\n30\n");
@@ -2012,6 +2068,9 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
       ok("keendashd status: values, missing ones 0", s.telemt.ok === 1 && s.telemt.conn === 12 && s.telemt.users === 0 && s.sys.mem === 0 && s.awg.nokey === 1 && s.awg.up === 0, JSON.stringify(s.telemt) + JSON.stringify(s.awg));
       ok("keendashd status: strings escaped", eq(s.telemt.list, [['alice "a"\\b', 3, 100, 200]]), JSON.stringify(s.telemt.list));
       ok("keendashd status: empty fields 0 / null", eq(s.awg.px, [["home", "freeturn-server", 1, 0, null, ""]]), JSON.stringify(s.awg.px));
+      ok("keendashd status: awg health fields and old tunnel rows", eq(s.awg.tun, [
+        ["wg1", 1, 10, 20, 30, "2026-10-31T09:25:17Z", 1793438777, "alive", 1, "2026-10-31T09:25:17Z"], ["old", 0, 0, 0, 0, "", null, "", null, ""]
+      ]), JSON.stringify(s.awg.tun));
       ok("keendashd status: 007 -> 7, empty temp -> null", s.sys.load === 7 && s.sys.temp === null, JSON.stringify(s.sys));
       ok("keendashd status: sys.disks, empty fields null", eq(s.sys.disks, [["sda", 'Example "HDD" 4TB', 1, 38, 12345, 8, null, null, 0, 'Data "1"'], ["sdb", "Example SSD", 0, null, null, null, null, 12, 1, ""]]), JSON.stringify(s.sys.disks));
       ok("keendashd status: graph history, broken lines skipped", eq(s.series.sys_load, [10, 20, 30]) && eq(s.series.awg_bytes, []), JSON.stringify(s.series.sys_load));
@@ -2202,6 +2261,7 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
       a.classList.contains(act) && !dash.classList.contains(act) && d.title === "Keenetic – Дашборд", d.title);
     ok("page: a card per tab with data, media per service", t === "telemt,AWG,firc,nfqws,Hydra,AdGuard Home,Торренты,Plex,Sonarr,Radarr,Prowlarr,Overseerr,Immich,Antiscan,Система", t);
     ok("page: card id = tab or instance id", Array.from(p.querySelectorAll(".kd-card")).map(x => x.getAttribute("data-id")).join() === "telemt,awg,firc,nfqws,hydra,agh,qb,plex,sonarr,radarr,prowlarr,overseerr,immich,ascn,sys");
+    ok("page: awg health shown on dashboard", p.querySelector('[data-id="awg"] .us-awg-detail')?.textContent === "Handshake: 2м назад · Трафик: 1м назад · Проверка адреса: успешно, 2м назад");
     ok("page: no chips, tabs or update bar", p && !p.querySelector(".us-chip,.us-tab,.us-mt,.us-upd"));
     ok("page: card links", p && p.querySelector(".kd-card a.us-open").href === "http://192.168.0.1:8083/" && p.querySelectorAll(".kd-card")[3].querySelectorAll("a.us-open").length === 2);
     click(dash);
