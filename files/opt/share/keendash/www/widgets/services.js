@@ -168,7 +168,9 @@
     var h = '<div class="us-grid">' + blk("Доменов в пуле", f.domains, s.firc_domains || [], ACC) +
       blk("Групп включено", f.enabled + " / " + f.groups, null) + "</div>" + sec("Группы по числу доменов");
     list.slice(0, 8).forEach(function (g) {
-      h += line(g[2] ? OK : OFF, esc(yamlStr(g[0])) +(g[1] ? ' <span class="us-tag">' + esc(g[1]) + "</span>" : ""), g[3], !g[2]);
+      // Interface labels may be plain text or contain YAML flag escapes.
+      var tag = g[1] && String(g[1]).replace(/\\U0001[Ff]1(?:[Ee][6-9A-Fa-f]|[Ff][0-9A-Fa-f])/g, yamlStr);
+      h += line(g[2] ? OK : OFF, esc(yamlStr(g[0])) + (tag ? ' <span class="us-tag">' + esc(tag) + "</span>" : ""), g[3], !g[2]);
     });
     if (list.length > 8) h += note("и ещё " + (list.length - 8) + " групп");
     return h;

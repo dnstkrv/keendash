@@ -15,7 +15,8 @@ const full = Object.assign({}, base, {
     ["immich","immich","Immich","http://10.0.0.5:2283","",["key"],{ok:1,photos:18230,videos:1204,usage:442381631488,list:[["Alice",15000,1000,400000000000],["Bob",3230,204,42381631488]]}]],
   series: Object.assign({}, base.series, {"qb.dl":[0,1048576,5242880],"qb.up":[0,0,524288]}),
   svc: [["cron",1,""],["dropbear",1,""],["nfqws2",1,""],["lighttpd",1,"90"],["portal",1,"81"],["ascn",1,""],["awg-manager",1,"2222"],["firc",1,"666"],["haproxy",0,""],["telemt",2,""],["telemt-panel",1,"8083"],["foo",3,"http://example.org:99/x"],["hrweb",1,"2000"]],
-  firc: Object.assign({}, base.firc, { list: base.firc.list.concat([["\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" C:\\\\x \\u00e9", "nwg0", 1, 99]]) })
+  firc: Object.assign({}, base.firc, { list: base.firc.list.concat([["\\U0001F6D1\u26a0\ufe0f Block \\\"REST\\\" C:\\\\x \\u00e9",
+    "\\U0001F1F1\\U0001F1FB LV, \\U0001F1F3\\U0001F1F1NL, WARP <HEL>, C:\\temp", 1, 99]]) })
 });
 // ONLY=<regex> (env): only the checks whose names match it, for a commit; the full suite before a push
 const ONLY = process.env.ONLY ? new RegExp(process.env.ONLY) : null;
@@ -55,6 +56,8 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     click("firc"); ok("firc tab link 666", m.querySelector("a.us-open").href.endsWith(":666/"));
     const fn = m.querySelector(".us-row .us-nm").textContent;
     ok("firc group name: YAML escapes decoded", fn.startsWith("\u{1F6D1}\u26a0\ufe0f Block \"REST\" C:\\x \u00e9"), fn);
+    const tag = m.querySelector(".us-row .us-tag").textContent;
+    ok("firc interface tags: flags decoded and plain labels preserved", tag === "\u{1F1F1}\u{1F1FB} LV, \u{1F1F3}\u{1F1F1}NL, WARP <HEL>, C:\\temp", tag);
     click("ascn"); ok("ascn no link", !m.querySelector("a.us-open"));
 
     click("nfqws");
