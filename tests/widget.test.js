@@ -2670,6 +2670,44 @@ const res = []; const ok = (n, c, e) => (!ONLY || ONLY.test(n)) && res.push((c ?
     d.getElementById("kd-menu").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
     return d.querySelector(".kd-page");
   };
+  {
+    const list = [["online-low", 4, 10, 100], ["offline", 0, 5, 3000], ["online-high", 1, 2, 200], ["unknown", null, 7, 1000]];
+    const d = Object.assign({}, full, { telemt: Object.assign({}, full.telemt, { list, users: 2, cfg: 4 }) });
+    const names = el => Array.from(el.querySelectorAll(".us-row .us-nm"), row => row.textContent).join();
+    const option = (el, id) => el.querySelector('button[data-telemt-opt="' + id + '"]');
+    const pressed = (el, id) => option(el, id)?.getAttribute("aria-pressed");
+    let saved;
+    await run(d, async (w, m) => {
+      const buttons = Array.from(m.querySelectorAll(".us-telemt-opts button"));
+      ok("telemt users: options are buttons beside the heading", buttons.map(b => b.textContent).join() === "По трафику,Сначала онлайн,Скрыть офлайн" &&
+        buttons.every(b => !b.draggable && b.type === "button") && buttons[0].parentElement.previousElementSibling.textContent === "Пользователи · 2 онлайн из 4", buttons.length);
+      if (buttons.length !== 3) return;
+      const trafficOrder = "offline,unknown,online-high,online-low", onlineOrder = "online-high,online-low,offline,unknown";
+      ok("telemt users: default sort uses total traffic and shows offline", names(m) === trafficOrder && pressed(m, "traffic") === "true" &&
+        pressed(m, "online") === "false" && pressed(m, "offline") === "false", names(m));
+      option(m, "online").click();
+      ok("telemt users: online first and then total traffic", names(m) === onlineOrder && pressed(m, "online") === "true" && pressed(m, "traffic") === "false", names(m));
+      option(m, "offline").click();
+      ok("telemt users: hiding offline only removes rows with zero connections", names(m) === "online-high,online-low,unknown" &&
+        pressed(m, "offline") === "true" && /2 онлайн из 4/.test(m.textContent), names(m));
+      saved = Object.entries(w.localStorage).filter(([key]) => key.startsWith("ui.services.telemt."));
+      const p = (await openPage(w)).querySelector('[data-id="telemt"]');
+      ok("telemt users: page opens with the card's preferences", pressed(p, "online") === "true" && pressed(p, "offline") === "true" && names(p) === names(m), names(p));
+      option(p, "offline").click();
+      const traffic = option(p, "traffic");
+      traffic.focus();
+      traffic.click();
+      await w.__servicesWidget.update();
+      ok("telemt users: page changes sync with the card and survive a poll", names(p) === trafficOrder && names(m) === trafficOrder && pressed(m, "traffic") === "true" &&
+        pressed(m, "offline") === "false" && traffic === w.document.activeElement && pressed(p, "traffic") === "true" && pressed(p, "offline") === "false", [names(p), names(m)]);
+    }, undefined, URL0);
+    await run(d, (w, m) => {
+      ok("telemt users: saved preferences restore on reload", pressed(m, "online") === "true" && pressed(m, "offline") === "true" && names(m) === "online-high,online-low,unknown", names(m));
+    }, w => {
+      (saved || []).forEach(([key, value]) => w.localStorage.setItem(key, value));
+      return () => Promise.resolve({ ok: true, json: () => Promise.resolve(d) });
+    });
+  }
   // frigate frames on the page: the same error listener hides a failed one
   {
     const fp = Object.assign(one("frigate", "Frigate", "Дом", "http://10.0.0.5:5000", { ok: 1, ver: "1", snap: 1793438000, cam: [["a", 5, 0, 0], ["b", 5, 0, 0]] }), { now: Math.floor(Date.now() / 1000) });

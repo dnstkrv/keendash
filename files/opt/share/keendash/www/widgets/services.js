@@ -13,6 +13,7 @@
   var API = BASE + (ST ? "status.json" : "cgi-bin/status.cgi");
   var KEY = "ui.services.pos", TABKEY = "ui.services.tab", SKIPKEY = "ui.services.skip", MTABKEY = "ui.services.media";
   var ORDKEY = "ui.services.order", MORDKEY = "ui.services.morder";
+  var TELEMT_SORT_KEY = "ui.services.telemt.sort", TELEMT_OFFLINE_KEY = "ui.services.telemt.offline";
   var TITLE = "Сервисы", PTITLE = "Дашборд";
   var TABS = [["telemt", "telemt"], ["awg", "AWG"], ["firc", "firc"], ["nfqws", "nfqws"], ["hydra", "Hydra"], ["tailscale", "Tailscale"], ["ascn", "Antiscan"], ["sys", "Система"]];
   /* the group tabs (one per service group) go in front of this tab by default */
@@ -30,6 +31,11 @@
   try { tab = localStorage.getItem(TABKEY) || "telemt"; } catch (e) {}
   var mtab = "";
   try { mtab = localStorage.getItem(MTABKEY) || ""; } catch (e) {}
+  var telemtSort = "traffic", telemtOffline = true;
+  try {
+    if (localStorage.getItem(TELEMT_SORT_KEY) === "online") telemtSort = "online";
+    telemtOffline = localStorage.getItem(TELEMT_OFFLINE_KEY) !== "0";
+  } catch (e) {}
 
   /* the user's tab order (tabs are dragged to reorder); tabs not in it yet go after the saved ones, in default order */
   function ordered(list, key) {
@@ -131,12 +137,34 @@
     h = '<div class="us-grid">' + blk("Подключения", t.ok ? t.conn : "—", s.telemt_conn || [], ACC) +
       blk("Трафик", t.ok ? fmtBytes(last(tr)) + "/с" : "—", tr, OK) + "</div>";
     if (!t.ok) return h + note('<span style="color:' + BAD + '">API telemt недоступен</span>');
-    var list = (t.list || []).slice().sort(function (a, b) { return b[3] - a[3]; });
-    h += sec("Пользователи (" + t.users + " онлайн из " + t.cfg + ")");
+    /* [name, current connections, recent IPs, total octets] */
+    var list = (t.list || []).filter(function (u) { return telemtOffline || u[1] !== 0; });
+    list.sort(function (a, b) {
+      return (telemtSort === "online" ? (b[1] > 0) - (a[1] > 0) : 0) || b[3] - a[3];
+    });
+    function option(id, label, on) {
+      return '<button type="button" class="us-telemt-opt" data-telemt-opt="' + id + '" aria-pressed="' + on + '">' + label + "</button>";
+    }
+    h += '<div class="us-telemt-head">' + sec("Пользователи · " + t.users + " онлайн из " + t.cfg) +
+      '<div class="us-telemt-opts" role="group" aria-label="Сортировка и фильтр пользователей">' +
+      option("traffic", "По трафику", telemtSort === "traffic") + option("online", "Сначала онлайн", telemtSort === "online") +
+      option("offline", "Скрыть офлайн", !telemtOffline) + "</div></div>";
     list.forEach(function (u) {
       h += line(u[1] > 0 ? OK : OFF, esc(u[0]), (u[1] > 0 ? u[1] + " подкл · " : "") + fmtBytes(u[3]), u[1] === 0);
     });
     return h + note("Аптайм telemt: <b>" + fmtDur(t.up) + "</b> · неудачных подключений: <b>" + t.bad + "</b>");
+  }
+  function clickTelemt(e) {
+    var el = e.target.closest ? e.target.closest(".us-telemt-opt") : null, id = el && el.getAttribute("data-telemt-opt");
+    if (id === "online" || id === "traffic") {
+      telemtSort = id;
+      try { localStorage.setItem(TELEMT_SORT_KEY, telemtSort); } catch (x) {}
+    } else if (id === "offline") {
+      telemtOffline = !telemtOffline;
+      try { localStorage.setItem(TELEMT_OFFLINE_KEY, telemtOffline ? "1" : "0"); } catch (x) {}
+    } else return;
+    render(); renderPage();
+    return true;
   }
   function awgAge(at, now) {
     return at > 0 && at <= now ? (now - at < 60 ? "только что" : fmtDur(now - at) + " назад") : "";
@@ -760,16 +788,18 @@
       ".us-tab:hover{opacity:.9}.us-tab.us-on{opacity:1;border-bottom-color:" + ACC + ";font-weight:600}" +
       ".us-open{margin-left:8px;flex:none;font-size:12px;color:" + ACC + ";text-decoration:none;white-space:nowrap}.us-open:hover{text-decoration:underline}" +
       ".us-open + .us-open{margin-left:10px}" +
-      ".us-sub{display:flex;flex-wrap:wrap;gap:6px}" +
-      ".us-mt{background:none;border:1px solid rgba(128,128,128,.35);border-radius:12px;color:inherit;opacity:.7;font:inherit;font-size:12px;padding:2px 10px;cursor:pointer;white-space:nowrap}" +
+      ".us-sub,.us-telemt-opts{display:flex;flex-wrap:wrap;gap:6px}" +
+      ".us-mt,.us-telemt-opt{background:none;border:1px solid rgba(128,128,128,.35);border-radius:12px;color:inherit;opacity:.7;font:inherit;font-size:12px;padding:2px 10px;cursor:pointer;white-space:nowrap}" +
       ".us-tab,.us-mt{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}.us-lift{opacity:1;outline:1px dashed currentColor;outline-offset:-2px}" +
-      ".us-mt:hover{opacity:1}.us-mt.us-on{opacity:1;border-color:" + ACC + ";color:" + ACC + "}" +
+      ".us-mt:hover,.us-telemt-opt:hover{opacity:1}.us-mt.us-on,.us-telemt-opt[aria-pressed=true]{opacity:1;border-color:" + ACC + ";color:" + ACC + "}" +
+      ".us-telemt-opt:focus-visible{opacity:1;outline:2px solid currentColor;outline-offset:2px}" +
       ".us-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}" +
       ".us-blk{display:flex;flex-direction:column;gap:6px;min-width:0}" +
       ".us-bh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}" +
       ".us-lbl{font-size:12px;opacity:.7}.us-val{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}" +
       ".us-spark{width:100%;height:44px;display:block}.us-empty{font-size:12px;opacity:.5;line-height:44px}" +
       ".us-sec{font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.5;margin-top:2px}" +
+      ".us-telemt-head{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}.us-telemt-opts{max-width:100%}" +
       ".us-row{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.us-dim{opacity:.55}" +
       ".us-bar{height:6px;border-radius:3px;background:rgba(128,128,128,.25);overflow:hidden}.us-bar i{display:block;height:100%}" +
       ".us-hist{display:flex;gap:2px;height:6px}.us-hist i{flex:1 1 0;max-width:12px;border-radius:1px}.us-hu{background:" + OK + "}.us-hd{background:" + BAD + "}.us-hp{background:" + OFF + "}" +
@@ -862,6 +892,7 @@
     bodyEl.className = "us-body";
     bodyEl.addEventListener("error", snapErr, true);
     bodyEl.addEventListener("click", function (e) {
+      if (clickTelemt(e)) return;
       var u = e.target.closest ? e.target.closest(".us-upd-go,.us-upd-skip") : null;
       if (u) {
         if (u.classList.contains("us-upd-go")) startUpdate(u.getAttribute("data-v"));
@@ -1305,6 +1336,7 @@
     document.addEventListener("keydown", menuKey); document.addEventListener("click", menuOut);
   }
   function onPageClick(e) {
+    if (clickTelemt(e)) return;
     var t = e.target, c = function (s) { return t.closest ? t.closest(s) : null; }, el = c(".kd-item"), items, it, head, same;
     if (c(".kd-set")) { openSettings(); return; }
     if (c(".kd-ng") && lastData) {
